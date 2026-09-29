@@ -1,0 +1,75 @@
+server:
+  port: 8080
+
+spring:
+  application:
+    name: tile-ai-server
+
+  # 数据库口令**不落代码**(架构 §12.3 / §13.6):一律走环境变量。
+  # 本地开发可另建 application-local.yml(.gitignore 已排除)覆盖,或设 DB_* 环境变量。
+  datasource:
+    url: ${DB_URL:jdbc:mysql://localhost:3306/tile_ai?useUnicode=true&characterEncoding=utf8&serverTimezone=Asia/Shanghai&allowPublicKeyRetrieval=true&useSSL=false}
+    username: ${DB_USERNAME:root}
+    password: ${DB_PASSWORD:}
+    driver-class-name: com.mysql.cj.jdbc.Driver
+
+  # 版本化迁移(架构 §12.3:数据库变更与代码同批次且可回退)
+  flyway:
+    enabled: true
+    locations: classpath:db/migration
+    baseline-on-migrate: false
+
+  # Redis(架构 §3):登录会话 / refresh_token 黑名单、限流、热点缓存
+  data:
+    redis:
+      host: ${REDIS_HOST:localhost}
+      port: ${REDIS_PORT:6379}
+      timeout: 2s
+
+  # RabbitMQ(P0-3① 裁决;拓扑见 RabbitTopologyConfig)
+  rabbitmq:
+    host: ${RABBITMQ_HOST:localhost}
+    port: ${RABBITMQ_PORT:5672}
+    username: ${RABBITMQ_USER:tileai}
+    password: ${RABBITMQ_PASS:tileai}
+
+tile:
+  # 鉴权与会话(架构 §10.1 · D1 定稿)。时长与 Cookie 属性直接来自契约
+  # openapi-common.yaml#/components/securitySchemes/cookieAuth,改动等同改契约。
+  auth:
+    # 密钥只走环境变量(§13.6)。留空时:非 prod 自动生成随机密钥(重启即失效),
+    # prod 直接拒绝启动。
+    secret: ${JWT_SECRET:}
+    access-ttl: 2h
+    refresh-ttl: 14d
+    access-cookie-path: /
+    # refresh_token 只在 /api/v1/auth 下发送 —— 收窄暴露面(契约明确要求)
+    refresh-cookie-path: /api/v1/auth
+    # 架构未规定 SameSite(上游未定义项),此处取 Lax;见 JwtProperties 说明
+    same-site: Lax
+    # HTTPS 下必须置 true(生产);本地 http 保持 false,否则浏览器不保存 Cookie
+    secure: ${COOKIE_SECURE:false}
+
+  # Outbox 投递(架构 §6.4)
+  outbox:
+    enabled: true
+    batch-size: 100
+    # 重试超限后标记 failed 并停止,由「全量重建」兜底(架构 §15.2)
+    max-retry: 10
+    dispatch-interval: 2s
+
+mybatis-plus:
+  configuration:
+    # DB 用 snake_case,对外 JSON 用 camelCase,映射在 ORM 层完成(CLAUDE.md 命名约定)
+    map-underscore-to-camel-case: true
+
+# 健康检查供 T-0.1 验收与 T-2.4 部署编排(Docker Compose healthcheck)使用。
+# 仅暴露 health/info;其余端点默认关闭,避免泄露内部状态(架构 §13.5 安全)。
+management:
+  endpoints:
+    web:
+      exposure:
+        include: health,info
+  endpoint:
+    health:
+      show-details: never
