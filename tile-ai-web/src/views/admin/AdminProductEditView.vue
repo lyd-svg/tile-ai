@@ -3,7 +3,9 @@ import { computed, onMounted, reactive, ref } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 
 import { createProduct, getProduct, updateProduct } from '@/api/admin/products'
-import type { ProductImage, ProductUpsert } from '@/api/admin/products'
+import type { ProductUpsert } from '@/api/admin/products'
+// ProductImage 来自 common 契约(不是 admin 专有),已挪到共享类型
+import type { ProductImage } from '@/api/types'
 import { listDictsOfType } from '@/api/dicts'
 import type { Dict } from '@/api/dicts'
 import { validationErrorsOf } from '@/api/errors'

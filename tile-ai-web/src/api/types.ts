@@ -35,6 +35,17 @@ export interface PageQuery {
 /** 后台角色。架构 §4.4 */
 export type Role = 'super_admin' | 'operator' | 'editor'
 
+/**
+ * C 端用户信息。§10.1、§11.1
+ *
+ * **不含令牌** —— 令牌走 HttpOnly Cookie,不进响应体(前端零存储)。
+ */
+export interface UserInfo {
+  userId: number
+  username: string
+  nickname?: string | null
+}
+
 /** 后台账号(对外视图,不含密码)。§8.1 t_admin_user */
 export interface AdminUserView {
   id: number
@@ -46,6 +57,75 @@ export interface AdminUserView {
 
 /** 通用开关状态。§8.2 */
 export type ProductStatus = 'on_sale' | 'off_sale'
+
+/**
+ * 以下领域结构来自 **openapi-common.yaml**(不是某一份契约专有),
+ * 因此放在这里供 C 端与 B 端共用 —— 两端描述的是同一批数据。
+ */
+
+/** 产品图。§8.2 t_product_image */
+export interface ProductImage {
+  url: string
+  /** 拍摄角度,如 front / side / detail */
+  angle?: string
+  sort?: number
+}
+
+/** 产品库 SKU 的对外视图。§8.2、§7.1(C 端与 B 端同构) */
+export interface Sku {
+  /** 内部主键。契约标为**可省略** —— 缺它时无法调详情/编辑/删除(B 端) */
+  id?: number
+  sku: string
+  name: string
+  spec?: string
+  material?: string
+  /** 光泽度 */
+  surface?: string
+  /** 花色/纹理描述 */
+  colorPattern?: string
+  /** 单价(元/㎡) */
+  pricePerSqm: number
+  applicableSpaces?: string[]
+  styleTags?: string[]
+  status: ProductStatus
+  coverImage?: string
+  images?: ProductImage[]
+}
+
+/** 搭配所含 SKU 及部位。§8.2 t_recommend_combo_item */
+export interface ComboItem {
+  sku: string
+  /** 冗余展示名(可选) */
+  name?: string
+  /** 恒为 floor / wall / local 三值(契约 T-9) */
+  part: Part
+}
+
+/** 推荐搭配(人工维护的成套方案)。§8.2 */
+export interface Combo {
+  id: number
+  name: string
+  space: string
+  style: string
+  /** 参考价下限(元) */
+  refPriceMin?: number
+  /** 参考价上限(元) */
+  refPriceMax?: number
+  coverImage?: string
+  status: ProductStatus
+  sort?: number
+  items?: ComboItem[]
+}
+
+/** 门店信息(单店单条)。§8.5 t_store、§7.6 */
+export interface Store {
+  id?: number
+  name: string
+  address: string
+  phone: string
+  /** 地图/导航链接 */
+  mapUrl?: string | null
+}
 
 /** 部位枚举,**恒为三值、一期不含美缝**(CLAUDE.md) */
 export type Part = 'floor' | 'wall' | 'local'

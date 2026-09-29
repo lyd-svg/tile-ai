@@ -24,7 +24,32 @@ const router = createRouter({
         {
           path: '',
           name: 'home',
-          component: () => import('@/views/HomeView.vue'),
+          component: () => import('@/views/site/HomeView.vue'),
+        },
+        {
+          path: 'products',
+          name: 'products',
+          component: () => import('@/views/site/ProductListView.vue'),
+        },
+        {
+          path: 'products/:sku',
+          name: 'product-detail',
+          component: () => import('@/views/site/ProductDetailView.vue'),
+        },
+        {
+          path: 'combos',
+          name: 'combos',
+          component: () => import('@/views/site/ComboListView.vue'),
+        },
+        {
+          path: 'store',
+          name: 'store',
+          component: () => import('@/views/site/StoreView.vue'),
+        },
+        {
+          path: 'login',
+          name: 'login',
+          component: () => import('@/views/site/LoginView.vue'),
         },
       ],
     },

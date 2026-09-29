@@ -11,36 +11,11 @@
  */
 
 import { ADMIN_BASE, request } from '../http'
-import type { PageData, ProductStatus } from '../types'
+import type { PageData, ProductImage, ProductStatus, Sku } from '../types'
 
-/** 产品图。§8.2 t_product_image */
-export interface ProductImage {
-  url: string
-  /** 拍摄角度,如 front / side / detail */
-  angle?: string
-  sort?: number
-}
-
-/** SKU 对外视图(契约 Sku)。§8.2、§7.1 */
-export interface Sku {
-  /** 内部主键。契约标为**可省略**,故按可选处理 —— 缺它时无法调详情/编辑/删除 */
-  id?: number
-  sku: string
-  name: string
-  spec?: string
-  material?: string
-  /** 光泽度 */
-  surface?: string
-  /** 花色/纹理描述 */
-  colorPattern?: string
-  /** 单价(元/㎡) */
-  pricePerSqm: number
-  applicableSpaces?: string[]
-  styleTags?: string[]
-  status: ProductStatus
-  coverImage?: string
-  images?: ProductImage[]
-}
+// `Sku` / `ProductImage` 来自 **common** 契约,C 端也用同一套,故放在 ../types。
+// 这里只留 B 端专有的请求体与查询参数(它们来自 openapi-admin.yaml)。
+export type { Sku }
 
 /** 新增/编辑请求体(契约 ProductUpsert)。**没有 `id`** —— 它在路径里 */
 export interface ProductUpsert {
