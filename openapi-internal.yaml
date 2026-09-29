@@ -1,0 +1,327 @@
+openapi: 3.0.3
+
+info:
+  title: 瓷砖选购 AI 效果图与报价系统 — 内部契约(Java ↔ Python)
+  version: 0.1.0
+  description: |
+    内部接口契约,仅内网可达;网关层阻断 /internal/* 的外部访问(§6.1、§12.1)。
+    鉴权:服务令牌 `X-Service-Token`(叠加内网 mTLS),不使用用户 JWT。§10.4
+
+    方向标注:
+    - Java → Python:Java 派发编排/解析/映射/补齐任务给智能体服务。
+    - Python → Java:智能体服务向 Java 取权威数据、回传生成结果。
+
+    复用同一套错误码(§10.5);服务间调用失败以 4xxx/5xxx 返回并附 traceId。
+    **无 /internal/quote/calc** —— 报价归 Java,智能体不接报价工具(一致性评审 A1,§4.1、§6.1)。
+
+    约定的"TODO"标记:`x-todo` 表示上游未定义、由契约作者推断,待评审。
+
+servers:
+  - url: http://{python-agent-host}:8000
+    description: Python 智能体服务(内网;Java→Python 调用)
+    variables:
+      python-agent-host: { default: python-agent }
+  - url: http://{java-core-host}:8080
+    description: Java 业务核(内网;Python→Java 调用)
+    variables:
+      java-core-host: { default: java-core }
+
+security:
+  - serviceToken: []
+
+tags:
+  - name: agent
+    description: 智能体能力(Java → Python)
+  - name: data
+    description: 权威数据读取(Python → Java)
+  - name: generate
+    description: 生成结果回传(Python → Java)
+
+paths:
+
+  # ==========================================================
+  # Java → Python
+  # ==========================================================
+  /internal/agent/chat:
+    post:
+      tags: [agent]
+      x-direction: Java → Python
+      summary: 对话咨询编排(路径 C,SSE)
+      description: |
+        Java 将用户消息转发给智能体服务,智能体基于产品库 RAG 返回流式 token 与可采纳 refs。
+        智能体**仅输出搭配建议 + 搭配方案**,不返回效果图、不返回报价(§4.2 输出边界、§10.6③)。
+        会话短期上下文存 Redis(sessionId 键、TTL 约 30 分钟),长期消息由 Java 落库 t_chat_message(§4.2)。
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [sessionId, message]
+              properties:
+                sessionId: { type: string, example: "s_88" }
+                userId: { type: integer, description: "已登录用户(由 Java 透传,用于鉴权与留痕)" }
+                message: { type: string, example: "卫生间浅灰砖配什么墙砖?" }
+                context:
+                  type: object
+                  description: 可选上下文(如已选空间/风格),用于约束推荐范围
+                  additionalProperties: true
+      responses:
+        '200':
+          description: |
+            SSE 流式事件。事件序列:若干 `data: {"delta": "..."}` → 至多一个 `data: {"refs":[...]}` →
+            `data: [DONE]`。§10.6③
+            application/json 为备用载体:非流式聚合返回(若 Java 侧选择非 SSE 调用)。
+          content:
+            text/event-stream:
+              schema:
+                type: string
+                description: |
+                  逐行事件。delta 为增量文本;refs 为可采纳的搭配方案(SkuRef[]);
+                  结束标记 `data: [DONE]`。
+                example: |
+                  data: {"sessionId":"s_88"}
+                  data: {"delta":"浅灰地砖建议搭配…"}
+                  data: {"refs":[{"sku":"TL-3012","name":"雪瓷白","part":"wall"}]}
+                  data: [DONE]
+            application/json:
+              schema: { $ref: './openapi-common.yaml#/components/schemas/ApiResponse' }
+      x-todo: "D-7 裁决:冻结事件集 {sessionId(仅首帧)、delta、refs、[DONE]};sessionId 由服务端首个事件下发。是否存在 error 等其它事件待上游确认"
+
+  /internal/agent/parse-layout:
+    post:
+      tags: [agent]
+      x-direction: Java → Python
+      summary: 自然语言/参数 → 结构化户型
+      description: |
+        将用户的自然语言或表单参数解析为结构化户型数据模型(长/宽/高/门窗)。解析在 Python,
+        结果交 Java 落库(§4.3 工具②、§5.3.2)。户型入库后**不做人工校准**(§5.3)。
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              description: 两种输入形态之一:自然语言文本,或结构化表单参数。
+              properties:
+                text: { type: string, description: 自然语言描述, example: "三室两厅,客厅 5m×4m,卫生间 2m×1.8m" }
+                params:
+                  allOf: [{ $ref: './openapi-common.yaml#/components/schemas/LayoutModel' }]
+                  description: 直接表单录入的结构化参数(可选)
+      responses:
+        '200':
+          description: 解析成功
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: './openapi-common.yaml#/components/schemas/ApiResponse'
+                  - type: object
+                    properties:
+                      data: { $ref: './openapi-common.yaml#/components/schemas/LayoutModel' }
+      x-todo: "§10.2 仅一句说明,入参/出参字段结构未定义;text 与 params 的优先级、解析失败(能否解析)如何表达 待确认"
+
+  /internal/agent/material-map:
+    post:
+      tags: [agent]
+      x-direction: Java → Python
+      summary: 部位材质 → 提示词(SKU → 材质/纹理/颜色短语)
+      description: |
+        将各部位所选 SKU 映射为出图提示词片段(按地面/墙面/局部对号入座)。§4.2 材质映射、§7.3。
+        SKU 详情取自 Java/Qdrant(§4.3 工具③)。
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [parts]
+              properties:
+                space: { $ref: './openapi-common.yaml#/components/schemas/SpaceType' }
+                style: { $ref: './openapi-common.yaml#/components/schemas/StyleType' }
+                parts:
+                  type: array
+                  minItems: 1
+                  items: { $ref: './openapi-common.yaml#/components/schemas/PartSelection' }
+      responses:
+        '200':
+          description: 映射成功
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: './openapi-common.yaml#/components/schemas/ApiResponse'
+                  - type: object
+                    properties:
+                      data:
+                        type: object
+                        properties:
+                          parts:
+                            type: array
+                            items:
+                              type: object
+                              properties:
+                                part: { $ref: './openapi-common.yaml#/components/schemas/Part' }
+                                sku: { type: string }
+                                prompt: { type: string, description: 该部位的材质提示词片段 }
+      x-todo: "上游未定义 material-map 的响应结构;prompt 的粒度(整段/结构化字段)待确认"
+
+  /internal/agent/complete-parts:
+    post:
+      tags: [agent]
+      x-direction: Java → Python
+      summary: 未选地面/墙面部位的 AI 自动补齐
+      description: |
+        生成流程中,对**未选的地面/墙面**部位,基于已选砖 + 空间 + 风格做 AI 自动补齐(返回 SKU + 部位)。
+        补齐结果交 Java 落库并参与报价。§4.2 搭配补齐、§11.2 时序。
+        注:**局部(腰线/花砖)为可选部位,不强制补齐**(PRD §5.2.4)。
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [space, selectedParts]
+              properties:
+                space: { $ref: './openapi-common.yaml#/components/schemas/SpaceType' }
+                style: { $ref: './openapi-common.yaml#/components/schemas/StyleType' }
+                selectedParts:
+                  type: array
+                  description: 用户已选的部位(可部分);缺失的地面/墙面由本接口补齐
+                  items: { $ref: './openapi-common.yaml#/components/schemas/PartSelection' }
+      responses:
+        '200':
+          description: 补齐成功
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: './openapi-common.yaml#/components/schemas/ApiResponse'
+                  - type: object
+                    properties:
+                      data:
+                        type: object
+                        properties:
+                          parts:
+                            type: array
+                            description: 合并后的完整部位列表,补齐项 source=ai(§11.2"标注 ai")
+                            items: { $ref: './openapi-common.yaml#/components/schemas/PartSelection' }
+        # 失败场景:补齐未成功 → 业务码 40004(部位补齐失败,用户可重试),HTTP 仍返回 200
+      x-todo: "补齐失败(40004)是内部接口返回码还是 Java 对外码,待确认;'标注 ai' 的字段名见 common.PartSource"
+
+  # ==========================================================
+  # Python → Java
+  # ==========================================================
+  /internal/products/{sku}:
+    get:
+      tags: [data]
+      x-direction: Python → Java
+      summary: 取权威 SKU
+      description: 智能体检索/推荐/材质映射时取权威 SKU 数据(§4.3、§5 关键约定)。§10.4
+      parameters:
+        - name: sku
+          in: path
+          required: true
+          schema: { type: string }
+          description: 产品编号
+      responses:
+        '200':
+          description: 查询结果
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: './openapi-common.yaml#/components/schemas/ApiResponse'
+                  - type: object
+                    properties:
+                      data: { $ref: './openapi-common.yaml#/components/schemas/Sku' }
+
+  /internal/furnish/prompts:
+    get:
+      tags: [data]
+      x-direction: Python → Java
+      summary: 取陈设提示词
+      description: |
+        按"空间 × 风格"取陈设提示词(数据源由 Java 后台维护,§4.2、§5.7),拼入出图提示词。§10.4
+      parameters:
+        - name: space
+          in: query
+          required: true
+          schema: { $ref: './openapi-common.yaml#/components/schemas/SpaceType' }
+        - name: style
+          in: query
+          required: true
+          schema: { $ref: './openapi-common.yaml#/components/schemas/StyleType' }
+      responses:
+        '200':
+          description: 查询结果
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: './openapi-common.yaml#/components/schemas/ApiResponse'
+                  - type: object
+                    properties:
+                      data:
+                        type: object
+                        properties:
+                          prompt: { type: string, description: 陈设提示词 }
+                          coverImage: { type: string, nullable: true, description: 展示图 URL(可选) }
+      x-todo: "§10.4 仅给路径;入参(是否仅 space/style)、返回字段结构未定义"
+
+  /internal/generate/callback:
+    post:
+      tags: [generate]
+      x-direction: Python → Java
+      summary: 生成结果回传
+      description: |
+        Python 完成出图后经回调或 MQ 回传结果,Java 更新任务状态并触发方案自动保存(upsert)。
+        幂等:以 taskId 去重,回调可能重复到达,靠状态机防护(已 success 则忽略)。§6.2、§6.4、§10.6④
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [taskId, status]
+              properties:
+                taskId: { type: string, description: "对外唯一任务号,回调幂等键", example: "g_1027f3" }
+                status: { $ref: './openapi-common.yaml#/components/schemas/TaskStatus' }
+                imageUrls:
+                  type: array
+                  description: 生成成功的图片列表(status=success 时必填)
+                  items:
+                    type: object
+                    required: [url, view]
+                    properties:
+                      url: { type: string, example: "https://oss/.../a1.png" }
+                      view: { type: string, description: default / angle1 …, example: default }
+                      isCover: { type: boolean, default: false }
+                progress: { type: integer, minimum: 0, maximum: 100, example: 100 }
+                error:
+                  nullable: true
+                  type: object
+                  description: status=failed 时的错误信息
+                  properties:
+                    code: { $ref: './openapi-common.yaml#/components/schemas/ErrorCode' }
+                    message: { type: string }
+                traceId: { type: string }
+      responses:
+        '200':
+          description: 回传受理结果(幂等:重复回传返回成功但被忽略)
+          content:
+            application/json:
+              schema: { $ref: './openapi-common.yaml#/components/schemas/ApiResponse' }
+
+components:
+  # 与 openapi-common.yaml 保持同步(F-4,见 openapi-verification.md §8.4)。
+  # OpenAPI 要求 securitySchemes 必须在本文档内声明,无法跨文档 $ref;
+  # 缺失时本文件单独解析会报 security-defined(security 悬空)。
+  securitySchemes:
+    serviceToken:
+      type: apiKey
+      in: header
+      name: X-Service-Token
+      description: |
+        内部服务间鉴权(Java↔Python),叠加内网 mTLS;不使用用户 JWT。
+        网关层阻断 /internal/* 外部访问。§10.4、§6.1

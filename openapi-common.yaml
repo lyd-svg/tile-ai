@@ -1,0 +1,585 @@
+openapi: 3.0.3
+
+info:
+  title: 瓷砖选购 AI 效果图与报价系统 — 公共契约(Common)
+  version: 0.1.0
+  description: |
+    公共组件契约:统一响应体、分页、枚举、数据结构与安全方案。
+    本文件**不含 paths**,仅供 openapi-c.yaml / openapi-admin.yaml / openapi-internal.yaml 通过 $ref 引用。
+
+    依据:架构文档 §10.1(通用约定)、§10.5(业务错误码)、§8(数据模型)、§10.6(字段示例)。
+    命名:字段 camelCase(对外 JSON 约定,与 DB 的 snake_case 分层,映射由 ORM 层完成)。
+
+    约定的"TODO"标记:`x-todo` 扩展字段表示**上游文档未定义、由契约作者按惯例推断**,需评审裁决。
+    追溯表以 `x-source` 标注依据章节。
+
+paths: {}
+
+components:
+
+  # ============================================================
+  # 安全方案(§10.1 D1 定稿;§10.4 内部接口)
+  # ============================================================
+  securitySchemes:
+    cookieAuth:
+      type: apiKey
+      in: cookie
+      name: access_token
+      description: |
+        登录态由服务端 `Set-Cookie` 下发 `HttpOnly` Cookie(access_token 2h + refresh_token 14d,
+        refresh_token 的 Path 收窄至 /api/v1/auth)。后续请求由浏览器自动携带,**不使用 Authorization 头,
+        令牌也不进响应体**。前端零存储(开发规范 §1.4 禁用 localStorage/sessionStorage)。
+        §10.1
+    tempToken:
+      type: http
+      scheme: bearer
+      description: |
+        注册临时令牌:验证码登录时若手机号未注册,返回 `needSetPassword=true` 与一次性临时令牌
+        (10 分钟有效,一次性)。设置密码接口以此鉴权。§10.1、§10.2
+    serviceToken:
+      type: apiKey
+      in: header
+      name: X-Service-Token
+      description: |
+        内部服务间鉴权(Java↔Python),叠加内网 mTLS;不使用用户 JWT。
+        网关层阻断 /internal/* 外部访问。§10.4、§6.1
+
+  # ============================================================
+  # 通用参数
+  # ============================================================
+  parameters:
+    PageParam:
+      name: page
+      in: query
+      required: false
+      schema: { type: integer, minimum: 1, default: 1 }
+      description: 页码,从 1 开始。§10.1
+    SizeParam:
+      name: size
+      in: query
+      required: false
+      schema: { type: integer, minimum: 1, maximum: 100, default: 20 }
+      description: 每页条数。§10.1
+
+  # ============================================================
+  # 响应包装
+  # ============================================================
+  schemas:
+
+    ApiResponse:
+      type: object
+      description: |
+        统一响应体。业务结果统一 HTTP 200,成败由 `code` 区分;仅 401/403 用真实 HTTP 状态。
+        §10.1、§10.5
+      required: [code, message, traceId]
+      properties:
+        code:
+          type: integer
+          description: 业务码,0 为成功。见 ErrorCode。§10.5
+          example: 0
+        message:
+          type: string
+          example: ok
+        data:
+          description: 业务数据,null 表示无数据;结构由各接口的 *Data schema 定义。
+          nullable: true
+          type: object
+          additionalProperties: true
+        traceId:
+          type: string
+          description: 链路追踪 ID,跨进程定位问题用。§10.5、§13.7
+          example: "3f9c1a2b8e7d"
+
+    PageData:
+      type: object
+      description: 分页数据包装,作为 ApiResponse.data 使用。§10.1
+      required: [list, total, page, size]
+      properties:
+        list:
+          type: array
+          items: {}
+          description: 当前页列表(元素类型由各接口覆写)
+        total: { type: integer, description: 总条数 }
+        page: { type: integer, description: "当前页,从 1 开始" }
+        size: { type: integer, description: 每页条数 }
+
+    ErrorItem:
+      type: object
+      description: |
+        参数校验失败(10001)的明细元素,放于 data.errors[]。§10.5
+        ⚠️ TODO: 上游仅提及"明细放 data.errors[]",元素字段结构未定义,以下为推断。
+      x-todo: "§10.5 未定义 errors[] 元素结构;字段与命名待确认"
+      required: [field, reason]
+      properties:
+        field:
+          type: string
+          description: 出错字段路径,如 parts[0].sku
+          example: parts[0].sku
+        reason:
+          type: string
+          description: 不可读原因描述
+          example: "SKU 不存在"
+        rejectedValue:
+          description: 被拒绝的原始值(可选)。未声明 type,允许任意值(含 null)
+
+    # ---- 枚举 ----
+
+    Part:
+      type: string
+      description: 铺贴部位。一期**不含美缝**,枚举固定三个值。PRD §5.2.2
+      enum: [floor, wall, local]
+      x-source: "PRD §5.2.2 / 架构 §8.4"
+
+    PartSource:
+      type: string
+      description: |
+        部位瓷砖来源:用户显式选择 / AI 自动补齐。
+        §11.2 时序"补齐后的 parts(标注 ai)"、§4.2"标注来源"。
+      x-source: "架构 §11.2、§4.2"
+      x-todo: "上游只说'标注 ai/来源',未给字段名与枚举值;source 字段名与取值由契约推断"
+      enum: [user, ai]
+
+    SpaceType:
+      type: string
+      description: |
+        生成空间类型(单空间出图)。§5.4
+        **后台可配置**(D-14 定稿):对外取值以后台字典 `t_dict`(dict_type=space)为准,前端与契约不硬编码;
+        下方 enum 仅为**内置默认值**,实时可选集请调 `GET /dicts?type=space`(见 openapi-c.yaml)。
+        §8.5、§10.1、§10.2
+      x-source: "PRD §5.4、§8.3、§8.5 t_dict"
+      enum: [living_room, bedroom, kitchen, bathroom, dining_room, study, balcony, other]
+
+    StyleType:
+      type: string
+      description: |
+        装修风格。PRD 举例:现代/轻奢/奶油风/北欧。§5.4
+        **后台可配置**(D-14 定稿):对外取值以后台字典 `t_dict`(dict_type=style)为准;
+        下方 enum 仅为**内置默认值**,实时可选集请调 `GET /dicts?type=style`(见 openapi-c.yaml)。§8.5
+      x-source: "PRD §5.4、§5.2.2、§8.5 t_dict"
+      enum: [modern, light_luxury, cream, nordic]
+
+    OpeningType:
+      type: string
+      description: 门窗开口类型(用于面积扣减)。§8.8
+      enum: [door, window]
+
+    TaskStatus:
+      type: string
+      description: 任务状态机 pending → running → success / failed(失败可重试回 running)。§6.4
+      enum: [pending, running, success, failed]
+
+    TaskType:
+      type: string
+      description: 任务类型:image=效果图生成,parse=户型解析。§8.6
+      enum: [image, parse]
+
+    ProductStatus:
+      type: string
+      description: SKU 上下架状态。§8.2
+      enum: [on_sale, off_sale]
+
+    # ---- 领域数据结构 ----
+
+    Opening:
+      type: object
+      description: 门窗开口。§8.3
+      required: [type, w, h]
+      properties:
+        type: { $ref: '#/components/schemas/OpeningType' }
+        w: { type: number, format: float, description: 宽(米), example: 0.8 }
+        h: { type: number, format: float, description: 高(米), example: 2.1 }
+
+    LayoutAreas:
+      type: object
+      description: 该空间各部位面积(㎡)。§8.3
+      properties:
+        floor: { type: number, format: float, example: 3.6 }
+        wall: { type: number, format: float, example: 13.9 }
+        local: { type: number, format: float, example: 0.0 }
+
+    LayoutSpace:
+      type: object
+      description: 户型中的单个空间。§8.3 结构化户型模型
+      required: [type, length, width, height]
+      properties:
+        type: { $ref: '#/components/schemas/SpaceType' }
+        name: { type: string, description: 中文名(展示用), example: 卫生间 }
+        length: { type: number, format: float, description: 长(米), example: 2.0 }
+        width: { type: number, format: float, description: 宽(米), example: 1.8 }
+        height: { type: number, format: float, description: 层高(米), example: 2.7 }
+        wallCount: { type: integer, description: 墙面数, example: 4 }
+        openings:
+          type: array
+          items: { $ref: '#/components/schemas/Opening' }
+        areas:
+          allOf: [{ $ref: '#/components/schemas/LayoutAreas' }]
+          description: 各部位面积。**注意**:§8.3 示例中该字段出现在"解密后的户型快照"里,疑为服务端计算出的结果而非录入入参;录入时是否必填待确认。
+          x-todo: "areas 究竟是录入入参还是服务端计算结果,§8.3 未说明"
+
+    LayoutModel:
+      type: object
+      description: |
+        结构化"户型数据模型"(空间列表 + 尺寸 + 门窗)。§7.3、§8.3。
+        字段定义以架构 §8.3「结构化户型模型字段定义」表为准(D-2 定稿,原 SDD §3.10 已并入该表)。
+      x-source: "架构 §8.3 结构化户型模型字段定义"
+      required: [spaces]
+      properties:
+        spaces:
+          type: array
+          minItems: 1
+          items: { $ref: '#/components/schemas/LayoutSpace' }
+
+    Sku:
+      type: object
+      description: 产品库 SKU 的对外视图。§8.2、§7.1
+      required: [sku, name, pricePerSqm, status]
+      properties:
+        id: { type: integer, description: 内部主键(对外可省略) }
+        sku: { type: string, description: "产品编号(sku_code,唯一)", example: TL-2043 }
+        name: { type: string, example: 雅灰石纹 }
+        spec: { type: string, description: "规格,如 750×1500mm", example: "750×1500mm" }
+        material: { type: string, description: 材质:抛光砖/釉面砖/仿古砖/岩板…, example: 釉面砖 }
+        surface: { type: string, description: 光泽度, example: 柔光 }
+        colorPattern: { type: string, description: 花色/纹理描述, example: 浅灰细石纹 }
+        pricePerSqm: { type: number, format: float, description: 单价(元/㎡), example: 268.00 }
+        applicableSpaces:
+          type: array
+          items: { type: string }
+          description: 适用空间(JSON 数组)
+        styleTags:
+          type: array
+          items: { type: string }
+          description: 风格标签(JSON 数组)
+        status: { $ref: '#/components/schemas/ProductStatus' }
+        coverImage: { type: string, description: 封面图 URL(对象存储), example: "https://oss/.../cover.jpg" }
+        images:
+          type: array
+          description: 多角度图(§8.2 t_product_image)
+          items:
+            type: object
+            properties:
+              url: { type: string }
+              angle: { type: string, example: default }
+              sort: { type: integer }
+
+    PartSelection:
+      type: object
+      description: |
+        部位 → 瓷砖的选定(一个空间可多砖、多部位)。§5.2.4、§8.4。
+        `/generate` 请求里 parts 允许**部分部位**(至少 1 个),缺失的地面/墙面由后端 AI 自动补齐。
+      x-source: "PRD §5.2.4、架构 §10.6①"
+      required: [part, sku]
+      properties:
+        part: { $ref: '#/components/schemas/Part' }
+        sku: { type: string, description: 瓷砖编号, example: TL-2043 }
+        area: { type: number, format: float, description: "该部位面积(㎡);可由服务端依户型计算,前端可传可不传", example: 3.6 }
+        source:
+          allOf: [{ $ref: '#/components/schemas/PartSource' }]
+          description: 来源(用户选择/AI 补齐)。响应中**必填**,请求中可省略(默认 user)。
+          x-todo: "字段名 source 与枚举 user/ai 为推断,见 PartSource"
+
+    SkuRef:
+      type: object
+      description: 可采纳的搭配方案中的单个推荐项(含部位)。§10.6③ refs
+      required: [sku, part]
+      properties:
+        sku: { type: string, example: TL-3012 }
+        name: { type: string, example: 雪瓷白 }
+        part: { $ref: '#/components/schemas/Part' }
+
+    QuoteItem:
+      type: object
+      description: 报价分项(按部位)。§8.4 t_plan_part、§10.6⑤
+      required: [part, sku, grossArea, effectiveArea, lossRate, pricePerSqm, materialFee]
+      properties:
+        part: { $ref: '#/components/schemas/Part' }
+        sku: { type: string }
+        grossArea: { type: number, format: float, description: 毛面积(同部位同砖合并后) }
+        effectiveArea: { type: number, format: float, description: 有效面积(扣开口后) }
+        lossRate: { type: number, format: float, description: "损耗率,如 0.06" }
+        pricePerSqm: { type: number, format: float, description: 该砖单价快照(元/㎡) }
+        materialFee: { type: number, format: float, description: 该分项材料费 }
+
+    QuoteResult:
+      type: object
+      description: 报价结果(单空间)。§5.5、§8.8、§10.6⑤
+      required: [materialTotal, auxTotal, total, items]
+      properties:
+        materialTotal: { type: number, format: float, description: 材料费合计, example: 1817.01 }
+        auxTotal: { type: number, format: float, description: 辅料费合计, example: 292.40 }
+        total: { type: number, format: float, description: 单空间总价, example: 2109.41 }
+        items:
+          type: array
+          items: { $ref: '#/components/schemas/QuoteItem' }
+        rulesSnapshot:
+          type: object
+          description: 生成时参数快照(辅料单价、损耗率等),用于追溯与"按当前价重算"。§8.8、§15.7
+          properties:
+            auxUnitPrice: { type: number, format: float, example: 20.00 }
+            lossRate: { type: number, format: float, example: 0.06 }
+
+    # ---- 错误码 ----
+
+    ErrorCode:
+      type: integer
+      description: |
+        业务错误码。§10.5。
+        0 成功;10001 参数校验失败;10002 未登录/令牌无效;10003 令牌过期需刷新;
+        10004 无权限;10005 限流;20001 验证码错误或过期;20002 验证码发送过于频繁;
+        20003 手机号已注册;20004 密码格式不合规;20005 账号或密码错误;30001 资源不存在;
+        30002 状态不允许该操作;40001 生成任务失败;40002 生成服务繁忙;40003 任务不存在;
+        40004 部位补齐失败;50001 AI 咨询超出范围;90001 系统内部错误。
+      enum: [0, 10001, 10002, 10003, 10004, 10005, 20001, 20002, 20003, 20004, 20005, 30001, 30002, 40001, 40002, 40003, 40004, 50001, 90001]
+
+    # ---- 鉴权相关 ----
+
+    UserInfo:
+      type: object
+      description: 登录成功返回的用户信息(令牌不进响应体,仅 Set-Cookie)。§10.1、§11.1
+      required: [userId, phone]
+      properties:
+        userId: { type: integer }
+        phone: { type: string, description: 手机号(脱敏或明文由前端约定) }
+        nickname: { type: string, nullable: true }
+
+    # ---- 搭配(§8.2) ----
+
+    ComboItem:
+      type: object
+      description: 搭配所含 SKU 及部位。§8.2 t_recommend_combo_item
+      required: [sku, part]
+      properties:
+        sku: { type: string }
+        name: { type: string, description: 冗余展示名(可选) }
+        part: { $ref: '#/components/schemas/Part' }
+        note: { type: string, nullable: true }
+        sort: { type: integer }
+
+    Combo:
+      type: object
+      description: 推荐搭配(人工维护的成套方案)。§8.2 t_recommend_combo、§7.2
+      required: [id, name, space, style, status]
+      properties:
+        id: { type: integer }
+        name: { type: string }
+        space: { $ref: '#/components/schemas/SpaceType' }
+        style: { $ref: '#/components/schemas/StyleType' }
+        refPriceMin: { type: number, format: float, description: 参考价下限(元) }
+        refPriceMax: { type: number, format: float, description: 参考价上限(元) }
+        coverImage: { type: string }
+        status: { $ref: '#/components/schemas/ProductStatus' }
+        sort: { type: integer }
+        items:
+          type: array
+          items: { $ref: '#/components/schemas/ComboItem' }
+
+    # ---- 方案(§8.4) ----
+
+    PlanPart:
+      type: object
+      description: 方案部位—瓷砖映射 + 报价分项。§8.4 t_plan_part
+      required: [part, sku, materialFee]
+      properties:
+        part: { $ref: '#/components/schemas/Part' }
+        sku: { type: string }
+        productName: { type: string, description: 生成时快照的产品名 }
+        pricePerSqm: { type: number, format: float, description: 生成时快照单价 }
+        grossArea: { type: number, format: float }
+        area: { type: number, format: float, description: 有效面积(扣开口后) }
+        lossRate: { type: number, format: float }
+        materialFee: { type: number, format: float }
+        source:
+          allOf: [{ $ref: '#/components/schemas/PartSource' }]
+          description: 该部位是否 AI 补齐(§11.2)
+
+    PlanImage:
+      type: object
+      description: 方案效果图。§8.4 t_plan_image
+      properties:
+        url: { type: string }
+        view:
+          type: string
+          description: |
+            视图名。约定(D-5):angles=1 时仅 `default`;angles=N 时 `default` + `angle1`…`angleN`。
+            §10.6①、§8.4
+          example: default
+        isCover: { type: boolean }
+
+    PlanSummary:
+      type: object
+      description: 我的方案·卡片信息。§5.6
+      required: [id, name, createdAt]
+      properties:
+        id: { type: integer }
+        name: { type: string }
+        space: { $ref: '#/components/schemas/SpaceType' }
+        style: { $ref: '#/components/schemas/StyleType' }
+        coverImage: { type: string, description: 封面效果图 URL }
+        totalAmount: { type: number, format: float, description: 报价总额 }
+        quoteExpired: { type: boolean, description: 是否因调价而过期。§15.7 }
+        parts:
+          type: array
+          description: 所选瓷砖摘要(各部位)
+          items: { $ref: '#/components/schemas/PlanPart' }
+        createdAt: { type: string, format: date-time }
+        updatedAt: { type: string, format: date-time }
+
+    PlanDetail:
+      type: object
+      description: |
+        方案详情。§5.6、§11.4。
+        **注意**:户型在库中以 AES-256-GCM 密文快照存储(t_plan.layout_enc),但**对外 API 返回解密后的明文
+        LayoutModel**(仅在 HTTPS 传输层保护)。契约层传输明文;密文仅限静态存储。§8.3、§13.5
+      allOf:
+        - $ref: '#/components/schemas/PlanSummary'
+        - type: object
+          properties:
+            layout: { $ref: '#/components/schemas/LayoutModel' }
+            quote: { $ref: '#/components/schemas/QuoteResult' }
+            images:
+              type: array
+              items: { $ref: '#/components/schemas/PlanImage' }
+            shareToken: { type: string, nullable: true }
+
+    # ---- 户型模板 / 门店(§8.3、§8.5) ----
+
+    UnitTemplate:
+      type: object
+      description: 户型模板。§8.3 t_unit_template
+      required: [id, name]
+      properties:
+        id: { type: integer }
+        name: { type: string }
+        roomCount: { type: integer, description: 居室数 }
+        areaRange: { type: string, description: "面积区间,例:80-100㎡" }
+        structure: { type: string, description: "户型结构,例:三室两厅" }
+        layout: { $ref: '#/components/schemas/LayoutModel' }
+        status: { $ref: '#/components/schemas/ProductStatus' }
+
+    Store:
+      type: object
+      description: 门店信息(单店单条)。§8.5 t_store、§7.6
+      required: [name, address, phone]
+      properties:
+        id: { type: integer }
+        name: { type: string }
+        address: { type: string }
+        phone: { type: string, example: "010-00000000" }
+        mapUrl: { type: string, description: 地图/导航链接, nullable: true }
+
+    # ---- 对话(§8.6) ----
+
+    ChatSession:
+      type: object
+      description: 对话会话。§8.6 t_chat_session
+      required: [id]
+      properties:
+        id: { type: string }
+        title: { type: string }
+        createdAt: { type: string, format: date-time }
+
+    ChatMessage:
+      type: object
+      description: 对话消息。§8.6 t_chat_message
+      required: [role, content]
+      properties:
+        id: { type: integer }
+        role: { type: string, enum: [user, assistant] }
+        content: { type: string }
+        refs:
+          type: array
+          description: 引用的 SKU 列表,支持"一键采纳"
+          items: { $ref: '#/components/schemas/SkuRef' }
+        createdAt: { type: string, format: date-time }
+
+    # ---- 后台配置与账号(§8.5、§4.4) ----
+
+    FurnishStyle:
+      type: object
+      description: 陈设风格配置(空间 × 风格 矩阵)。§8.5 t_furnish_style
+      required: [id, space, style, prompt]
+      properties:
+        id: { type: integer }
+        space: { $ref: '#/components/schemas/SpaceType' }
+        style: { $ref: '#/components/schemas/StyleType' }
+        prompt: { type: string, description: 陈设提示词 }
+        coverImage: { type: string }
+        status: { $ref: '#/components/schemas/ProductStatus' }
+
+    QuoteParam:
+      type: object
+      description: |
+        报价参数。§8.5 t_quote_param
+        量纲约定(D-19):aux_unit_price 单位为**元/㎡**;loss_rate_min/loss_rate_max 为**小数**
+        (0.06 表示 6%)。§8.8、§10.6⑤
+      required: [id, paramKey, paramValue]
+      properties:
+        id: { type: integer }
+        paramKey: { type: string, enum: [aux_unit_price, loss_rate_min, loss_rate_max] }
+        paramValue: { type: number, format: float }
+        remark: { type: string, nullable: true }
+
+    Dict:
+      type: object
+      description: |
+        数据字典项(后台可配置枚举)。§8.5 t_dict。
+        用于空间类型(space)/ 装修风格(style)等**非硬编码**枚举,前端展示与提交均以此为准。
+        C 端只读 `GET /dicts`;B 端维护 `/admin/dicts`。D-14 定稿。
+      x-source: "架构 §8.5 t_dict、§10.1、§10.2、§10.3"
+      required: [type, key, label]
+      properties:
+        id: { type: integer }
+        type:
+          type: string
+          description: 字典类型,如 space / style
+          enum: [space, style]
+          example: space
+        key: { type: string, description: "存储键(对外提交值),如 living_room", example: living_room }
+        label: { type: string, description: "展示名,如 客厅", example: 客厅 }
+        sort: { type: integer, description: "排序,升序" }
+        status:
+          type: string
+          enum: [enabled, disabled]
+          description: 启停;C 端仅返回 enabled 项
+
+    Role:
+      type: string
+      description: 后台角色。§4.4
+      enum: [super_admin, operator, editor]
+
+    AdminUserView:
+      type: object
+      description: 后台账号(对外视图,不含密码)。§8.1 t_admin_user
+      required: [id, username, role]
+      properties:
+        id: { type: integer }
+        username: { type: string }
+        role: { $ref: '#/components/schemas/Role' }
+        status: { type: string, enum: [enabled, disabled] }
+        createdAt: { type: string, format: date-time }
+
+    OperationLogView:
+      type: object
+      description: 后台操作日志。§8.1 t_operation_log
+      required: [id, action, createdAt]
+      properties:
+        id: { type: integer }
+        adminId: { type: integer }
+        action: { type: string }
+        targetType: { type: string }
+        targetId: { type: string }
+        detail: { type: object, additionalProperties: true, description: 操作详情(JSON) }
+        ip: { type: string }
+        createdAt: { type: string, format: date-time }
+
+  responses:
+    Unauthorized:
+      description: 未登录 / 令牌无效或过期(真实 HTTP 401,同时响应体带业务码 10002/10003)。§10.1、§10.5
+      content:
+        application/json:
+          schema: { $ref: '#/components/schemas/ApiResponse' }
+    Forbidden:
+      description: 无权限(真实 HTTP 403,响应体业务码 10004)。§10.5、§4.4
+      content:
+        application/json:
+          schema: { $ref: '#/components/schemas/ApiResponse' }

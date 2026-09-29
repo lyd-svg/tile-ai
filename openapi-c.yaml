@@ -1,0 +1,927 @@
+openapi: 3.0.3
+
+info:
+  title: 瓷砖选购 AI 效果图与报价系统 — C 端契约(业主)
+  version: 0.1.0
+  description: |
+    面向 C 端(业主)的对外 API。基路径 /api/v1(§10.1)。
+    统一响应体、分页、枚举、数据结构见 openapi-common.yaml(需与本文件同目录)。
+    鉴权:默认免登录;需登录接口以 security: cookieAuth 标注(§10.2)。
+
+    约定的"TODO"标记:`x-todo` 表示上游未定义、由契约作者推断,待评审。
+
+servers:
+  - url: /api/v1
+    description: 经 Nginx 反向代理至 Java 业务核
+
+tags:
+  - name: auth
+    description: 注册 / 登录 / 账号
+  - name: product
+    description: 产品库(路径 A)
+  - name: combo
+    description: 推荐搭配(路径 B)
+  - name: agent
+    description: AI 咨询(路径 C)
+  - name: layout
+    description: 户型模板 / 解析
+  - name: generate
+    description: 效果图生成
+  - name: quote
+    description: 报价
+  - name: plan
+    description: 我的方案
+  - name: share
+    description: 分享(公开只读)
+  - name: store
+    description: 门店
+  - name: dict
+    description: 数据字典(空间 / 风格等,后台可配置)
+
+paths:
+
+  # ==========================================================
+  # 账户与鉴权(§5.1、§10.2、§11.1)
+  # ==========================================================
+  /auth/sms/send:
+    post:
+      tags: [auth]
+      summary: 发送短信验证码
+      description: 生成验证码并下发(60s 有效、同号/同 IP 限频)。§10.2、§15.6
+      security: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [phone]
+              properties:
+                phone: { type: string, example: "13800000000" }
+      responses:
+        '200':
+          description: 发送结果;失败码 20002(发送过于频繁)、10001(手机号非法)
+          content:
+            application/json:
+              schema: { $ref: './openapi-common.yaml#/components/schemas/ApiResponse' }
+
+  /auth/login/sms:
+    post:
+      tags: [auth]
+      summary: 验证码登录(未注册自动进入注册流程)
+      description: |
+        校验验证码。老用户 → Set-Cookie(access_token + refresh_token),返回用户信息;
+        新手机号 → 返回 needSetPassword=true + 一次性临时令牌(10 分钟),**不下发任何 Cookie**。§11.1
+      security: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [phone, code]
+              properties:
+                phone: { type: string }
+                code: { type: string }
+      responses:
+        '200':
+          description: 登录 / 待设密码(失败码 20001 验证码错误或过期)
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: './openapi-common.yaml#/components/schemas/ApiResponse'
+                  - type: object
+                    properties:
+                      data: { $ref: '#/components/schemas/LoginSmsData' }
+
+  /auth/register/set-password:
+    post:
+      tags: [auth]
+      summary: 完成注册设置密码
+      description: 以验证码登录下发的临时令牌鉴权;设置 6–20 位密码(BCrypt 存储),创建用户并下发 Cookie。§10.2、§11.1
+      security:
+        - tempToken: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [password]
+              properties:
+                password: { type: string, minLength: 6, maxLength: 20, example: "abc123456" }
+      responses:
+        '200':
+          description: 注册成功(失败码 20004 密码格式不合规)
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: './openapi-common.yaml#/components/schemas/ApiResponse'
+                  - type: object
+                    properties:
+                      data: { $ref: './openapi-common.yaml#/components/schemas/UserInfo' }
+
+  /auth/login/password:
+    post:
+      tags: [auth]
+      summary: 手机号 + 密码登录
+      description: 校验通过下发 Cookie。§10.2、§11.1
+      security: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [phone, password]
+              properties:
+                phone: { type: string }
+                password: { type: string }
+      responses:
+        '200':
+          description: 登录结果(失败码 20005 账号或密码错误)
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: './openapi-common.yaml#/components/schemas/ApiResponse'
+                  - type: object
+                    properties:
+                      data: { $ref: './openapi-common.yaml#/components/schemas/UserInfo' }
+
+  /auth/password:
+    post:
+      tags: [auth]
+      summary: 修改密码
+      description: 登录后修改密码。§10.2
+      security:
+        - cookieAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [oldPassword, newPassword]
+              properties:
+                oldPassword: { type: string }
+                newPassword: { type: string, minLength: 6, maxLength: 20 }
+      responses:
+        '200':
+          description: 修改结果(失败码 20004、20005)
+          content:
+            application/json:
+              schema: { $ref: './openapi-common.yaml#/components/schemas/ApiResponse' }
+
+  /auth/logout:
+    post:
+      tags: [auth]
+      summary: 退出登录
+      description: 清除登录态(refresh 加黑名单 / 清 Cookie)。§10.2
+      security:
+        - cookieAuth: []
+      responses:
+        '200':
+          description: 退出结果
+          content:
+            application/json:
+              schema: { $ref: './openapi-common.yaml#/components/schemas/ApiResponse' }
+
+  /auth/refresh:
+    post:
+      tags: [auth]
+      summary: 刷新访问令牌
+      description: |
+        以 refresh_token Cookie 换取新的 access_token(refresh_token 的 Path 收窄至 /api/v1/auth)。
+        触发场景:错误码 10003 令牌过期。§10.1
+      security: []
+      x-todo: "§10.1 提及 refresh_token 与 10003,但 §10.2 接口清单**未列出刷新接口**;本路径与方法为推断,待确认"
+      responses:
+        '200':
+          description: 刷新结果(Set-Cookie 新 access_token)
+          content:
+            application/json:
+              schema: { $ref: './openapi-common.yaml#/components/schemas/ApiResponse' }
+
+  # ==========================================================
+  # 产品库(路径 A,§5.2.1)
+  # ==========================================================
+  /products:
+    get:
+      tags: [product]
+      summary: 产品库筛选 / 搜索
+      description: 按花色、材质、规格、风格、价格区间筛选;按名称/编号搜索。§5.2.1、§10.2
+      security: []
+      parameters:
+        - { name: keyword, in: query, required: false, schema: { type: string }, description: 名称/编号搜索 }
+        - { name: material, in: query, required: false, schema: { type: string }, description: 材质 }
+        - { name: colorPattern, in: query, required: false, schema: { type: string }, description: 花色/纹理 }
+        - { name: spec, in: query, required: false, schema: { type: string }, description: 规格 }
+        - { name: style, in: query, required: false, schema: { type: string }, description: 风格标签 }
+        - { name: space, in: query, required: false, schema: { type: string }, description: 适用空间 }
+        - { name: priceMin, in: query, required: false, schema: { type: number }, description: 价格区间下限(元/㎡) }
+        - { name: priceMax, in: query, required: false, schema: { type: number }, description: 价格区间上限(元/㎡) }
+        - { $ref: './openapi-common.yaml#/components/parameters/PageParam' }
+        - { $ref: './openapi-common.yaml#/components/parameters/SizeParam' }
+      x-todo: "§10.2 仅一句'筛选/搜索',具体 query 参数名未定义;以上为推断"
+      responses:
+        '200':
+          description: 列表
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: './openapi-common.yaml#/components/schemas/ApiResponse'
+                  - type: object
+                    properties:
+                      data:
+                        allOf:
+                          - $ref: './openapi-common.yaml#/components/schemas/PageData'
+                          - type: object
+                            properties:
+                              list:
+                                type: array
+                                items: { $ref: './openapi-common.yaml#/components/schemas/Sku' }
+
+  /products/{sku}:
+    get:
+      tags: [product]
+      summary: 产品详情
+      description: 高清图、规格、材质、单价、适用空间。§5.2.1、§10.2
+      security: []
+      parameters:
+        - { name: sku, in: path, required: true, schema: { type: string } }
+      responses:
+        '200':
+          description: 详情(失败码 30001 不存在或已下架)
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: './openapi-common.yaml#/components/schemas/ApiResponse'
+                  - type: object
+                    properties:
+                      data: { $ref: './openapi-common.yaml#/components/schemas/Sku' }
+
+  # ==========================================================
+  # 推荐搭配(路径 B,§5.2.2)
+  # ==========================================================
+  /combos:
+    get:
+      tags: [combo]
+      summary: 推荐搭配列表
+      description: 按空间/风格展示成套搭配(人工维护)。§5.2.2、§10.2
+      security: []
+      parameters:
+        - { name: space, in: query, required: false, schema: { type: string } }
+        - { name: style, in: query, required: false, schema: { type: string } }
+        - { $ref: './openapi-common.yaml#/components/parameters/PageParam' }
+        - { $ref: './openapi-common.yaml#/components/parameters/SizeParam' }
+      responses:
+        '200':
+          description: 列表
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: './openapi-common.yaml#/components/schemas/ApiResponse'
+                  - type: object
+                    properties:
+                      data:
+                        allOf:
+                          - $ref: './openapi-common.yaml#/components/schemas/PageData'
+                          - type: object
+                            properties:
+                              list:
+                                type: array
+                                items: { $ref: './openapi-common.yaml#/components/schemas/Combo' }
+
+  /combos/{id}:
+    get:
+      tags: [combo]
+      summary: 搭配详情
+      description: 含 SKU 清单与各 SKU 部位、参考报价区间。§10.2
+      security: []
+      parameters:
+        - { name: id, in: path, required: true, schema: { type: integer } }
+      responses:
+        '200':
+          description: 详情(失败码 30001)
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: './openapi-common.yaml#/components/schemas/ApiResponse'
+                  - type: object
+                    properties:
+                      data: { $ref: './openapi-common.yaml#/components/schemas/Combo' }
+
+  # ==========================================================
+  # AI 咨询(路径 C,§5.2.3、§11.3)
+  # ==========================================================
+  /agent/chat:
+    post:
+      tags: [agent]
+      summary: AI 咨询(SSE 流式)
+      description: |
+        对话式瓷砖咨询,基于产品库真实数据(RAG)。**需登录**。
+        智能体仅输出搭配建议 + 搭配方案(refs),**不返回效果图、不返回报价**;前端据 refs 提供
+        "一键采纳、点击跳转「户型录入」页"。§5.2.3、§10.2、§10.6③
+      security:
+        - cookieAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [message]
+              properties:
+                sessionId:
+                  type: string
+                  description: |
+                    会话 ID;首次可省略,由服务端创建并**在流的首个事件下发**
+                    `data: {"sessionId":"s_..."}`(D-7 裁决)。
+                message: { type: string, example: "卫生间浅灰砖配什么墙砖?" }
+      responses:
+        '200':
+          description: |
+            SSE 事件:`data: {"sessionId":"..."}`(仅首帧,D-7) → 若干 `data: {"delta":"..."}`
+            → 至多一个 `data: {"refs":[...]}` → `data: [DONE]`。失败码 50001(AI 咨询超出范围)。
+          content:
+            text/event-stream:
+              schema: { type: string }
+        '401':
+          $ref: './openapi-common.yaml#/components/responses/Unauthorized'
+      x-todo: "D-7 裁决:sessionId 由服务端在流的首个事件下发(见请求体 sessionId 说明)"
+
+  /agent/chat/sessions:
+    get:
+      tags: [agent]
+      summary: 对话记录列表
+      description: 需登录。§10.2
+      security:
+        - cookieAuth: []
+      parameters:
+        - { $ref: './openapi-common.yaml#/components/parameters/PageParam' }
+        - { $ref: './openapi-common.yaml#/components/parameters/SizeParam' }
+      responses:
+        '200':
+          description: 列表
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: './openapi-common.yaml#/components/schemas/ApiResponse'
+                  - type: object
+                    properties:
+                      data:
+                        allOf:
+                          - $ref: './openapi-common.yaml#/components/schemas/PageData'
+                          - type: object
+                            properties:
+                              list:
+                                type: array
+                                items: { $ref: './openapi-common.yaml#/components/schemas/ChatSession' }
+        '401':
+          $ref: './openapi-common.yaml#/components/responses/Unauthorized'
+
+  /agent/chat/sessions/{id}:
+    get:
+      tags: [agent]
+      summary: 对话记录详情
+      description: 需登录。§10.2
+      security:
+        - cookieAuth: []
+      parameters:
+        - { name: id, in: path, required: true, schema: { type: string } }
+      responses:
+        '200':
+          description: 会话与消息(失败码 30001)
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: './openapi-common.yaml#/components/schemas/ApiResponse'
+                  - type: object
+                    properties:
+                      data:
+                        type: object
+                        properties:
+                          session: { $ref: './openapi-common.yaml#/components/schemas/ChatSession' }
+                          messages:
+                            type: array
+                            items: { $ref: './openapi-common.yaml#/components/schemas/ChatMessage' }
+        '401':
+          $ref: './openapi-common.yaml#/components/responses/Unauthorized'
+
+  # ==========================================================
+  # 户型(§5.3)
+  # ==========================================================
+  /layout/templates:
+    get:
+      tags: [layout]
+      summary: 户型模板列表
+      description: 支持按房间数 + 面积区间 + 户型结构筛选。§5.3.1、§10.2
+      security: []
+      parameters:
+        - { name: roomCount, in: query, required: false, schema: { type: integer } }
+        - { name: areaRange, in: query, required: false, schema: { type: string } }
+        - { name: structure, in: query, required: false, schema: { type: string } }
+        - { $ref: './openapi-common.yaml#/components/parameters/PageParam' }
+        - { $ref: './openapi-common.yaml#/components/parameters/SizeParam' }
+      responses:
+        '200':
+          description: 列表
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: './openapi-common.yaml#/components/schemas/ApiResponse'
+                  - type: object
+                    properties:
+                      data:
+                        allOf:
+                          - $ref: './openapi-common.yaml#/components/schemas/PageData'
+                          - type: object
+                            properties:
+                              list:
+                                type: array
+                                items: { $ref: './openapi-common.yaml#/components/schemas/UnitTemplate' }
+
+  /layout/parse:
+    post:
+      tags: [layout]
+      summary: 自然语言/参数 → 结构化户型
+      description: |
+        将自然语言或表单参数解析为结构化户型数据模型。解析详情见内部 /internal/agent/parse-layout。
+        户型录入完成后不做人工校准。§5.3、§10.2
+      security: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                text: { type: string, example: "卫生间 2m×1.8m" }
+                params: { $ref: './openapi-common.yaml#/components/schemas/LayoutModel' }
+      responses:
+        '200':
+          description: 解析结果
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: './openapi-common.yaml#/components/schemas/ApiResponse'
+                  - type: object
+                    properties:
+                      data: { $ref: './openapi-common.yaml#/components/schemas/LayoutModel' }
+      x-todo: "§10.2 仅一句说明;入参/出参字段为推断。解析失败按 10001(参数校验失败)返回(D-6 裁决)"
+
+  # ==========================================================
+  # 效果图生成(§5.4、§11.2)
+  # ==========================================================
+  /generate:
+    post:
+      tags: [generate]
+      summary: 提交效果图生成任务(异步)
+      description: |
+        **需登录**。提交单空间生成任务:部位映射 + 风格 + 角度。
+        **部位可为部分(至少 1 个)**:缺失的**地面/墙面**由后端在生成前 AI 自动补齐(补齐项标注 source=ai),
+        再出图并计入报价;缺失的部位不含"局部"(不强制补齐)。§5.2.4、§10.2、§10.6①、§11.2
+      security:
+        - cookieAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/GenerateRequest' }
+      responses:
+        '200':
+          description: 受理结果(taskId);失败码 10001(校验,至少 1 个部位)、40004(部位补齐失败)、40002(生成服务繁忙)
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: './openapi-common.yaml#/components/schemas/ApiResponse'
+                  - type: object
+                    properties:
+                      data: { $ref: '#/components/schemas/GenerateAccepted' }
+        '401':
+          $ref: './openapi-common.yaml#/components/responses/Unauthorized'
+
+  /generate/{taskId}:
+    get:
+      tags: [generate]
+      summary: 查询任务进度 / 结果(轮询)
+      description: |
+        **需登录**。一期以 2s 间隔轮询;固定 progress(0–100)与任务状态机
+        (pending → running → success / failed),SSE 作为二期纯增量能力接入。§6.3、§10.2、§10.6②
+      security:
+        - cookieAuth: []
+      parameters:
+        - { name: taskId, in: path, required: true, schema: { type: string } }
+      responses:
+        '200':
+          description: 进度 / 结果(失败码 40003 任务不存在、40001 生成失败)
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: './openapi-common.yaml#/components/schemas/ApiResponse'
+                  - type: object
+                    properties:
+                      data: { $ref: '#/components/schemas/TaskProgress' }
+        '401':
+          $ref: './openapi-common.yaml#/components/responses/Unauthorized'
+
+  # ==========================================================
+  # 报价(§5.5、§8.8)
+  # ==========================================================
+  /quote/calc:
+    post:
+      tags: [quote]
+      summary: 报价预览(按部位)
+      description: |
+        报价单页预览。报价仅含瓷砖材料费 + 辅料及损耗,不含人工/物流。§5.5、§10.2、§10.6⑤。
+        一致性评审 A1:对话智能体不调用、不口播(问价 → 50001)。
+      security: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/QuoteCalcRequest' }
+      responses:
+        '200':
+          description: 报价结果
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: './openapi-common.yaml#/components/schemas/ApiResponse'
+                  - type: object
+                    properties:
+                      data: { $ref: './openapi-common.yaml#/components/schemas/QuoteResult' }
+
+  # ==========================================================
+  # 我的方案(§5.6、§11.4)
+  # ==========================================================
+  /plans:
+    get:
+      tags: [plan]
+      summary: 我的方案列表
+      description: 卡片信息:名称、封面、时间、生成空间、瓷砖摘要、报价总额。需登录。§5.6
+      security:
+        - cookieAuth: []
+      parameters:
+        - { $ref: './openapi-common.yaml#/components/parameters/PageParam' }
+        - { $ref: './openapi-common.yaml#/components/parameters/SizeParam' }
+      responses:
+        '200':
+          description: 列表
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: './openapi-common.yaml#/components/schemas/ApiResponse'
+                  - type: object
+                    properties:
+                      data:
+                        allOf:
+                          - $ref: './openapi-common.yaml#/components/schemas/PageData'
+                          - type: object
+                            properties:
+                              list:
+                                type: array
+                                items: { $ref: './openapi-common.yaml#/components/schemas/PlanSummary' }
+        '401':
+          $ref: './openapi-common.yaml#/components/responses/Unauthorized'
+
+  /plans/{id}:
+    get:
+      tags: [plan]
+      summary: 方案详情
+      description: 方案快照(部位砖/风格/户型)。§5.6、§11.4
+      security:
+        - cookieAuth: []
+      parameters:
+        - { name: id, in: path, required: true, schema: { type: integer } }
+      responses:
+        '200':
+          description: 详情(失败码 30001)
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: './openapi-common.yaml#/components/schemas/ApiResponse'
+                  - type: object
+                    properties:
+                      data: { $ref: './openapi-common.yaml#/components/schemas/PlanDetail' }
+        '401':
+          $ref: './openapi-common.yaml#/components/responses/Unauthorized'
+    patch:
+      tags: [plan]
+      summary: 重命名方案
+      description: §5.6、§10.2
+      security:
+        - cookieAuth: []
+      parameters:
+        - { name: id, in: path, required: true, schema: { type: integer } }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [name]
+              properties:
+                name: { type: string }
+      responses:
+        '200':
+          description: 结果
+          content:
+            application/json:
+              schema: { $ref: './openapi-common.yaml#/components/schemas/ApiResponse' }
+        '401':
+          $ref: './openapi-common.yaml#/components/responses/Unauthorized'
+    delete:
+      tags: [plan]
+      summary: 删除方案
+      description: 二次确认在前端;"删除"在后端记录(逻辑删除)。§5.6、§10.2
+      security:
+        - cookieAuth: []
+      parameters:
+        - { name: id, in: path, required: true, schema: { type: integer } }
+      responses:
+        '200':
+          description: 结果
+          content:
+            application/json:
+              schema: { $ref: './openapi-common.yaml#/components/schemas/ApiResponse' }
+        '401':
+          $ref: './openapi-common.yaml#/components/responses/Unauthorized'
+
+  /plans/{id}/copy:
+    post:
+      tags: [plan]
+      summary: 另存为
+      description: 复制为新方案,返回新 planId。§5.6、§11.4
+      security:
+        - cookieAuth: []
+      parameters:
+        - { name: id, in: path, required: true, schema: { type: integer } }
+      responses:
+        '200':
+          description: 新方案 ID
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: './openapi-common.yaml#/components/schemas/ApiResponse'
+                  - type: object
+                    properties:
+                      data:
+                        type: object
+                        properties:
+                          planId: { type: integer }
+        '401':
+          $ref: './openapi-common.yaml#/components/responses/Unauthorized'
+
+  /plans/{id}/share:
+    post:
+      tags: [plan]
+      summary: 生成分享链接 / 二维码
+      description: |
+        生成公开只读分享入口(shareToken ≥128 bit,支持失效)。§5.6、§10.2、§13.5
+      security:
+        - cookieAuth: []
+      parameters:
+        - { name: id, in: path, required: true, schema: { type: integer } }
+      responses:
+        '200':
+          description: 分享信息
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: './openapi-common.yaml#/components/schemas/ApiResponse'
+                  - type: object
+                    properties:
+                      data: { $ref: '#/components/schemas/ShareResult' }
+        '401':
+          $ref: './openapi-common.yaml#/components/responses/Unauthorized'
+    delete:
+      tags: [plan]
+      summary: 废除分享链接
+      description: 使该方案的 shareToken 失效(§13.5"支持失效与访问范围控制")。D-17 裁决补充。
+      security:
+        - cookieAuth: []
+      parameters:
+        - { name: id, in: path, required: true, schema: { type: integer } }
+      responses:
+        '200':
+          description: 结果
+          content:
+            application/json:
+              schema: { $ref: './openapi-common.yaml#/components/schemas/ApiResponse' }
+        '401':
+          $ref: './openapi-common.yaml#/components/responses/Unauthorized'
+
+  /plans/{id}/recalc:
+    post:
+      tags: [plan]
+      summary: 按当前价格重算报价
+      description: |
+        **无请求体** —— 部位/面积/开口取自方案快照,不接受前端传参(否则可绕过 /quote/calc 的参数校验)。
+        成功后覆盖方案 parts/quote 快照、刷新 rules_snapshot、quoteExpired 置回 false。§15.7
+      security:
+        - cookieAuth: []
+      parameters:
+        - { name: id, in: path, required: true, schema: { type: integer } }
+      responses:
+        '200':
+          description: 重算后的报价
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: './openapi-common.yaml#/components/schemas/ApiResponse'
+                  - type: object
+                    properties:
+                      data: { $ref: './openapi-common.yaml#/components/schemas/QuoteResult' }
+        '401':
+          $ref: './openapi-common.yaml#/components/responses/Unauthorized'
+
+  # ==========================================================
+  # 分享 / 门店(公开,§5.6、§5.7)
+  # ==========================================================
+  /share/{token}:
+    get:
+      tags: [share]
+      summary: 分享页(公开只读)
+      description: 凭 shareToken 访问方案快照(只读)。§10.2
+      security: []
+      parameters:
+        - { name: token, in: path, required: true, schema: { type: string } }
+      responses:
+        '200':
+          description: 方案快照(失败码 30001 token 无效或已失效)
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: './openapi-common.yaml#/components/schemas/ApiResponse'
+                  - type: object
+                    properties:
+                      data: { $ref: './openapi-common.yaml#/components/schemas/PlanDetail' }
+
+  /store:
+    get:
+      tags: [store]
+      summary: 门店信息(单店)
+      description: 门店名称、地址、联系电话(可用地图/导航链接),引导线下成交。§5.6、§10.2
+      security: []
+      responses:
+        '200':
+          description: 门店信息
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: './openapi-common.yaml#/components/schemas/ApiResponse'
+                  - type: object
+                    properties:
+                      data: { $ref: './openapi-common.yaml#/components/schemas/Store' }
+
+  /dicts:
+    get:
+      tags: [dict]
+      summary: 数据字典查询(空间类型 / 风格等)
+      description: |
+        返回后台可配置的枚举字典(默认 `type=space`)。前端下拉、提交校验均以此为准,**不硬编码**。
+        仅返回 `status=enabled` 项,按 `sort` 升序。§8.5 t_dict、§10.1、§10.2。D-14 定稿。
+      security: []
+      parameters:
+        - name: type
+          in: query
+          required: false
+          schema: { type: string, enum: [space, style] }
+          description: 字典类型;缺省返回全部类型
+      responses:
+        '200':
+          description: 字典项列表
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: './openapi-common.yaml#/components/schemas/ApiResponse'
+                  - type: object
+                    properties:
+                      data:
+                        type: array
+                        items: { $ref: './openapi-common.yaml#/components/schemas/Dict' }
+
+components:
+  # 与 openapi-common.yaml 保持同步(F-4,见 openapi-verification.md §8.4)。
+  # OpenAPI 要求 securitySchemes 必须在本文档内声明,无法跨文档 $ref。
+  securitySchemes:
+    cookieAuth:
+      type: apiKey
+      in: cookie
+      name: access_token
+      description: |
+        登录态由服务端 `Set-Cookie` 下发 `HttpOnly` Cookie(access_token 2h + refresh_token 14d,
+        refresh_token 的 Path 收窄至 /api/v1/auth)。不使用 Authorization 头,令牌不进响应体。§10.1
+    tempToken:
+      type: http
+      scheme: bearer
+      description: 注册临时令牌(一次性,10 分钟);设置密码接口以此鉴权。§10.1
+  schemas:
+
+    LoginSmsData:
+      type: object
+      description: 验证码登录返回数据(§11.1)。老用户返回 user;新手机号返回 needSetPassword + tempToken。
+      properties:
+        needSetPassword: { type: boolean, description: 是否为新手机号、需先设置密码 }
+        tempToken: { type: string, nullable: true, description: 注册临时令牌(仅 needSetPassword=true 时返回) }
+        user: { $ref: './openapi-common.yaml#/components/schemas/UserInfo' }
+      x-todo: "旧/新用户两分支的字段命名(needSetPassword/tempToken)依 §10.2 描述推断"
+
+    GenerateRequest:
+      type: object
+      description: 提交生成任务请求。§10.6①、§11.2
+      required: [space, layout, parts]
+      properties:
+        space: { $ref: './openapi-common.yaml#/components/schemas/SpaceType' }
+        style: { $ref: './openapi-common.yaml#/components/schemas/StyleType' }
+        angles: { type: integer, minimum: 1, description: 生成角度数。默认 1(单张);>1 为多角度。§5.4 }
+        planId:
+          type: integer
+          nullable: true
+          description: 重新编辑时携带:覆盖原方案(§11.4 覆盖分支);另存为走 /plans/{id}/copy 后带新 id。
+        layout: { $ref: './openapi-common.yaml#/components/schemas/LayoutModel' }
+        parts:
+          type: array
+          minItems: 1
+          description: 部位映射,**允许只传部分部位(至少 1 个)**;缺失的地面/墙面由后端 AI 补齐(§10.6①)
+          items: { $ref: './openapi-common.yaml#/components/schemas/PartSelection' }
+      x-todo: "§10.6① 示例无 planId,但 §11.4 时序显示覆盖原方案时携带 planId;此处按需补充,待确认字段名"
+
+    GenerateAccepted:
+      type: object
+      description: 生成任务受理结果。§10.6①
+      required: [taskId, status]
+      properties:
+        taskId: { type: string, example: "g_1027f3" }
+        status: { $ref: './openapi-common.yaml#/components/schemas/TaskStatus' }
+
+    TaskProgress:
+      type: object
+      description: 任务进度 / 结果。§10.6②、§6.3
+      required: [taskId, status]
+      properties:
+        taskId: { type: string }
+        status: { $ref: './openapi-common.yaml#/components/schemas/TaskStatus' }
+        progress: { type: integer, minimum: 0, maximum: 100, description: 0–100;SSE 二期复用同字段 }
+        planId: { type: integer, nullable: true, description: 成功后方案 id }
+        images:
+          type: array
+          description: 成功后可用
+          items: { $ref: './openapi-common.yaml#/components/schemas/PlanImage' }
+        parts:
+          type: array
+          description: 含 AI 补齐后的完整部位(source=ai 标注)。§11.2
+          items: { $ref: './openapi-common.yaml#/components/schemas/PartSelection' }
+
+    QuoteCalcRequest:
+      type: object
+      description: 报价预览请求。§10.6⑤
+      required: [space, parts]
+      properties:
+        space: { $ref: './openapi-common.yaml#/components/schemas/SpaceType' }
+        parts:
+          type: array
+          minItems: 1
+          items: { $ref: './openapi-common.yaml#/components/schemas/PartSelection' }
+        openings:
+          type: array
+          description: 各部位开口(用于有效面积扣减)
+          items:
+            type: object
+            properties:
+              part: { $ref: './openapi-common.yaml#/components/schemas/Part' }
+              openings:
+                type: array
+                items: { $ref: './openapi-common.yaml#/components/schemas/Opening' }
+
+    ShareResult:
+      type: object
+      description: 分享结果。§10.2
+      properties:
+        shareToken: { type: string }
+        shareUrl: { type: string, description: 分享链接 }
+        qrCodeUrl: { type: string, description: 二维码图片 URL }
+      x-todo: "§10.2 仅'生成分享链接/二维码',返回字段结构未定义"

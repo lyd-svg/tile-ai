@@ -1,0 +1,19 @@
+{
+  "name": "tools",
+  "version": "1.0.0",
+  "description": "",
+  "main": "index.js",
+  "scripts": {
+    "test": "echo \"Error: no test specified\" && exit 1"
+  },
+  "keywords": [],
+  "author": "",
+  "license": "ISC",
+  "type": "commonjs",
+  "dependencies": {
+    "@apidevtools/swagger-parser": "^13.1.0",
+    "@redocly/cli": "^2.55.0",
+    "@stoplight/spectral-cli": "^6.16.3",
+    "@stoplight/spectral-rulesets": "^1.22.7"
+  }
+}

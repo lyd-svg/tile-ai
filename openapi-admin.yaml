@@ -1,0 +1,954 @@
+openapi: 3.0.3
+
+info:
+  title: 瓷砖选购 AI 效果图与报价系统 — B 端契约(后台运营)
+  version: 0.1.0
+  description: |
+    面向后台运营端的 API。基路径 /api/v1/admin(§10.1)。
+    均需后台会话 + RBAC(§10.3、§4.4):每个接口标注所需权限点;super_admin 拥有 *。
+    所有写操作记入 t_operation_log(操作人/动作/目标/时间/IP)。§4.4
+    统一响应体、分页、枚举、数据结构见 openapi-common.yaml。
+
+    说明:§10.3 **仅给出资源前缀**(products/combos/templates/furnish/quote-params/store/accounts/logs),
+    未给方法、子路径与字段。本文件按完整 RESTful CRUD 展开,并保留 x-todo 标注推断项。
+
+    约定的"TODO"标记:`x-todo` 表示上游未定义、由契约作者推断,待评审。
+
+servers:
+  - url: /api/v1/admin
+    description: 经 Nginx 反向代理至 Java 业务核
+
+tags:
+  - name: admin-auth
+    description: 后台登录
+  - name: products
+    description: 产品库管理(§5.7、§7.1)
+  - name: combos
+    description: 推荐搭配维护(§5.7、§7.2)
+  - name: templates
+    description: 户型模板维护(§5.7)
+  - name: furnish
+    description: 陈设风格配置(§5.7)
+  - name: quote-params
+    description: 报价参数维护(§5.5、§5.7)
+  - name: dicts
+    description: 空间 / 风格字典维护(§5.7、§8.5 t_dict)
+  - name: store
+    description: 门店信息维护(§5.7)
+  - name: accounts
+    description: 账号与权限(§4.4)
+  - name: logs
+    description: 操作日志(§4.4)
+
+security:
+  - cookieAuth: []
+
+paths:
+
+  # ==========================================================
+  # 后台登录(§10.3 未列,由 §4.4"后台会话"推断)
+  # ==========================================================
+  /auth/login:
+    post:
+      tags: [admin-auth]
+      summary: 后台登录
+      description: 使用 t_admin_user 用户名 + 密码登录,建立后台会话。
+      security: []
+      x-todo: "§10.3/§10.2 未列出后台登录接口;由 §4.4'均需后台会话'推断,路径与字段待确认"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [username, password]
+              properties:
+                username: { type: string }
+                password: { type: string }
+      responses:
+        '200':
+          description: 登录结果(失败码 20005)
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: './openapi-common.yaml#/components/schemas/ApiResponse'
+                  - type: object
+                    properties:
+                      data: { $ref: './openapi-common.yaml#/components/schemas/AdminUserView' }
+
+  # ==========================================================
+  # 产品库(§5.7、§7.1、§8.7)
+  # ==========================================================
+  /products:
+    get:
+      tags: [products]
+      summary: SKU 列表
+      description: 权限点 product:read。§10.3
+      parameters:
+        - { name: keyword, in: query, required: false, schema: { type: string } }
+        - { name: status, in: query, required: false, schema: { $ref: './openapi-common.yaml#/components/schemas/ProductStatus' } }
+        - { $ref: './openapi-common.yaml#/components/parameters/PageParam' }
+        - { $ref: './openapi-common.yaml#/components/parameters/SizeParam' }
+      responses:
+        '200':
+          description: 列表
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: './openapi-common.yaml#/components/schemas/ApiResponse'
+                  - type: object
+                    properties:
+                      data:
+                        allOf:
+                          - $ref: './openapi-common.yaml#/components/schemas/PageData'
+                          - type: object
+                            properties:
+                              list:
+                                type: array
+                                items: { $ref: './openapi-common.yaml#/components/schemas/Sku' }
+    post:
+      tags: [products]
+      summary: 新增 SKU
+      description: 权限点 product:write。§5.7
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/ProductUpsert' }
+      responses:
+        '200':
+          description: 创建结果(失败码 10001、30002)
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: './openapi-common.yaml#/components/schemas/ApiResponse'
+                  - type: object
+                    properties:
+                      data:
+                        type: object
+                        properties:
+                          id: { type: integer }
+
+  /products/import:
+    post:
+      tags: [products]
+      summary: 批量导入 SKU(异步)
+      description: |
+        上传 Excel/CSV(模板下载见配套接口),返回导入批次 batchId;错误行不写入,生成错误报告供下载。§8.7
+        权限点 product:import。
+      x-todo: "§8.7 明确'Excel/CSV 模板下载';下载模板接口未给路径,暂缺"
+      requestBody:
+        required: true
+        content:
+          multipart/form-data:
+            schema:
+              type: object
+              required: [file, mode]
+              properties:
+                file: { type: string, format: binary }
+                mode:
+                  type: string
+                  description: 导入模式
+                  enum: [upsert, insert_only]
+      responses:
+        '200':
+          description: 受理结果(batchId)
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: './openapi-common.yaml#/components/schemas/ApiResponse'
+                  - type: object
+                    properties:
+                      data: { $ref: '#/components/schemas/ImportAccepted' }
+
+  /products/import/{batchId}:
+    get:
+      tags: [products]
+      summary: 查询批量导入进度 / 结果
+      description: 权限点 product:read。§8.7
+      parameters:
+        - { name: batchId, in: path, required: true, schema: { type: string } }
+      responses:
+        '200':
+          description: 进度与结果(失败码 30001 batch 不存在)
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: './openapi-common.yaml#/components/schemas/ApiResponse'
+                  - type: object
+                    properties:
+                      data: { $ref: '#/components/schemas/ImportStatus' }
+
+  /products/import/template:
+    get:
+      tags: [products]
+      summary: 下载批量导入模板(Excel/CSV)
+      description: 返回导入模板文件,供运营填写后上传(§8.7)。权限点 product:read。D-16 裁决补充。
+      x-todo: "§8.7 提'模板下载',路径与文件类型为推断;建议同时覆盖搭配/户型模板/陈设/报价参数的模板"
+      responses:
+        '200':
+          description: 模板文件流
+          content:
+            application/vnd.openxmlformats-officedocument.spreadsheetml.sheet:
+              schema: { type: string, format: binary }
+            text/csv:
+              schema: { type: string, format: binary }
+
+  /products/{id}:
+    get:
+      tags: [products]
+      summary: SKU 详情
+      description: 权限点 product:read。
+      parameters:
+        - { name: id, in: path, required: true, schema: { type: integer } }
+      responses:
+        '200':
+          description: 详情(失败码 30001)
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: './openapi-common.yaml#/components/schemas/ApiResponse'
+                  - type: object
+                    properties:
+                      data: { $ref: './openapi-common.yaml#/components/schemas/Sku' }
+    put:
+      tags: [products]
+      summary: 编辑 SKU
+      description: 权限点 product:write。
+      parameters:
+        - { name: id, in: path, required: true, schema: { type: integer } }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/ProductUpsert' }
+      responses:
+        '200':
+          description: 结果
+          content:
+            application/json:
+              schema: { $ref: './openapi-common.yaml#/components/schemas/ApiResponse' }
+    delete:
+      tags: [products]
+      summary: 删除 SKU
+      description: 权限点 product:delete。
+      parameters:
+        - { name: id, in: path, required: true, schema: { type: integer } }
+      responses:
+        '200':
+          description: 结果(失败码 30001、30002)
+          content:
+            application/json:
+              schema: { $ref: './openapi-common.yaml#/components/schemas/ApiResponse' }
+
+  /products/{id}/status:
+    patch:
+      tags: [products]
+      summary: 上架 / 下架
+      description: 权限点 product:publish。§5.7
+      parameters:
+        - { name: id, in: path, required: true, schema: { type: integer } }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [status]
+              properties:
+                status: { $ref: './openapi-common.yaml#/components/schemas/ProductStatus' }
+      responses:
+        '200':
+          description: 结果(失败码 30002 状态不允许,如对同款砖重复上下架)
+          content:
+            application/json:
+              schema: { $ref: './openapi-common.yaml#/components/schemas/ApiResponse' }
+
+  # ==========================================================
+  # 推荐搭配(§5.7、§7.2)
+  # ==========================================================
+  /combos:
+    get:
+      tags: [combos]
+      summary: 搭配列表
+      description: 权限点 combo:read。
+      parameters:
+        - { name: space, in: query, required: false, schema: { type: string } }
+        - { name: style, in: query, required: false, schema: { type: string } }
+        - { $ref: './openapi-common.yaml#/components/parameters/PageParam' }
+        - { $ref: './openapi-common.yaml#/components/parameters/SizeParam' }
+      responses:
+        '200':
+          description: 列表
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: './openapi-common.yaml#/components/schemas/ApiResponse'
+                  - type: object
+                    properties:
+                      data:
+                        allOf:
+                          - $ref: './openapi-common.yaml#/components/schemas/PageData'
+                          - type: object
+                            properties:
+                              list:
+                                type: array
+                                items: { $ref: './openapi-common.yaml#/components/schemas/Combo' }
+    post:
+      tags: [combos]
+      summary: 新增搭配
+      description: 权限点 combo:write。
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/ComboUpsert' }
+      responses:
+        '200':
+          description: 创建结果
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: './openapi-common.yaml#/components/schemas/ApiResponse'
+                  - type: object
+                    properties:
+                      data:
+                        type: object
+                        properties:
+                          id: { type: integer }
+
+  /combos/{id}:
+    get:
+      tags: [combos]
+      summary: 搭配详情
+      description: 权限点 combo:read。
+      parameters:
+        - { name: id, in: path, required: true, schema: { type: integer } }
+      responses:
+        '200':
+          description: 详情(失败码 30001)
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: './openapi-common.yaml#/components/schemas/ApiResponse'
+                  - type: object
+                    properties:
+                      data: { $ref: './openapi-common.yaml#/components/schemas/Combo' }
+    put:
+      tags: [combos]
+      summary: 编辑搭配(含关联 SKU/部位)
+      description: 权限点 combo:write。
+      parameters:
+        - { name: id, in: path, required: true, schema: { type: integer } }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/ComboUpsert' }
+      responses:
+        '200':
+          description: 结果
+          content:
+            application/json:
+              schema: { $ref: './openapi-common.yaml#/components/schemas/ApiResponse' }
+    delete:
+      tags: [combos]
+      summary: 删除搭配
+      description: 权限点 combo:delete。
+      parameters:
+        - { name: id, in: path, required: true, schema: { type: integer } }
+      responses:
+        '200':
+          description: 结果
+          content:
+            application/json:
+              schema: { $ref: './openapi-common.yaml#/components/schemas/ApiResponse' }
+
+  # ==========================================================
+  # 户型模板(§5.7、§5.3.1)
+  # ==========================================================
+  /templates:
+    get:
+      tags: [templates]
+      summary: 模板列表
+      description: 权限点 template:read。
+      parameters:
+        - { name: roomCount, in: query, required: false, schema: { type: integer } }
+        - { $ref: './openapi-common.yaml#/components/parameters/PageParam' }
+        - { $ref: './openapi-common.yaml#/components/parameters/SizeParam' }
+      responses:
+        '200':
+          description: 列表
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: './openapi-common.yaml#/components/schemas/ApiResponse'
+                  - type: object
+                    properties:
+                      data:
+                        allOf:
+                          - $ref: './openapi-common.yaml#/components/schemas/PageData'
+                          - type: object
+                            properties:
+                              list:
+                                type: array
+                                items: { $ref: './openapi-common.yaml#/components/schemas/UnitTemplate' }
+    post:
+      tags: [templates]
+      summary: 新增模板
+      description: 权限点 template:write。
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/UnitTemplateUpsert' }
+      responses:
+        '200':
+          description: 创建结果
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: './openapi-common.yaml#/components/schemas/ApiResponse'
+                  - type: object
+                    properties:
+                      data:
+                        type: object
+                        properties:
+                          id: { type: integer }
+
+  /templates/{id}:
+    get:
+      tags: [templates]
+      summary: 模板详情
+      description: 权限点 template:read。
+      parameters:
+        - { name: id, in: path, required: true, schema: { type: integer } }
+      responses:
+        '200':
+          description: 详情(失败码 30001)
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: './openapi-common.yaml#/components/schemas/ApiResponse'
+                  - type: object
+                    properties:
+                      data: { $ref: './openapi-common.yaml#/components/schemas/UnitTemplate' }
+    put:
+      tags: [templates]
+      summary: 编辑模板
+      description: 权限点 template:write。
+      parameters:
+        - { name: id, in: path, required: true, schema: { type: integer } }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/UnitTemplateUpsert' }
+      responses:
+        '200':
+          description: 结果
+          content:
+            application/json:
+              schema: { $ref: './openapi-common.yaml#/components/schemas/ApiResponse' }
+    delete:
+      tags: [templates]
+      summary: 删除模板
+      description: 权限点 template:delete。
+      parameters:
+        - { name: id, in: path, required: true, schema: { type: integer } }
+      responses:
+        '200':
+          description: 结果
+          content:
+            application/json:
+              schema: { $ref: './openapi-common.yaml#/components/schemas/ApiResponse' }
+
+  # ==========================================================
+  # 陈设风格配置(空间 × 风格 矩阵,§5.7、§8.5)
+  # ==========================================================
+  /furnish:
+    get:
+      tags: [furnish]
+      summary: 陈设配置列表
+      description: 权限点 furnish:read。
+      parameters:
+        - { name: space, in: query, required: false, schema: { type: string } }
+        - { name: style, in: query, required: false, schema: { type: string } }
+      responses:
+        '200':
+          description: 列表
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: './openapi-common.yaml#/components/schemas/ApiResponse'
+                  - type: object
+                    properties:
+                      data:
+                        type: object
+                        properties:
+                          list:
+                            type: array
+                            items: { $ref: './openapi-common.yaml#/components/schemas/FurnishStyle' }
+    put:
+      tags: [furnish]
+      summary: 新增/更新陈设配置(按 空间×风格 upsert)
+      description: 权限点 furnish:write。矩阵以 space+style 唯一。
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/FurnishStyleUpsert' }
+      responses:
+        '200':
+          description: 结果
+          content:
+            application/json:
+              schema: { $ref: './openapi-common.yaml#/components/schemas/ApiResponse' }
+
+  /furnish/{id}:
+    delete:
+      tags: [furnish]
+      summary: 删除陈设配置
+      description: 权限点 furnish:delete。
+      parameters:
+        - { name: id, in: path, required: true, schema: { type: integer } }
+      responses:
+        '200':
+          description: 结果
+          content:
+            application/json:
+              schema: { $ref: './openapi-common.yaml#/components/schemas/ApiResponse' }
+
+  # ==========================================================
+  # 报价参数(§5.5、§5.7、§8.5)
+  # ==========================================================
+  /quote-params:
+    get:
+      tags: [quote-params]
+      summary: 报价参数列表
+      description: 权限点 quote-param:read。
+      responses:
+        '200':
+          description: 列表
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: './openapi-common.yaml#/components/schemas/ApiResponse'
+                  - type: object
+                    properties:
+                      data:
+                        type: object
+                        properties:
+                          list:
+                            type: array
+                            items: { $ref: './openapi-common.yaml#/components/schemas/QuoteParam' }
+    put:
+      tags: [quote-params]
+      summary: 新增/更新报价参数(按 param_key upsert)
+      description: |
+        权限点 quote-param:write(仅 super_admin/operator,editor 不可)。§4.4。
+        参数:aux_unit_price(辅料单价)、loss_rate_min/loss_rate_max(损耗率上下限)。
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/QuoteParamUpsert' }
+      responses:
+        '200':
+          description: 结果
+          content:
+            application/json:
+              schema: { $ref: './openapi-common.yaml#/components/schemas/ApiResponse' }
+
+  # ==========================================================
+  # 门店(单店单条,§5.6、§8.5)
+  # ==========================================================
+  /store:
+    get:
+      tags: [store]
+      summary: 门店信息
+      description: 权限点 store:read。
+      responses:
+        '200':
+          description: 门店信息
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: './openapi-common.yaml#/components/schemas/ApiResponse'
+                  - type: object
+                    properties:
+                      data: { $ref: './openapi-common.yaml#/components/schemas/Store' }
+    put:
+      tags: [store]
+      summary: 更新门店信息(单店单条)
+      description: 权限点 store:write。§5.7
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/StoreUpsert' }
+      responses:
+        '200':
+          description: 结果
+          content:
+            application/json:
+              schema: { $ref: './openapi-common.yaml#/components/schemas/ApiResponse' }
+
+  # ==========================================================
+  # 空间 / 风格字典(§5.7、§8.5 t_dict;D-14 定稿)
+  # ==========================================================
+  /dicts:
+    get:
+      tags: [dicts]
+      summary: 字典列表(含禁用项)
+      description: |
+        权限点 dict:read。按 type(space/style)过滤可选;管理端**返回含 status=disabled** 的项。§8.5
+      parameters:
+        - name: type
+          in: query
+          required: false
+          schema: { type: string, enum: [space, style] }
+          description: 字典类型;缺省返回全部
+      responses:
+        '200':
+          description: 列表
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: './openapi-common.yaml#/components/schemas/ApiResponse'
+                  - type: object
+                    properties:
+                      data:
+                        type: object
+                        properties:
+                          list:
+                            type: array
+                            items: { $ref: './openapi-common.yaml#/components/schemas/Dict' }
+    post:
+      tags: [dicts]
+      summary: 新增字典项
+      description: 权限点 dict:write(仅 super_admin/operator)。§5.7
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/DictUpsert' }
+      responses:
+        '200':
+          description: 结果(返回新建项 id)
+          content:
+            application/json:
+              schema: { $ref: './openapi-common.yaml#/components/schemas/ApiResponse' }
+
+  /dicts/{id}:
+    parameters:
+      - name: id
+        in: path
+        required: true
+        schema: { type: integer }
+    put:
+      tags: [dicts]
+      summary: 更新字典项
+      description: 权限点 dict:write。§5.7
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/DictUpsert' }
+      responses:
+        '200':
+          description: 结果
+          content:
+            application/json:
+              schema: { $ref: './openapi-common.yaml#/components/schemas/ApiResponse' }
+    delete:
+      tags: [dicts]
+      summary: 删除字典项
+      description: |
+        权限点 dict:write。§5.7。
+        注意:删除前应校验无产品/搭配/方案引用(被引用则返回状态不允许 30002)。
+      responses:
+        '200':
+          description: 结果
+          content:
+            application/json:
+              schema: { $ref: './openapi-common.yaml#/components/schemas/ApiResponse' }
+
+  # ==========================================================
+  # 账号与权限(RBAC,§4.4、§8.1)
+  # ==========================================================
+  /accounts:
+    get:
+      tags: [accounts]
+      summary: 后台账号列表
+      description: 权限点 account:manage(仅 super_admin)。
+      parameters:
+        - { $ref: './openapi-common.yaml#/components/parameters/PageParam' }
+        - { $ref: './openapi-common.yaml#/components/parameters/SizeParam' }
+      responses:
+        '200':
+          description: 列表
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: './openapi-common.yaml#/components/schemas/ApiResponse'
+                  - type: object
+                    properties:
+                      data:
+                        allOf:
+                          - $ref: './openapi-common.yaml#/components/schemas/PageData'
+                          - type: object
+                            properties:
+                              list:
+                                type: array
+                                items: { $ref: './openapi-common.yaml#/components/schemas/AdminUserView' }
+    post:
+      tags: [accounts]
+      summary: 新增后台账号
+      description: 权限点 account:manage。§4.4
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/AdminUserUpsert' }
+      responses:
+        '200':
+          description: 创建结果
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: './openapi-common.yaml#/components/schemas/ApiResponse'
+                  - type: object
+                    properties:
+                      data:
+                        type: object
+                        properties:
+                          id: { type: integer }
+
+  /accounts/{id}:
+    put:
+      tags: [accounts]
+      summary: 编辑账号 / 分配角色
+      description: 权限点 account:manage。§4.4
+      parameters:
+        - { name: id, in: path, required: true, schema: { type: integer } }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/AdminUserUpsert' }
+      responses:
+        '200':
+          description: 结果
+          content:
+            application/json:
+              schema: { $ref: './openapi-common.yaml#/components/schemas/ApiResponse' }
+    delete:
+      tags: [accounts]
+      summary: 删除账号
+      description: 权限点 account:manage。
+      parameters:
+        - { name: id, in: path, required: true, schema: { type: integer } }
+      responses:
+        '200':
+          description: 结果
+          content:
+            application/json:
+              schema: { $ref: './openapi-common.yaml#/components/schemas/ApiResponse' }
+
+  # ==========================================================
+  # 操作日志(只读,§4.4、§8.1)
+  # ==========================================================
+  /logs:
+    get:
+      tags: [logs]
+      summary: 操作日志列表
+      description: 权限点 log:read(super_admin/operator)。§4.4
+      parameters:
+        - { name: adminId, in: query, required: false, schema: { type: integer } }
+        - { name: action, in: query, required: false, schema: { type: string } }
+        - { name: from, in: query, required: false, schema: { type: string, format: date-time } }
+        - { name: to, in: query, required: false, schema: { type: string, format: date-time } }
+        - { $ref: './openapi-common.yaml#/components/parameters/PageParam' }
+        - { $ref: './openapi-common.yaml#/components/parameters/SizeParam' }
+      responses:
+        '200':
+          description: 列表
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: './openapi-common.yaml#/components/schemas/ApiResponse'
+                  - type: object
+                    properties:
+                      data:
+                        allOf:
+                          - $ref: './openapi-common.yaml#/components/schemas/PageData'
+                          - type: object
+                            properties:
+                              list:
+                                type: array
+                                items: { $ref: './openapi-common.yaml#/components/schemas/OperationLogView' }
+
+components:
+  # 与 openapi-common.yaml 保持同步(F-4,见 openapi-verification.md §8.4)。
+  # OpenAPI 要求 securitySchemes 必须在本文档内声明,无法跨文档 $ref。
+  securitySchemes:
+    cookieAuth:
+      type: apiKey
+      in: cookie
+      name: access_token
+      description: 后台登录态 Cookie(HttpOnly,由 POST /admin/auth/login 下发)。§10.1、§4.4
+  schemas:
+
+    ProductUpsert:
+      type: object
+      description: 新增/编辑 SKU 请求体。§7.1、§8.2
+      required: [sku, name, pricePerSqm]
+      properties:
+        sku: { type: string, description: "产品编号(唯一,业务主键)" }
+        name: { type: string }
+        spec: { type: string }
+        material: { type: string }
+        surface: { type: string, description: 光泽度 }
+        colorPattern: { type: string }
+        pricePerSqm: { type: number, format: float }
+        applicableSpaces: { type: array, items: { type: string } }
+        styleTags: { type: array, items: { type: string } }
+        status: { $ref: './openapi-common.yaml#/components/schemas/ProductStatus' }
+        coverImage: { type: string }
+        images:
+          type: array
+          items:
+            type: object
+            properties:
+              url: { type: string }
+              angle: { type: string }
+              sort: { type: integer }
+
+    ComboUpsert:
+      type: object
+      description: 新增/编辑搭配请求体。§7.2
+      required: [name, space, style, items]
+      properties:
+        name: { type: string }
+        space: { $ref: './openapi-common.yaml#/components/schemas/SpaceType' }
+        style: { $ref: './openapi-common.yaml#/components/schemas/StyleType' }
+        refPriceMin: { type: number, format: float }
+        refPriceMax: { type: number, format: float }
+        coverImage: { type: string }
+        status: { $ref: './openapi-common.yaml#/components/schemas/ProductStatus' }
+        sort: { type: integer }
+        items:
+          type: array
+          minItems: 1
+          items: { $ref: './openapi-common.yaml#/components/schemas/ComboItem' }
+
+    UnitTemplateUpsert:
+      type: object
+      description: 新增/编辑户型模板请求体。§5.3.1
+      required: [name, layout]
+      properties:
+        name: { type: string }
+        roomCount: { type: integer }
+        areaRange: { type: string }
+        structure: { type: string }
+        layout: { $ref: './openapi-common.yaml#/components/schemas/LayoutModel' }
+        status: { $ref: './openapi-common.yaml#/components/schemas/ProductStatus' }
+
+    FurnishStyleUpsert:
+      type: object
+      description: 新增/更新陈设配置请求体(space+style upsert)。§5.7
+      required: [space, style, prompt]
+      properties:
+        space: { $ref: './openapi-common.yaml#/components/schemas/SpaceType' }
+        style: { $ref: './openapi-common.yaml#/components/schemas/StyleType' }
+        prompt: { type: string }
+        coverImage: { type: string }
+        status: { $ref: './openapi-common.yaml#/components/schemas/ProductStatus' }
+
+    QuoteParamUpsert:
+      type: object
+      description: 新增/更新报价参数请求体(param_key upsert)。§8.5
+      required: [paramKey, paramValue]
+      properties:
+        paramKey: { type: string, enum: [aux_unit_price, loss_rate_min, loss_rate_max] }
+        paramValue: { type: number, format: float }
+        remark: { type: string }
+
+    DictUpsert:
+      type: object
+      description: 新增/编辑字典项请求体。§8.5 t_dict;D-14 定稿
+      required: [type, key, label]
+      properties:
+        type: { type: string, enum: [space, style] }
+        key: { type: string, description: "存储键(对外提交值),如 living_room" }
+        label: { type: string, description: "展示名,如 客厅" }
+        sort: { type: integer, description: "排序,升序" }
+        status: { type: string, enum: [enabled, disabled] }
+
+    StoreUpsert:
+      type: object
+      description: 更新门店请求体(单店单条)。§7.6
+      required: [name, address, phone]
+      properties:
+        name: { type: string }
+        address: { type: string }
+        phone: { type: string }
+        mapUrl: { type: string }
+
+    AdminUserUpsert:
+      type: object
+      description: 新增/编辑后台账号请求体。§8.1
+      required: [username, role]
+      properties:
+        username: { type: string }
+        password: { type: string, description: 新增时必填;编辑时可空(不修改) }
+        role: { $ref: './openapi-common.yaml#/components/schemas/Role' }
+        status: { type: string, enum: [enabled, disabled] }
+
+    ImportAccepted:
+      type: object
+      description: 批量导入受理结果。§8.7
+      required: [batchId]
+      properties:
+        batchId: { type: string }
+
+    ImportStatus:
+      type: object
+      description: 批量导入进度 / 结果。§8.7
+      required: [batchId, status]
+      properties:
+        batchId: { type: string }
+        status: { type: string, enum: [pending, running, success, failed] }
+        total: { type: integer, description: 总行数 }
+        successCount: { type: integer }
+        failedCount: { type: integer }
+        errors:
+          type: array
+          description: 错误行报告(行号 + 原因),供下载修正后重试
+          items:
+            type: object
+            properties:
+              row: { type: integer }
+              reason: { type: string }
+        errorReportUrl: { type: string, description: 错误报告下载地址 }
+      x-todo: "§8.7 描述'错误报告(行号+原因)供下载',字段结构未定义;以上为推断"
