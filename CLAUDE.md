@@ -1,0 +1,147 @@
+# CLAUDE.md
+
+瓷砖选购 AI 效果图与报价系统。**文档先行**,实现尚未开始。
+
+本文件只写"怎么在这里安全地做事"。系统是什么、有哪些字段、什么规则 ——
+见下列文档,**不要在此复述**。CLAUDE.md 每轮会话都会被加载,臃肿会稀释
+真正重要的约束。
+
+---
+
+## 文档链与权威顺序
+
+```
+tile-ai-prd.md             需求文档 v0.6   ← 冲突时以 PRD 为准
+  └─ tile-ai-architecture.md   架构设计 v1.2
+       └─ openapi-common.yaml  公共契约(仅 components,无 paths)
+          openapi-c.yaml       C 端契约(/api/v1)
+          openapi-admin.yaml   B 端契约(/api/v1/admin)
+          openapi-internal.yaml 内部契约(/internal,Java ↔ Python)
+            └─ openapi-verification.md  追溯表 + 校验记录
+```
+
+**改动任何接口时的顺序**(不要跳步、不要反向改):
+
+1. 先改 `tile-ai-prd.md`
+2. 再同步 `tile-ai-architecture.md`
+3. 再改契约 YAML
+4. 最后在 `openapi-verification.md` 记录追溯与校验结果
+
+### `x-todo` 的含义
+
+契约中的 `x-todo` 标记 = **上游未定义、由契约作者按惯例推断,待评审**。
+遇到 `x-todo` 时它是**决策点,不是自由发挥的空间** —— 先问,别自己定。
+
+### 历史记录只追加
+
+`openapi-verification.md` §7(裁决)、§8.4(修复前基线)、§8.8(修复结果)
+是**过程记录**,只追加,不回改。§8.4 描述的问题虽已修复,仍应保留原貌。
+
+---
+
+## 动手前 / 后
+
+- 改动契约后**必须**跑:
+
+  ```bash
+  bash outputs/scripts/ci.sh
+  ```
+
+  6 个门禁全部通过才算完。Windows 上可用 Git Bash 执行
+  (`D:\软件\Git\bin\bash.exe`)。
+- 首次克隆需启用本地钩子(每个克隆一次,`core.hooksPath` 不入版本库):
+
+  ```bash
+  git config core.hooksPath .githooks
+  ```
+
+- 校验报告落在 `outputs/reports/`(已 gitignore,可随时重新生成)。
+
+---
+
+## 不可违反的架构不变量
+
+1. **报价只归 Java**。Python 不参与报价,契约中**不存在** `/internal/quote/*`。
+   对话智能体不接报价工具,用户问价一律 `50001` 拒答(一致性评审 A1)。
+
+2. **对话智能体(路径 C)不产出效果图、不产出报价单**。它只输出搭配建议 +
+   搭配方案(`refs`,支持一键采纳并跳转「户型录入」页)。效果图与报价由用户
+   采纳后进入的**标准流程**产出。
+
+3. **Java 是唯一对外 API**。前端只连 Java;Python 仅内网,`/internal/*`
+   对外由网关阻断。**c / admin 契约中不得出现 `/internal/*` 路径**。
+
+4. **Qdrant 是派生索引**,随时可由 MySQL 全量重建,不作为权威存储;
+   Python 不持有业务数据副本(除向量索引外)。
+
+5. **确定性逻辑(报价 / 鉴权 / CRUD)绝不交给 LLM**。LLM 只做理解与生成。
+
+6. `POST /plans/{id}/recalc` **无请求体** —— 部位/面积/开口取自方案快照。
+   这是**防止绕过 `/quote/calc` 参数校验**的设计。不要"顺手"让它接受前端传参。
+
+---
+
+## 容易写错的约定
+
+| 约定 | 说明 |
+| --- | --- |
+| 业务错误码 | 统一 HTTP **200**,成败看响应体 `code`;**仅** 401/403 用真实状态码 |
+| 鉴权 | 服务端 `Set-Cookie` 下发 HttpOnly Cookie;**不用** `Authorization` 头,令牌**不进**响应体。唯一例外:注册临时令牌 `tempToken` 走 Bearer |
+| 损耗率 | 以**小数**存储,`0.06` 表示 6%(D-15 统一口径) |
+| 部位枚举 | 恒为 `floor` / `wall` / `local`。一期**不含美缝** |
+| 命名 | 对外 JSON 用 camelCase,DB 用 snake_case,映射在 ORM 层完成 |
+| 空间 / 风格 | 走后台字典(`t_dict` / `GET /dicts`),**前端与契约不硬编码**;契约里的 enum 只是内置默认值 |
+| 户型 | 静态存储加密(`layout_enc`,AES-256-GCM),**对外 API 传明文**。对外 schema 不得出现 `layout_enc` |
+
+---
+
+## 已知陷阱
+
+1. **YAML 流式映射里的逗号** —— 真实踩过,16 处缺陷。
+
+   ```yaml
+   page: { type: integer, description: 当前页,从 1 开始 }
+   ```
+
+   会被 YAML 解析成**三个键**:`type`、`description='当前页'`、伪键 `从 1 开始`。
+   `description` 被**静默截断**,且 YAML 本身不报错、肉眼看也看不出来 ——
+   只有跑工具或看 AST 才暴露。
+
+   **写 `{ }` 时给含逗号的值加引号,或改用块式写法。** 门禁 G4/G5 专门拦这个。
+
+2. **`securitySchemes` 在 4 份文件里重复定义**(F-4)。`security` 无法跨文档
+   `$ref`,所以 c / admin / internal 各自声明了一份。**改 common 里的 scheme
+   时必须同步改另外 3 处。**
+
+3. **Redocly CLI v2.55 已移除配置中的 `overrides` 字段**,无法按文件精确定制
+   规则,只能全局关。详见 `redocly.yaml` 注释。
+
+4. **`outputs/scripts/scan_flow.py` 结论不可信**。它是排查过程中的启发式脚本,
+   **既有假阳也有假阴**(把路径模板 `{sku}` 当撕裂、又漏掉括号内的逗号)。
+   判断逗号撕裂请用 `detect_corruption.py`(基于 AST,与三份 lint 工具结论一致)。
+
+5. **只有 `ci.sh` 里的 6 个门禁是判据**,其余脚本是诊断工具,不参与成败判定。
+
+6. **G6(T-1~T-15)检测不到语法级缺陷**。实测:注入一处逗号撕裂后,G6 仍 PASS,
+   而 G1/G2/G3/G4/G5 全部 FAIL。这 15 条查的是**语义一致性**,
+   **不要误以为它覆盖了结构合法性**。
+
+---
+
+## 一期明确不做(不要"顺手"加上)
+
+线上下单 / 支付 · 铺贴人工费 · 物流费 · 美缝 · 上传户型图识别 ·
+微信等第三方登录 · 多空间 / 全屋出图 · 效果图陈设计入报价。
+
+完整边界见 PRD §10(边界与假设)与 §12(迭代规划)。
+
+---
+
+## 尚未确定 / 待办
+
+- **D-13** —— MQ 消息体(`queue.generate` / `queue.index.sync` / DLQ)上游未定义,
+  不在 OpenAPI 范围内,**建议另出 AsyncAPI**。做生成链路前需先补,否则
+  消息契约无据可依。
+- **T-12** —— 契约 ↔ 实现导出 OpenAPI 的双向 diff,需实现落地后执行。
+- 实现尚未开始;技术选型(Vue 3 / Spring Boot 3 / FastAPI / MySQL / Qdrant 等)
+  见架构文档 §3,部署拓扑见 §12。
