@@ -21,10 +21,8 @@ from dataclasses import dataclass
 from typing import Any, Callable
 
 from app.gateway.errors import GatewayConfigError
-from app.gateway.openai_compat import (
-    OpenAICompatibleImageGen,
-    OpenAICompatibleLLM,
-)
+from app.gateway.dashscope_image import DashScopeImageGen
+from app.gateway.openai_compat import OpenAICompatibleLLM
 from app.gateway.ports import EmbeddingGateway, ImageGenGateway, LLMGateway
 from app.gateway.resilience import (
     CallGuard,
@@ -61,11 +59,9 @@ _LLM_PRESETS: dict[str, ProviderPreset] = {
 }
 
 _IMAGE_PRESETS: dict[str, ProviderPreset] = {
-    # ⚠️ 该端点是百炼的 OpenAI 兼容入口;图像走的路径与字段**尚未与官方文档核实**,
-    #    详见 app/gateway/openai_compat.py 顶部说明。
-    "dashscope": ProviderPreset(
-        "https://dashscope.aliyuncs.com/compatible-mode/v1", "wan2.7-image-pro"
-    ),
+    # ⚠️ **不是** OpenAI 兼容入口(`/compatible-mode/v1`)—— 图像走 DashScope 原生协议。
+    # 2026-09-29 用真实密钥实测确认,详见 app/gateway/dashscope_image.py。
+    "dashscope": ProviderPreset("https://dashscope.aliyuncs.com", "wan2.7-image-pro"),
 }
 
 #: Embedding 的真实厂商预置**故意留空** —— 模型选型是 P0-2 的残留项,
@@ -169,7 +165,7 @@ def build_image_gateway(
             f"未知的图像 provider:{provider}。已支持:{sorted(_IMAGE_PRESETS)}"
         )
 
-    adapter = OpenAICompatibleImageGen(
+    adapter = DashScopeImageGen(
         provider=provider,
         base_url=config.model_image_base_url or preset.base_url,
         model=config.model_image_model or preset.default_model,

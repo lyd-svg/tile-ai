@@ -26,13 +26,12 @@ from app.gateway.errors import (
 )
 from app.gateway.failover import FailoverLLMGateway
 from app.gateway.factory import build_embedding_gateway, build_image_gateway, build_llm_gateway
+from app.gateway.dashscope_image import build_image_payload, parse_image_response
 from app.gateway.openai_compat import (
     OpenAICompatibleLLM,
     build_chat_payload,
-    build_image_payload,
     iter_stream_chunks,
     parse_chat_response,
-    parse_image_response,
 )
 from app.gateway.ports import Message, Reply, ToolCall, ToolCallPlan, ToolDef
 from app.gateway.resilience import (
@@ -112,7 +111,23 @@ def reply_body(content: str = "好的", *, prompt_tokens: int = 10, completion_t
 
 
 def image_body(*urls: str) -> dict:
-    return {"model": "wan2.7-image-pro", "data": [{"url": url} for url in urls]}
+    """DashScope 原生响应:`n>1` 时每张图各占一个 choice(实测确认)。
+
+    ⚠️ 形状照**真实响应**写,不是照我以为的写 —— 原先这里是 `{"data": [...]}`,
+    那是按 OpenAI 兼容**推断**的,实测后作废。
+    """
+    return {
+        "output": {
+            "choices": [
+                {"finish_reason": "stop",
+                 "message": {"role": "assistant", "content": [{"image": url, "type": "image"}]}}
+                for url in urls
+            ],
+            "finished": True,
+        },
+        "usage": {"image_count": len(urls), "input_tokens": 29, "output_tokens": 2,
+                  "size": "1024*1024", "total_tokens": 31},
+    }
 
 
 def recording_gateway(handler):
@@ -227,9 +242,12 @@ def test_chat_with_tools_returning_none_is_not_an_error():
 def test_image_generate_accepts_four_reference_images():
     """§15.3 硬约束:底图 + 地面/墙面/局部三张切片 = 至少 4 张参考图。
 
-    这条防的是"换了个参考图上限只有 3 张的模型" —— 那种模型装不下生产路径。
+    这条防的是"换了个参考图上限装不下的模型" —— 那种模型装不下生产路径。
+    **实测(2026-09-29)该模型上限 9 张,4 张确实被接受。**
     """
-    sent, client = recording_gateway(lambda _r: httpx.Response(200, json=image_body("https://oss/e1.png")))
+    sent, client = recording_gateway(
+        lambda _r: httpx.Response(200, json=image_body("https://oss/e1.png"))
+    )
     refs = [
         "https://oss/room-base.png",   # 同空间类型底图
         "https://oss/sku-floor.png",   # 地面
@@ -240,25 +258,73 @@ def test_image_generate_accepts_four_reference_images():
                                  sleep=lambda _s: None).generate("卫生间 现代风", ref_images=refs)
 
     assert len(images.images) == 1
-    body = sent[-1].read().decode("utf-8")
-    for ref in refs:
-        assert ref in body, f"参考图 {ref} 没进请求体"
+    body = json.loads(sent[-1].read().decode("utf-8"))
+
+    # DashScope 原生形态:input.messages[0].content = [恰好 1 个 text] + [0..9 个 image]
+    content = body["input"]["messages"][0]["content"]
+    assert sum(1 for item in content if "text" in item) == 1, "content 里必须恰好一个 text 对象"
+    sent_refs = [item["image"] for item in content if "image" in item]
+    assert sent_refs == refs, f"四张参考图必须按序进 content:{sent_refs}"
+    assert body["model"] == "wan2.7-image-pro"
+    assert "parameters" in body
 
 
-def test_image_request_carries_size_and_seed():
+def test_image_payload_is_dashscope_native_not_openai():
+    """形态是 DashScope 原生 —— **不是** OpenAI 兼容。
+
+    这条钉住 2026-09-29 实测纠正的一个错误假设:架构 §7.2 原写"适配器统一走
+    OpenAI 兼容协议",而图像实际走原生端点与嵌套 messages 结构。
+    若有人"顺手"改回 `{prompt, image_urls}` 形态,这里会红。
+    """
+    payload = build_image_payload(model="m", prompt="p", ref_images=["https://oss/a.png"],
+                                  size="1K", n=1)
+
+    assert "input" in payload and "messages" in payload["input"]
+    assert "prompt" not in payload, "DashScope 原生协议用的是 input.messages,不是顶层 prompt"
+    assert "image_urls" not in payload, "参考图是 content 里的 {image} 对象,不是 image_urls 字段"
+
+
+def test_image_payload_rejects_more_than_the_documented_limit():
+    """超过上限时**早失败并说清楚**,而不是让服务端回一个含义模糊的 4xx。"""
+    too_many = [f"https://oss/{i}.png" for i in range(10)]  # 文档上限 9
+    with pytest.raises(GatewayConfigError, match="最多接受 9 张"):
+        build_image_payload(model="m", prompt="p", ref_images=too_many, size=None, n=1)
+
+
+def test_image_request_carries_size_and_n():
     payload = build_image_payload(model="m", prompt="p", ref_images=None,
-                                  size="2048*2048", n=2, seed=7)
-    assert payload["size"] == "2048*2048"
-    assert payload["n"] == 2
-    assert payload["seed"] == 7
+                                  size="2K", n=2)
+    assert payload["parameters"]["size"] == "2K"
+    assert payload["parameters"]["n"] == 2
 
 
-def test_parse_image_response_rejects_entry_without_url_or_b64():
-    """条目既无 url 也无 b64 时直接报错 —— 否则"要 1 张却拿到 0 张"会变成无线索的谜。"""
+def test_parse_image_response_walks_every_choice():
+    """`n>1` 时**每张图各占一个 choice** —— 只读 choices[0] 会少拿图却不报错。
+
+    实测确认:usage 记了 image_count=2,而 choices 数组有两个元素。
+    "付了钱没拿到东西"是最不该出现的一类错。
+    """
+    data = {
+        "output": {"choices": [
+            {"message": {"content": [{"image": "https://oss/1.png", "type": "image"}]}},
+            {"message": {"content": [{"image": "https://oss/2.png", "type": "image"}]}},
+        ], "finished": True},
+        "usage": {"image_count": 2, "input_tokens": 52, "output_tokens": 4},
+    }
+    images = parse_image_response(data, provider="dashscope")
+
+    assert [image.url for image in images.images] == ["https://oss/1.png", "https://oss/2.png"]
+    # 用量取的是 input/output tokens(参考图会吃掉大量视觉 token)
+    assert images.usage.prompt_tokens == 52
+
+
+def test_parse_image_response_rejects_body_without_images():
+    """没有任何图片时报错并带上厂商给的原因 —— 否则"要 1 张却拿到 0 张"是无线索的谜。"""
     from app.gateway.errors import InvalidProviderResponse
 
-    with pytest.raises(InvalidProviderResponse, match="既无 url 也无 b64"):
-        parse_image_response({"data": [{"revised_prompt": "x"}]}, provider="dashscope")
+    with pytest.raises(InvalidProviderResponse, match="没有任何图片"):
+        parse_image_response({"output": {"choices": [], "code": "InvalidParameter"}},
+                             provider="dashscope")
 
 
 def test_stream_yields_deltas_then_done():

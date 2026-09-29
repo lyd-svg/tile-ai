@@ -19,11 +19,12 @@
 from __future__ import annotations
 
 import os
+import time
 
 import pytest
 
 from app.core.config import Settings
-from app.gateway.factory import build_llm_gateway
+from app.gateway.factory import build_image_gateway, build_llm_gateway
 from app.gateway.ports import Message, Reply, ReplyChunk, ToolDef
 from app.gateway.resilience import CostMeter
 
@@ -153,3 +154,80 @@ def test_cost_meter_records_real_usage(meter: CostMeter):
     assert entry["prompt_tokens"] > 0
     assert entry["cost"] > 0, "单价取自配置,配了就应算出正数成本"
     print(f"\n  联调累计 = {entry}")
+
+
+# ----------------------------------------------------------------------
+# 图像:通义万相(DashScope 原生协议)
+# ----------------------------------------------------------------------
+
+@pytest.fixture(scope="module")
+def image_settings() -> Settings:
+    configured = Settings()
+    if not configured.model_image_provider or not configured.model_image_api_key.get_secret_value():
+        pytest.fail("未配置 MODEL_IMAGE_PROVIDER / MODEL_IMAGE_API_KEY —— 见 .env.example")
+    return configured
+
+
+@pytest.fixture(scope="module")
+def image_gateway(image_settings: Settings):
+    return build_image_gateway(image_settings)
+
+
+def test_image_generate_reaches_the_real_provider(image_gateway):
+    """真实出图:返回图片 URL,且**延迟满足 PRD 的 ≤60s/图**。
+
+    这条同时验两个硬指标:① 链路通 ② §7.3 / §13.1 的 60s 上限真的达得到。
+    """
+    started = time.monotonic()
+    images = image_gateway.generate("浅灰色瓷砖铺设的现代卫生间,简洁干净", size="1K", n=1)
+    elapsed = time.monotonic() - started
+
+    assert images.images, "厂商没返回任何图片"
+    assert images.images[0].url, "返回的不是 URL"
+    # 返回的是 OSS 临时地址(24 小时过期)—— 架构要求转存对象存储,故调用方需及时取走
+    assert images.images[0].url.startswith("http")
+    assert images.usage.prompt_tokens > 0, "未取到 input_tokens —— 参考图的视觉 token 会进成本"
+
+    print(f"\n  1K 文生图用时 {elapsed:.1f}s(PRD 上限 60s)")
+    print(f"  usage = {images.usage.prompt_tokens} in / {images.usage.completion_tokens} out")
+
+    assert elapsed < 60, f"单图超过 60s,违反 §7.3:{elapsed:.1f}s"
+
+
+def test_image_generate_accepts_four_reference_images_live(image_gateway):
+    """**§15.3 的核心假设**:底图 + 各部位切片(≥4 张)真的能进同一个请求。
+
+    整个一期生产路径都押在这条上 —— 它若不成立,PRD 决策 #11 的
+    "一个空间多块砖分配到三个部位"就得收窄。故必须有真实调用兜底。
+    """
+    # 先拿一张真实图片,再把它当参考图用满 4 份(生产中会是底图 + 三张瓷砖切片)
+    base = image_gateway.generate("纯灰色瓷砖特写", size="1K", n=1)
+    assert base.images, "取底图失败"
+    ref = base.images[0].url
+
+    started = time.monotonic()
+    images = image_gateway.generate(
+        "把这几种瓷砖铺进这个卫生间:地面深灰、墙面浅灰、局部花砖",
+        ref_images=[ref, ref, ref, ref],  # 底图 + 地面/墙面/局部
+        size="1K",
+        n=1,
+    )
+    elapsed = time.monotonic() - started
+
+    assert images.images, "带 4 张参考图时厂商没返回图片"
+    print(f"\n  4 张参考图用时 {elapsed:.1f}s;input_tokens = {images.usage.prompt_tokens}")
+    # 参考图会显著抬高 input_tokens(实测每张约 5000 视觉 token)——
+    # 所以成本不能只按"每张图多少钱"算,参考图张数直接进账。
+    assert images.usage.prompt_tokens > 1000, "参考图似乎没被计入用量"
+
+
+def test_image_generate_n_two_returns_two_images(image_gateway):
+    """`n=2` 必须真的拿到 2 张。
+
+    实测确认多张图落在**多个 choices** 里;只读 choices[0] 会拿到 1 张而
+    usage 记 2 张 —— 付了钱没拿到东西,且不报错。
+    """
+    images = image_gateway.generate("浅灰瓷砖卫生间,现代风", size="1K", n=2)
+
+    assert len(images.images) == 2, f"n=2 只拿到 {len(images.images)} 张"
+    print(f"\n  n=2 -> 拿到 {len(images.images)} 张")

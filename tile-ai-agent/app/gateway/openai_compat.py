@@ -28,8 +28,6 @@ from app.gateway.errors import (
     ProviderError,
 )
 from app.gateway.ports import (
-    GeneratedImage,
-    Images,
     Message,
     Reply,
     ReplyChunk,
@@ -172,77 +170,19 @@ def _require(data: Any, key: str, provider: str) -> Any:
 
 
 # ----------------------------------------------------------------------
-# 图像:请求构造与响应解析
+# 图像适配器**不在本文件**
 # ----------------------------------------------------------------------
 #
-# ⚠️ **下面两处的字段形态尚未与阿里云百炼官方文档核实。**
+# 2026-09-29 用真实密钥实测确认:`wan2.7-image-pro` 走的是 **DashScope 原生协议**,
+# 与 OpenAI 兼容无关 —— 端点、请求体、响应结构**全都不一样**。
 #
-# 架构 §7.2 只说"适配器统一走 OpenAI 兼容协议",而 `wan2.7-image-pro` 的
-# **多参考图条件生成**是否就落在 `/images/generations` 上、参考图用哪个字段名,
-# 我们既没有厂商文档也没有 API Key 可验 —— 所以**不做任何"已验证"的宣称**。
+# 这里原先有一版"OpenAI 兼容 + `image_urls`"的图像实现。它是**按惯例推断、
+# 从未与厂商核实**的(当时没有密钥),本次实测后作废,已拆到
+# `app/gateway/dashscope_image.py`。
 #
-# 隔离方式:厂商形态只出现在下面这两个纯函数里。真实形态一旦确认,改这里即可,
-# 韧性层、故障切换、成本计量与调用方都不受影响。
-# 单测断言的是**我们自己的契约**(§7.1 的签名 + §15.3 的 ≥4 张参考图),
-# 不是厂商会接受这个字段名。
-
-_IMAGE_ENDPOINT = "/images/generations"
-#: 参考图字段名 —— **待核实**。
-_REFERENCE_IMAGES_FIELD = "image_urls"
-
-
-def build_image_payload(
-    *,
-    model: str,
-    prompt: str,
-    ref_images: Sequence[str] | None,
-    size: str | None,
-    n: int,
-    seed: int | None,
-) -> dict[str, Any]:
-    """构造图像生成请求体。
-
-    `ref_images` 是**URL 列表**(架构约定图片一律存对象存储、库里只存 URL)。
-    """
-    payload: dict[str, Any] = {"model": model, "prompt": prompt, "n": n}
-    if size:
-        payload["size"] = size
-    if seed is not None:
-        payload["seed"] = seed
-    if ref_images:
-        payload[_REFERENCE_IMAGES_FIELD] = list(ref_images)
-    return payload
-
-
-def parse_image_response(data: Any, *, provider: str) -> Images:
-    """解析图像生成响应体。
-
-    兼容两种常见回法:`data[].url`(返回 URL)与 `data[].b64_json`(返回 base64)。
-    架构约定图片存对象存储,所以真实使用以 URL 为主;base64 一并支持,
-    免得日后厂商默认回 base64 时整条链路不通。
-    """
-    items = _require(data, "data", provider)
-    if not isinstance(items, list):
-        raise InvalidProviderResponse(f"{provider} 图像响应的 data 不是数组")
-
-    images: list[GeneratedImage] = []
-    for item in items:
-        if not isinstance(item, dict):
-            raise InvalidProviderResponse(f"{provider} 图像响应的条目不是对象")
-        url = item.get("url")
-        b64 = item.get("b64_json")
-        if url is None and b64 is None:
-            # 条目既没 URL 也没 base64 —— 静默跳过会让"生成了 1 张却拿到 0 张"
-            # 变成一个没有线索的谜,这里直接说清楚。
-            raise InvalidProviderResponse(f"{provider} 图像响应的条目既无 url 也无 b64_json")
-        images.append(GeneratedImage(url=url, b64=b64))
-
-    return Images(
-        images=tuple(images),
-        usage=_parse_usage(data.get("usage")),
-        model=str(data.get("model") or ""),
-    )
-
+# ⚠️ **教训**:架构 §7.2 那句"适配器统一走 OpenAI 兼容协议"**只对 LLM 成立**。
+# 把"协议统一"当成既定事实写进文档,差点让一个从未验证过的假设直接进生产。
+# §7.2 已按实测修正。
 
 # ----------------------------------------------------------------------
 # 适配器
@@ -383,30 +323,3 @@ class OpenAICompatibleLLM(_OpenAICompatibleBase):
         reply = self.chat(messages, tools=tool_defs)
         assert isinstance(reply, Reply)  # stream=False 时必然如此
         return to_tool_call_plan(reply)
-
-
-class OpenAICompatibleImageGen(_OpenAICompatibleBase):
-    """OpenAI 兼容的图生图/文生图适配器(架构 §7.1 的 ImageGenGateway)。
-
-    ⚠️ 请求与响应的字段形态**待与百炼文档核实**,见本节顶部的说明。
-    """
-
-    def generate(
-        self,
-        prompt: str,
-        ref_images: Sequence[str] | None = None,
-        size: str | None = None,
-        n: int = 1,
-        seed: int | None = None,
-    ) -> Images:
-        payload = build_image_payload(
-            model=self._model,
-            prompt=prompt,
-            ref_images=ref_images,
-            size=size,
-            n=n,
-            seed=seed,
-        )
-        return parse_image_response(
-            self._post(_IMAGE_ENDPOINT, payload), provider=self._provider
-        )
