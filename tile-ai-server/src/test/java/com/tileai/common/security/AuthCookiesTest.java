@@ -30,9 +30,9 @@ class AuthCookiesTest {
     }
 
     @Test
-    @DisplayName("access Cookie:HttpOnly、Path=/、Max-Age=2 小时(契约值)")
+    @DisplayName("C 端 access Cookie:HttpOnly、Path=/、Max-Age=2 小时(契约值)")
     void accessCookieAttributes() {
-        String header = cookies(false).access("TOKEN").toString();
+        String header = cookies(false).access("TOKEN", SubjectType.USER).toString();
 
         assertTrue(header.startsWith("access_token=TOKEN"), header);
         assertTrue(header.contains("HttpOnly"), header);
@@ -41,9 +41,9 @@ class AuthCookiesTest {
     }
 
     @Test
-    @DisplayName("refresh Cookie:HttpOnly、Path 收窄至 /api/v1/auth、Max-Age=14 天(契约值)")
+    @DisplayName("C 端 refresh Cookie:HttpOnly、Path 收窄至 /api/v1/auth、Max-Age=14 天")
     void refreshCookieNarrowsPath() {
-        String header = cookies(false).refresh("RTOKEN").toString();
+        String header = cookies(false).refresh("RTOKEN", SubjectType.USER).toString();
 
         assertTrue(header.startsWith("refresh_token=RTOKEN"), header);
         assertTrue(header.contains("HttpOnly"), header);
@@ -55,24 +55,71 @@ class AuthCookiesTest {
     @Test
     @DisplayName("两个 Cookie 的 Path 必须不同 —— 否则收窄就白做了")
     void accessAndRefreshPathsDiffer() {
-        ResponseCookie access = cookies(false).access("T");
-        ResponseCookie refresh = cookies(false).refresh("T");
+        AuthCookies c = cookies(false);
 
-        assertEquals("/", access.getPath());
-        assertEquals("/api/v1/auth", refresh.getPath());
+        assertEquals("/", c.access("T", SubjectType.USER).getPath());
+        assertEquals("/api/v1/auth", c.refresh("T", SubjectType.USER).getPath());
+    }
+
+    // ------------------------------------------------------------------
+    // 后台会话:名字与路径都必须与 C 端分开(架构 §10.1,缺口 G-9)
+    // ------------------------------------------------------------------
+
+    @Test
+    @DisplayName("后台 Cookie 用完全不同的名字 —— 同名会互相覆盖")
+    void adminCookiesUseDistinctNames() {
+        AuthCookies c = cookies(false);
+
+        assertTrue(c.access("T", SubjectType.ADMIN).toString().startsWith("admin_access_token=T"),
+                c.access("T", SubjectType.ADMIN).toString());
+        assertTrue(c.refresh("R", SubjectType.ADMIN).toString().startsWith("admin_refresh_token=R"),
+                c.refresh("R", SubjectType.ADMIN).toString());
+    }
+
+    @Test
+    @DisplayName("后台 refresh 的 Path 必须覆盖登录端点自身 —— 否则浏览器拒存")
+    void adminRefreshPathCoversLoginEndpoint() {
+        String path = cookies(false).refresh("R", SubjectType.ADMIN).getPath();
+
+        assertEquals("/api/v1/admin/auth", path);
+        // 这一条是本次修复的核心:浏览器只在路径匹配时才存储 Cookie,
+        // 覆盖不到登录路径 => 下发的 refresh 被直接丢弃 => 后台永远无法刷新。
+        assertTrue("/api/v1/admin/auth/login".startsWith(path),
+                "后台 refresh 的 Path 必须覆盖 /api/v1/admin/auth/login,否则 Cookie 存不下来: " + path);
+    }
+
+    @Test
+    @DisplayName("两端四张 Cookie 的名字与路径两两不同 —— 这是「可并存」的充要条件")
+    void userAndAdminCookiesNeverCollide() {
+        AuthCookies c = cookies(false);
+
+        String[][] combos = {
+                {c.access("T", SubjectType.USER).getName(), c.access("T", SubjectType.USER).getPath()},
+                {c.refresh("T", SubjectType.USER).getName(), c.refresh("T", SubjectType.USER).getPath()},
+                {c.access("T", SubjectType.ADMIN).getName(), c.access("T", SubjectType.ADMIN).getPath()},
+                {c.refresh("T", SubjectType.ADMIN).getName(), c.refresh("T", SubjectType.ADMIN).getPath()},
+        };
+
+        for (int i = 0; i < combos.length; i++) {
+            for (int j = i + 1; j < combos.length; j++) {
+                boolean same = combos[i][0].equals(combos[j][0]) && combos[i][1].equals(combos[j][1]);
+                assertTrue(!same, "Cookie " + combos[i][0] + "(" + combos[i][1] + ") 与 "
+                        + combos[j][0] + "(" + combos[j][1] + ") 会互相覆盖");
+            }
+        }
     }
 
     @Test
     @DisplayName("Secure 由配置控制:本地 http 关、HTTPS 开")
     void secureFollowsConfig() {
-        assertTrue(cookies(true).access("T").isSecure());
-        assertTrue(!cookies(false).access("T").isSecure());
+        assertTrue(cookies(true).access("T", SubjectType.USER).isSecure());
+        assertTrue(!cookies(false).access("T", SubjectType.USER).isSecure());
     }
 
     @Test
     @DisplayName("SameSite 默认 Lax(架构未规定,取值见 JwtProperties 说明)")
     void sameSiteDefaultsToLax() {
-        assertEquals("Lax", cookies(false).access("T").getSameSite());
+        assertEquals("Lax", cookies(false).access("T", SubjectType.USER).getSameSite());
     }
 
     @Test
@@ -80,15 +127,17 @@ class AuthCookiesTest {
     void clearCookiesMatchIssuedPaths() {
         AuthCookies c = cookies(false);
 
-        ResponseCookie clearedAccess = c.clearAccess();
-        assertEquals(0, clearedAccess.getMaxAge().getSeconds());
-        assertEquals(c.access("T").getPath(), clearedAccess.getPath(),
-                "清除 access 的 Path 必须与下发时一致");
+        for (SubjectType subject : SubjectType.values()) {
+            ResponseCookie clearedAccess = c.clearAccess(subject);
+            assertEquals(0, clearedAccess.getMaxAge().getSeconds());
+            assertEquals(c.access("T", subject).getPath(), clearedAccess.getPath(),
+                    "清除 access 的 Path 必须与下发时一致(" + subject + ")");
 
-        ResponseCookie clearedRefresh = c.clearRefresh();
-        assertEquals(0, clearedRefresh.getMaxAge().getSeconds());
-        assertEquals(c.refresh("T").getPath(), clearedRefresh.getPath(),
-                "清除 refresh 的 Path 必须与下发时一致 —— 这是最容易写错的一处");
+            ResponseCookie clearedRefresh = c.clearRefresh(subject);
+            assertEquals(0, clearedRefresh.getMaxAge().getSeconds());
+            assertEquals(c.refresh("T", subject).getPath(), clearedRefresh.getPath(),
+                    "清除 refresh 的 Path 必须与下发时一致 —— 这是最容易写错的一处(" + subject + ")");
+        }
     }
 
     @Test
@@ -99,7 +148,8 @@ class AuthCookiesTest {
         p.setRefreshCookiePath("/custom/auth");
         AuthCookies c = new AuthCookies(p);
 
-        assertTrue(c.access("T").toString().contains("Max-Age=1800"), c.access("T").toString());
-        assertEquals("/custom/auth", c.refresh("T").getPath());
+        assertTrue(c.access("T", SubjectType.USER).toString().contains("Max-Age=1800"),
+                c.access("T", SubjectType.USER).toString());
+        assertEquals("/custom/auth", c.refresh("T", SubjectType.USER).getPath());
     }
 }

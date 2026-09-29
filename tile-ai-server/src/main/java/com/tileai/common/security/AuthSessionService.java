@@ -41,8 +41,8 @@ public class AuthSessionService {
      */
     public SessionCookies start(long subjectId, SubjectType subjectType) {
         return new SessionCookies(
-                cookies.access(jwtService.issueAccess(subjectId, subjectType)),
-                cookies.refresh(jwtService.issueRefresh(subjectId, subjectType)));
+                cookies.access(jwtService.issueAccess(subjectId, subjectType), subjectType),
+                cookies.refresh(jwtService.issueRefresh(subjectId, subjectType), subjectType));
     }
 
     /**
@@ -51,20 +51,31 @@ public class AuthSessionService {
      * <p>契约把该接口描述为"刷新<b>访问</b>令牌",因此这里<b>不轮换</b>
      * refresh_token 本身 —— 它保持 14 天有效期,直到登出或过期。
      *
-     * <p>三道校验缺一不可:签名有效、类型必须是 REFRESH、且不在黑名单里。
-     * 少了第二道,一个 access 令牌就能当 refresh 用,2 小时的有效期会被无限续期。
+     * <p><b>四道校验缺一不可</b>:签名有效、类型必须是 REFRESH、
+     * <b>主体类型与调用端点相符</b>、且不在黑名单里。
+     * <ul>
+     *   <li>少了"类型"这道,一个 access 令牌就能当 refresh 用,2 小时的有效期会被无限续期;</li>
+     *   <li>少了"主体"这道,把 C 端刷新令牌塞进后台的 Cookie 里,就能换到一个写在
+     *       {@code admin_access_token} 下的令牌。签名与类型都对,只有主体不符 ——
+     *       虽然最终仍会被 {@code hasAuthority("ROLE_ADMIN")} 挡下,但那是**第二道防线**,
+     *       不该让第一道形同虚设。</li>
+     * </ul>
      */
-    public ResponseCookie refreshAccess(String refreshToken) {
+    public ResponseCookie refreshAccess(String refreshToken, SubjectType expectedSubject) {
         ParsedToken parsed = jwtService.parse(refreshToken);
 
         if (parsed.tokenType() != TokenType.REFRESH) {
             throw new BusinessException(ErrorCode.UNAUTHENTICATED, "刷新令牌类型不正确");
         }
+        if (parsed.subjectType() != expectedSubject) {
+            throw new BusinessException(ErrorCode.UNAUTHENTICATED, "刷新令牌主体类型不匹配");
+        }
         if (blacklist.isBlacklisted(parsed.jti())) {
             // 已登出的令牌被重放 —— 是安全事件,值得单独文案与日志关注。
             throw new BusinessException(ErrorCode.UNAUTHENTICATED, "该令牌已失效,请重新登录");
         }
-        return cookies.access(jwtService.issueAccess(parsed.subjectId(), parsed.subjectType()));
+        return cookies.access(
+                jwtService.issueAccess(parsed.subjectId(), parsed.subjectType()), expectedSubject);
     }
 
     /**
@@ -77,7 +88,7 @@ public class AuthSessionService {
      * 它最多还能再用 2 小时。这是 §10.1 的设计取舍(access 短寿命 + 无状态),
      * 不是遗漏。若需立即失效,得改为校验 access 的 jti,那要先回改架构。
      */
-    public SessionCookies logout(String refreshToken) {
+    public SessionCookies logout(String refreshToken, SubjectType subjectType) {
         if (refreshToken != null && !refreshToken.isBlank()) {
             try {
                 ParsedToken parsed = jwtService.parse(refreshToken);
@@ -87,6 +98,7 @@ public class AuthSessionService {
                 // 签名不对 / 已过期 —— 本来就用不了,无需入名单。
             }
         }
-        return new SessionCookies(cookies.clearAccess(), cookies.clearRefresh());
+        // 只清本主体那两条 —— 后台登出不该把同一浏览器里的 C 端会话也清掉
+        return new SessionCookies(cookies.clearAccess(subjectType), cookies.clearRefresh(subjectType));
     }
 }

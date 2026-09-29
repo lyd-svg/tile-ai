@@ -251,7 +251,7 @@ class AdminProductImportIntegrationTest {
     @DisplayName("批次不存在 → 30001")
     void unknownBatchIsNotFound() throws Exception {
         MvcResult result = mvc.perform(get(BASE + "/no-such-batch")
-                .cookie(new Cookie("access_token", token))).andReturn();
+                .cookie(new Cookie("admin_access_token", token))).andReturn();
 
         assertEquals(200, result.getResponse().getStatus());
         assertEquals(30001, codeOf(result));
@@ -264,7 +264,7 @@ class AdminProductImportIntegrationTest {
                         .file(new MockMultipartFile("file", "p.csv", "text/csv",
                                 csv(row("T07-MODE", "x", "1.00"))))
                         .param("mode", "whatever")
-                        .cookie(new Cookie("access_token", token)))
+                        .cookie(new Cookie("admin_access_token", token)))
                 .andReturn();
 
         assertEquals(10001, codeOf(result));
@@ -274,7 +274,7 @@ class AdminProductImportIntegrationTest {
     @DisplayName("模板可下载:xlsx 与 CSV 两种内容类型都能取到")
     void templateIsDownloadable() throws Exception {
         MvcResult xlsx = mvc.perform(get(BASE + "/template")
-                .cookie(new Cookie("access_token", token))).andReturn();
+                .cookie(new Cookie("admin_access_token", token))).andReturn();
         assertEquals(200, xlsx.getResponse().getStatus());
         assertTrue(xlsx.getResponse().getContentAsByteArray().length > 0);
         assertEquals("application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
@@ -282,7 +282,7 @@ class AdminProductImportIntegrationTest {
 
         MvcResult csvResult = mvc.perform(get(BASE + "/template")
                 .header("Accept", "text/csv")
-                .cookie(new Cookie("access_token", token))).andReturn();
+                .cookie(new Cookie("admin_access_token", token))).andReturn();
         assertEquals(200, csvResult.getResponse().getStatus());
         assertTrue(csvResult.getResponse().getContentType().contains("text/csv"),
                 "Accept: text/csv 时应返回 CSV: " + csvResult.getResponse().getContentType());
@@ -292,7 +292,7 @@ class AdminProductImportIntegrationTest {
     @DisplayName("导出的模板可以直接被导入(往返闭环)")
     void exportedTemplateCanBeImported() throws Exception {
         MvcResult template = mvc.perform(get(BASE + "/template")
-                .cookie(new Cookie("access_token", token))).andReturn();
+                .cookie(new Cookie("admin_access_token", token))).andReturn();
 
         // 模板自带一行示例(TL-2043),直接导它应当成功而不是报"缺列"
         JsonNode status = runImport(template.getResponse().getContentAsByteArray(), "upsert",
@@ -316,7 +316,7 @@ class AdminProductImportIntegrationTest {
         MvcResult accepted = mvc.perform(multipart(BASE)
                         .file(new MockMultipartFile("file", fileName, "application/octet-stream", content))
                         .param("mode", mode)
-                        .cookie(new Cookie("access_token", token)))
+                        .cookie(new Cookie("admin_access_token", token)))
                 .andReturn();
 
         assertEquals(200, accepted.getResponse().getStatus(),
@@ -333,7 +333,7 @@ class AdminProductImportIntegrationTest {
         JsonNode last = null;
         while (System.currentTimeMillis() < deadline) {
             last = dataOf(mvc.perform(get(BASE + "/" + batchId)
-                    .cookie(new Cookie("access_token", token))).andReturn());
+                    .cookie(new Cookie("admin_access_token", token))).andReturn());
             String status = last.get("status").asText();
             if (!"pending".equals(status) && !"running".equals(status)) {
                 assertEquals("success", status, "批次应以 success 结束: " + last);

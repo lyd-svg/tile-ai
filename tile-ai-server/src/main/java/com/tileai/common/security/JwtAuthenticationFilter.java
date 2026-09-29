@@ -23,13 +23,20 @@ import jakarta.servlet.http.HttpServletResponse;
  *
  * <p><b>令牌来源(这条最容易被后来者改错)</b>:
  * <ul>
- *   <li>access 令牌<b>只从 Cookie</b> {@code access_token} 读。
- *       <b>不读 {@code Authorization} 头</b> —— 契约明确"不使用 Authorization 头";</li>
+ *   <li>access 令牌<b>只从 Cookie</b> 读,且<b>按请求路径选哪一条</b>:
+ *       {@code /api/v1/admin/**} 读 {@code admin_access_token},其余读 {@code access_token}
+ *       (架构 §10.1 —— 两端各一套 Cookie);</li>
+ *   <li><b>不读 {@code Authorization} 头</b> —— 契约明确"不使用 Authorization 头";</li>
  *   <li>v0.7 起**没有任何例外** —— 原注册临时令牌 {@code tempToken} 随短信验证码方案一并取消
  *       (架构 §15.6),这条 Bearer 通道已删除;</li>
  *   <li>因此把令牌放进 {@code Authorization} 头<b>不会被接受</b> ——
  *       这是有意为之,并有测试锁定该行为。</li>
  * </ul>
+ *
+ * <p><b>为什么要按路径选</b>:两端分离后,同一浏览器里可以同时存在
+ * {@code access_token}(C 端)与 {@code admin_access_token}(后台)。
+ * 若这里随意取一条,后台请求可能拿到 C 端令牌 —— 于是被
+ * {@code hasAuthority("ROLE_ADMIN")} 拒掉,表现为"明明登录了却 401/403"。
  *
  * <p>校验失败时<b>不在这里写响应</b>,只把错误码放进请求属性,交给
  * {@link RestAuthenticationEntryPoint} 统一出口。否则"未登录"会出现两条
@@ -44,6 +51,9 @@ public class JwtAuthenticationFilter extends OncePerRequestFilter {
     /** 请求属性名:认证失败时的业务错误码,供 entry point 区分 10002 / 10003。 */
     static final String AUTH_ERROR_ATTR = "tile.auth.errorCode";
 
+    /** 后台接口前缀。命中它就读后台那套 Cookie。 */
+    private static final String ADMIN_PATH_PREFIX = "/api/v1/admin";
+
     private final JwtService jwtService;
     private final JwtProperties props;
 
@@ -57,7 +67,7 @@ public class JwtAuthenticationFilter extends OncePerRequestFilter {
                                     HttpServletResponse response,
                                     FilterChain chain) throws ServletException, IOException {
         try {
-            String access = cookieValue(request, props.getAccessCookieName());
+            String access = cookieValue(request, accessCookieNameFor(request));
             if (StringUtils.hasText(access)) {
                 authenticateAccess(access);
             }
@@ -66,6 +76,19 @@ public class JwtAuthenticationFilter extends OncePerRequestFilter {
             request.setAttribute(AUTH_ERROR_ATTR, e.errorCode());
         }
         chain.doFilter(request, response);
+    }
+
+    /**
+     * 该请求该读哪条 access Cookie。
+     *
+     * <p>按路径前缀判断,不做"两条都试"—— 都试的话,浏览器里同时存在两个会话时
+     * 取决于遍历顺序,行为不确定。
+     */
+    private String accessCookieNameFor(HttpServletRequest request) {
+        String uri = request.getRequestURI();
+        return uri != null && uri.startsWith(ADMIN_PATH_PREFIX)
+                ? props.getAdminAccessCookieName()
+                : props.getAccessCookieName();
     }
 
     private void authenticateAccess(String token) {

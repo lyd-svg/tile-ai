@@ -41,7 +41,7 @@ tags:
     description: 操作日志(§4.4)
 
 security:
-  - cookieAuth: []
+  - adminCookieAuth: []
 
 paths:
 
@@ -52,9 +52,16 @@ paths:
     post:
       tags: [admin-auth]
       summary: 后台登录
-      description: 使用 t_admin_user 用户名 + 密码登录,建立后台会话。
+      description: |
+        使用 t_admin_user 用户名 + 密码登录,建立后台会话。§4.4、§10.3
+
+        失败**一律返回 20005**,不区分「账号不存在」「密码错误」「账号已停用」——
+        区分开等于对外提供一个账号枚举接口。与 C 端口径一致(openapi-c.yaml /auth/login)。
+
+        v1.9 起本接口的路径与字段**已确认为正式契约** —— 原 `x-todo`
+        (「§10.3/§10.2 未列出后台登录接口,由 §4.4'均需后台会话'推断」)已裁决关闭,
+        理由见 openapi-verification.md §24。
       security: []
-      x-todo: "§10.3/§10.2 未列出后台登录接口;由 §4.4'均需后台会话'推断,路径与字段待确认"
       requestBody:
         required: true
         content:
@@ -76,6 +83,84 @@ paths:
                   - type: object
                     properties:
                       data: { $ref: './openapi-common.yaml#/components/schemas/AdminUserView' }
+
+  /auth/logout:
+    post:
+      tags: [admin-auth]
+      summary: 退出登录
+      description: |
+        清除后台登录态(refresh 令牌拉黑 + 清 Cookie)。§10.3
+
+        **需要登录态**,但 refresh 令牌缺失或无效时**不报错**,照样清 Cookie ——
+        "登出总能成功"的准确含义是"带登录态但 refresh 无效时不该失败"(如重复登出),
+        而非"无需登录也能登出"。与 C 端 `/auth/logout` 同口径
+        (openapi-c.yaml;裁决经过见 openapi-verification.md §20.3)。
+
+        **不需要权限点** —— 它是"我是谁"的接口,不是"我能做什么"。
+      security:
+        - adminCookieAuth: []
+      responses:
+        '200':
+          description: 退出结果(Set-Cookie 清除两条令牌)
+          content:
+            application/json:
+              schema: { $ref: './openapi-common.yaml#/components/schemas/ApiResponse' }
+
+  /auth/me:
+    get:
+      tags: [admin-auth]
+      summary: 取当前登录账号
+      description: |
+        返回当前后台会话对应的账号信息,**供前端在页面刷新后恢复会话**。§10.3
+
+        **为什么需要它**:令牌在 HttpOnly Cookie 里,前端读不到(§10.1 的 D1 方案),
+        刷新页面后无法自行得知"当前是谁、什么角色"。没有本接口,前端只能把账号信息
+        缓存在本地 —— 那是把**展示状态**当成了凭证来源,账号一旦被停用或降权,
+        界面会继续按旧角色渲染。有本接口后,每次加载都以服务端当下的事实为准。
+
+        账号已停用或不存在时按 **10002** 处理(会话已失效),而不是 30001 ——
+        对调用方而言这是"需要重新登录",与"资源不存在"是两回事。
+
+        **不需要权限点**,三个后台角色都可调用。
+      security:
+        - adminCookieAuth: []
+      responses:
+        '200':
+          description: 当前账号(失败码 10002 会话失效)
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: './openapi-common.yaml#/components/schemas/ApiResponse'
+                  - type: object
+                    properties:
+                      data: { $ref: './openapi-common.yaml#/components/schemas/AdminUserView' }
+
+  /auth/refresh:
+    post:
+      tags: [admin-auth]
+      summary: 刷新访问令牌
+      description: |
+        以 `admin_refresh_token` Cookie 换取新的 `admin_access_token`。§10.1、§10.3
+
+        触发场景:错误码 **10003** 令牌过期、或 access 过期导致的 **401**。
+
+        **为什么后台必须有它**:两端会话分离后,后台有了自己的 refresh 令牌
+        (`Path=/api/v1/admin/auth`)。没有刷新端点的话,那个令牌就只是个
+        存下来却用不上的东西 —— 后台会话 2 小时后仍然只能重新登录。
+
+        **只换 access,不轮换 refresh**:与 C 端 `/auth/refresh` 同口径
+        (契约把接口描述为"刷新**访问**令牌"),refresh 保持 14 天有效,
+        直到登出或过期。
+
+        未带 refresh Cookie、令牌类型不对、或已被拉黑 → **10002**。
+      security: []
+      responses:
+        '200':
+          description: 刷新结果(Set-Cookie 新 admin_access_token;失败码 10002)
+          content:
+            application/json:
+              schema: { $ref: './openapi-common.yaml#/components/schemas/ApiResponse' }
 
   # ==========================================================
   # 产品库(§5.7、§7.1、§8.7)
@@ -820,15 +905,23 @@ paths:
 components:
   # 与 openapi-common.yaml 保持同步(F-4,见 openapi-verification.md §8.4)。
   # OpenAPI 要求 securitySchemes 必须在本文档内声明,无法跨文档 $ref。
+  # ⚠️ 因此它与 openapi-common.yaml 的同名定义是**两份**(已知陷阱 F-4);
+  #    改一处必须同步另一处。本文件只声明自己用得到的 scheme。
   securitySchemes:
-    cookieAuth:
+    adminCookieAuth:
       type: apiKey
       in: cookie
-      name: access_token
+      name: admin_access_token
       description: |
-        后台登录态 Cookie(HttpOnly,由 POST /admin/auth/login 下发)。
+        **后台**登录态 Cookie(HttpOnly,仅由 POST /admin/auth/login 下发)。
+        access `admin_access_token`(2h,Path=`/api/v1/admin`)+
+        refresh `admin_refresh_token`(14d,Path=`/api/v1/admin/auth`)。
         带 **`SameSite=Lax`** —— CSRF 防护的落点(架构 §13.5);`Secure` 在 HTTPS 环境必须开启。
         §10.1、§4.4
+
+        **不要与 C 端的 `cookieAuth` 混用**:C 端业主与 B 端后台是两套主体、
+        两套 ID 空间(§4.4),共用 Cookie 会让同一浏览器内两端互相覆盖。
+
   schemas:
 
     ProductUpsert:

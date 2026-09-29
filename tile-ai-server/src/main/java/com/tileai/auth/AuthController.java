@@ -14,13 +14,12 @@ import com.tileai.auth.entity.User;
 import com.tileai.common.api.ApiResponse;
 import com.tileai.common.error.BusinessException;
 import com.tileai.common.error.ErrorCode;
+import com.tileai.common.security.AuthCookies;
 import com.tileai.common.security.AuthPrincipal;
 import com.tileai.common.security.AuthSessionService;
 import com.tileai.common.security.CurrentPrincipal;
-import com.tileai.common.security.JwtProperties;
 import com.tileai.common.security.SubjectType;
 
-import jakarta.servlet.http.Cookie;
 import jakarta.servlet.http.HttpServletRequest;
 import jakarta.validation.Valid;
 
@@ -47,14 +46,14 @@ public class AuthController {
 
     private final AuthService authService;
     private final AuthSessionService authSessionService;
-    private final JwtProperties jwtProperties;
+    private final AuthCookies authCookies;
 
     public AuthController(AuthService authService,
                           AuthSessionService authSessionService,
-                          JwtProperties jwtProperties) {
+                          AuthCookies authCookies) {
         this.authService = authService;
         this.authSessionService = authSessionService;
-        this.jwtProperties = jwtProperties;
+        this.authCookies = authCookies;
     }
 
     /** 注册 —— 成功即登录,直接下发 Cookie。 */
@@ -91,7 +90,8 @@ public class AuthController {
     @PostMapping("/logout")
     public ResponseEntity<ApiResponse<Void>> logout(HttpServletRequest request) {
         AuthSessionService.SessionCookies cleared =
-                authSessionService.logout(refreshTokenOf(request));
+                authSessionService.logout(authCookies.refreshTokenOf(request, SubjectType.USER),
+                        SubjectType.USER);
 
         return ResponseEntity.ok()
                 .header(HttpHeaders.SET_COOKIE,
@@ -107,7 +107,7 @@ public class AuthController {
      */
     @PostMapping("/refresh")
     public ResponseEntity<ApiResponse<Void>> refresh(HttpServletRequest request) {
-        String refreshToken = refreshTokenOf(request);
+        String refreshToken = authCookies.refreshTokenOf(request, SubjectType.USER);
         if (!StringUtils.hasText(refreshToken)) {
             // 没有 refresh 令牌 = 从未登录或 Cookie 已被清 —— 属"未登录",不是"令牌过期"
             throw new BusinessException(ErrorCode.UNAUTHENTICATED);
@@ -115,7 +115,7 @@ public class AuthController {
 
         return ResponseEntity.ok()
                 .header(HttpHeaders.SET_COOKIE,
-                        authSessionService.refreshAccess(refreshToken).toString())
+                        authSessionService.refreshAccess(refreshToken, SubjectType.USER).toString())
                 .body(ApiResponse.ok());
     }
 
@@ -132,24 +132,4 @@ public class AuthController {
                 .body(ApiResponse.ok(UserView.of(user)));
     }
 
-    /**
-     * 从请求里取 refresh 令牌。
-     *
-     * <p>不用 {@code @CookieValue(name = "${...}")} 读:注解属性是否解析配置占位符
-     * 取决于所用处理器的实现,不可靠。这里显式按配置的 Cookie 名遍历,
-     * 与 {@code JwtAuthenticationFilter} 读 access 令牌的方式保持一致。
-     */
-    private String refreshTokenOf(HttpServletRequest request) {
-        Cookie[] cookies = request.getCookies();
-        if (cookies == null) {
-            return null;
-        }
-        String name = jwtProperties.getRefreshCookieName();
-        for (Cookie cookie : cookies) {
-            if (name.equals(cookie.getName())) {
-                return cookie.getValue();
-            }
-        }
-        return null;
-    }
 }

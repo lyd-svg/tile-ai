@@ -35,17 +35,29 @@ public class AdminAccountService {
     }
 
     /**
-     * 解析某后台账号<b>当前</b>的角色。
+     * 按主键取一个**启用中**的后台账号。
      *
-     * <p>以下情形一律返回空(即"无任何权限"):
-     * 账号不存在、账号已停用、角色值无法识别。
-     * <b>失败关闭</b> —— 数据库里出现意外角色值时,宁可挡住也不能放过去。
+     * <p>账号不存在或已停用一律返回空。<b>失败关闭</b>:令牌签发后账号可能被停用,
+     * 而令牌在最长 2 小时内仍然有效 —— 那时必须按"无此人"处理,不能放行。
+     *
+     * <p>供 {@code GET /admin/auth/me} 用(会话恢复),也让 {@link #roleOf} 复用它,
+     * 避免"什么算有效账号"的判定散成两份。
      */
-    public Optional<AdminRole> roleOf(long adminId) {
+    public Optional<AdminUser> findEnabledById(long adminId) {
         AdminUser admin = adminUserMapper.selectById(adminId);
         if (admin == null || !AdminUser.STATUS_ENABLED.equals(admin.getStatus())) {
             return Optional.empty();
         }
-        return Optional.ofNullable(AdminRole.of(admin.getRole()));
+        return Optional.of(admin);
+    }
+
+    /**
+     * 解析某后台账号<b>当前</b>的角色。
+     *
+     * <p>以下情形一律返回空(即"无任何权限"):
+     * 账号不存在、账号已停用、角色值无法识别。
+     */
+    public Optional<AdminRole> roleOf(long adminId) {
+        return findEnabledById(adminId).map(admin -> AdminRole.of(admin.getRole()));
     }
 }

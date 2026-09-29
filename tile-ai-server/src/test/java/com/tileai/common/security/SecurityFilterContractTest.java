@@ -120,7 +120,12 @@ class SecurityFilterContractTest {
     @DisplayName("业主令牌访问后台接口 → 403")
     void userTokenCannotReachAdmin() throws Exception {
         String token = jwtService.issueAccess(1L, SubjectType.USER);
-        MvcResult result = mvc.perform(get(ADMIN).cookie(new Cookie("access_token", token)))
+        // 业主令牌放进**后台**的 Cookie 名里 —— 这样过滤器才读得到它,
+        // 再由 hasAuthority("ROLE_ADMIN") 挡下 → 403。
+        // (若放进 C 端的 access_token,后台路径不读那条 Cookie,只会得到 401,
+        //  那样测的是"Cookie 没被读",不是"ID 空间隔离"。)
+        MvcResult result = mvc.perform(get(ADMIN)
+                        .cookie(new Cookie("admin_access_token", token)))
                 .andReturn();
 
         assertEquals(403, result.getResponse().getStatus(),
@@ -132,7 +137,8 @@ class SecurityFilterContractTest {
     @DisplayName("后台令牌访问后台接口 → 放行")
     void adminTokenReachesAdmin() throws Exception {
         String token = jwtService.issueAccess(1L, SubjectType.ADMIN);
-        MvcResult result = mvc.perform(get(ADMIN).cookie(new Cookie("access_token", token)))
+        MvcResult result = mvc.perform(get(ADMIN)
+                        .cookie(new Cookie("admin_access_token", token)))
                 .andReturn();
 
         assertEquals(200, result.getResponse().getStatus(),
@@ -143,7 +149,8 @@ class SecurityFilterContractTest {
     @DisplayName("403 响应体同样是统一格式(业务码 10004),不是 Spring 默认错误页")
     void forbiddenResponseUsesEnvelope() throws Exception {
         String token = jwtService.issueAccess(1L, SubjectType.USER);
-        MvcResult result = mvc.perform(get(ADMIN).cookie(new Cookie("access_token", token)))
+        MvcResult result = mvc.perform(get(ADMIN)
+                        .cookie(new Cookie("admin_access_token", token)))
                 .andReturn();
 
         String body = result.getResponse().getContentAsString();

@@ -32,6 +32,25 @@ components:
         两个 Cookie 均带 `HttpOnly` 与 **`SameSite=Lax`**;`Secure` 在 HTTPS 环境必须开启。
         `SameSite=Lax` 是 CSRF 防护的落点(架构 §13.5):跨站发起的状态变更请求不携带 Cookie。
         §10.1
+    adminCookieAuth:
+      type: apiKey
+      in: cookie
+      name: admin_access_token
+      description: |
+        **后台**登录态 Cookie(HttpOnly,仅由 `/api/v1/admin/auth/login` 下发)。
+        access `admin_access_token`(2h,Path=`/api/v1/admin`)+
+        refresh `admin_refresh_token`(14d,Path=`/api/v1/admin/auth`)。
+        §10.1、§4.4
+
+        **与 `cookieAuth` 是两套东西,不要混用**:C 端业主与 B 端后台主体不同
+        (§4.4「C 端与 B 端不互通」),会话必须分开。两端若共用同一组 Cookie
+        名与路径,同一浏览器先后登录会**互相覆盖** —— 后登录的把先登录的顶掉,
+        表现为"莫名掉线"。改名与改路径后两者可**并存**。
+
+        `refresh` 的 Path 必须**覆盖登录端点自身**(`/api/v1/admin/auth/login`),
+        否则浏览器按规范拒绝存储 —— 后台就永远拿不到刷新令牌。
+
+        不用 `Authorization` 头,令牌也不进响应体(前端零存储)。
     serviceToken:
       type: apiKey
       in: header

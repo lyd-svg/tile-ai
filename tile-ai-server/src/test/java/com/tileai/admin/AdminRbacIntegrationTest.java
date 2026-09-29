@@ -166,7 +166,12 @@ class AdminRbacIntegrationTest {
     @DisplayName("业主令牌访问后台探针 → 403(C 端与 B 端 ID 空间隔离)")
     void userTokenCannotReachAdminProbe() throws Exception {
         String userToken = jwtService.issueAccess(1L, SubjectType.USER);
-        MvcResult result = mvc.perform(get(BASE + "/logs").cookie(new Cookie("access_token", userToken)))
+        // 令牌塞进**后台**的 Cookie 名里:这样过滤器才读得到它,
+        // 再由 hasAuthority("ROLE_ADMIN") 拒掉 → 403。
+        // 若塞进 C 端的 access_token,后台路径根本不读那条 Cookie,得到的是 401 ——
+        // 那样测的就不是「ID 空间隔离」,而是「这条 Cookie 没被读」。
+        MvcResult result = mvc.perform(get(BASE + "/logs")
+                        .cookie(new Cookie("admin_access_token", userToken)))
                 .andReturn();
         assertEquals(403, result.getResponse().getStatus());
     }
@@ -280,6 +285,6 @@ class AdminRbacIntegrationTest {
                               org.springframework.test.web.servlet.request.MockHttpServletRequestBuilder rb)
             throws Exception {
         String token = jwtService.issueAccess(adminId, SubjectType.ADMIN);
-        return mvc.perform(rb.cookie(new Cookie("access_token", token))).andReturn();
+        return mvc.perform(rb.cookie(new Cookie("admin_access_token", token))).andReturn();
     }
 }

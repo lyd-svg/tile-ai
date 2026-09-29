@@ -366,7 +366,7 @@ class AdminTemplateIntegrationTest {
     private org.springframework.test.web.servlet.ResultActions asAdmin(
             org.springframework.test.web.servlet.request.MockHttpServletRequestBuilder rb)
             throws Exception {
-        return mvc.perform(rb.cookie(new Cookie("access_token", token)));
+        return mvc.perform(rb.cookie(new Cookie("admin_access_token", token)));
     }
 
     private static int codeOf(MvcResult result) throws Exception {

@@ -175,7 +175,8 @@ class AdminStoreIntegrationTest {
     private org.springframework.test.web.servlet.ResultActions asAdmin(
             org.springframework.test.web.servlet.request.MockHttpServletRequestBuilder rb)
             throws Exception {
-        return mvc.perform(rb.cookie(new Cookie("access_token", token)));
+        // 后台接口读 admin_access_token —— 两端各一套 Cookie(架构 §10.1)
+        return mvc.perform(rb.cookie(new Cookie("admin_access_token", token)));
     }
 
     private static int codeOf(MvcResult result) throws Exception {

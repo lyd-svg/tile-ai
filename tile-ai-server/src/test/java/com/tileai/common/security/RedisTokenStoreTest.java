@@ -99,14 +99,14 @@ class RedisTokenStoreTest {
         String refreshToken = session.refresh().getValue();
 
         // 登出前:能换到新的 access
-        assertNotNull(sessions.refreshAccess(refreshToken), "登出前刷新应成功");
+        assertNotNull(sessions.refreshAccess(refreshToken, SubjectType.USER), "登出前刷新应成功");
 
         // 登出
-        sessions.logout(refreshToken);
+        sessions.logout(refreshToken, SubjectType.USER);
 
         // 登出后:同一个 refresh 令牌必须失效
         BusinessException ex = assertThrows(BusinessException.class,
-                () -> sessions.refreshAccess(refreshToken),
+                () -> sessions.refreshAccess(refreshToken, SubjectType.USER),
                 "登出后 refresh 令牌仍可用 —— 登出等于没做");
         assertEquals(ErrorCode.UNAUTHENTICATED, ex.errorCode());
     }
@@ -117,10 +117,10 @@ class RedisTokenStoreTest {
         AuthSessionService.SessionCookies session = sessions.start(9L, SubjectType.USER);
         String refreshToken = session.refresh().getValue();
 
-        sessions.logout(refreshToken);
-        sessions.logout(refreshToken);
-        sessions.logout("完全无效的字符串");
-        sessions.logout(null);
+        sessions.logout(refreshToken, SubjectType.USER);
+        sessions.logout(refreshToken, SubjectType.USER);
+        sessions.logout("完全无效的字符串", SubjectType.USER);
+        sessions.logout(null, SubjectType.USER);
     }
 
     @Test
@@ -128,7 +128,7 @@ class RedisTokenStoreTest {
     void logoutClearsBothCookies() {
         AuthSessionService.SessionCookies session = sessions.start(9L, SubjectType.USER);
         AuthSessionService.SessionCookies cleared = sessions.logout(
-                session.refresh().getValue());
+                session.refresh().getValue(), SubjectType.USER);
 
         assertEquals(session.access().getPath(), cleared.access().getPath());
         assertEquals(session.refresh().getPath(), cleared.refresh().getPath());
@@ -142,8 +142,35 @@ class RedisTokenStoreTest {
         String access = jwtService.issueAccess(9L, SubjectType.USER);
 
         BusinessException ex = assertThrows(BusinessException.class,
-                () -> sessions.refreshAccess(access));
+                () -> sessions.refreshAccess(access, SubjectType.USER));
         assertEquals(ErrorCode.UNAUTHENTICATED, ex.errorCode());
+    }
+
+    @Test
+    @DisplayName("主体类型不符的 refresh 令牌换不到会话(C 端的塞进后台也不行)")
+    void refreshTokenOfAnotherSubjectIsRejected() {
+        // 后台 id 与业主 id 是两套 ID 空间(§4.4),令牌里带 styp ——
+        // 拿 USER 的刷新令牌去换 ADMIN 会话,签名与类型都对,只有主体不符。
+        String userRefresh = jwtService.issueRefresh(9L, SubjectType.USER);
+
+        BusinessException ex = assertThrows(BusinessException.class,
+                () -> sessions.refreshAccess(userRefresh, SubjectType.ADMIN),
+                "主体类型不符必须拒绝 —— 否则两端令牌可互相顶替");
+        assertEquals(ErrorCode.UNAUTHENTICATED, ex.errorCode());
+    }
+
+    @Test
+    @DisplayName("后台登出只清后台那两条 Cookie,不动 C 端的")
+    void adminLogoutDoesNotClearUserCookies() {
+        AuthSessionService.SessionCookies admin = sessions.start(9L, SubjectType.ADMIN);
+        AuthSessionService.SessionCookies user = sessions.start(9L, SubjectType.USER);
+        AuthSessionService.SessionCookies cleared = sessions.logout(
+                admin.refresh().getValue(), SubjectType.ADMIN);
+
+        // 清的是后台那套(名字与路径都不同),不能把同一浏览器里的 C 端会话也清掉
+        assertEquals(admin.access().getName(), cleared.access().getName());
+        assertEquals(admin.refresh().getPath(), cleared.refresh().getPath());
+        assertTrue(!cleared.access().getName().equals(user.access().getName()));
     }
 
 }

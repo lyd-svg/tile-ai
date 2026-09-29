@@ -44,6 +44,29 @@ public class JwtProperties {
     /** refresh_token 只在该前缀下发送 —— 收窄暴露面(契约明确要求)。 */
     private String refreshCookiePath = "/api/v1/auth";
 
+    // ------------------------------------------------------------------
+    // 后台会话 —— 名字与路径都与 C 端分开(架构 §10.1,缺口 G-9)
+    //
+    // 为什么不能与 C 端共用:两端主体不同(§4.4「C 端与 B 端不互通」),
+    // 而 Cookie 的身份是 (名字, 域名, 路径) —— 完全一样就会互相覆盖:
+    // 同一浏览器先后登录两个端,后登录的把先登录的顶掉。
+    // 分开之后两者可以**并存**。
+    //
+    // ⚠️ 后台 refresh 的 Path 必须**覆盖登录端点自身**(/api/v1/admin/auth/login)。
+    // 浏览器只在路径匹配时才存储/发送 Cookie —— 原先用 C 端的 /api/v1/auth,
+    // 覆盖不到后台登录路径,于是下发的 refresh_token 被浏览器**直接丢弃**,
+    // 后台永远拿不到刷新令牌。这是实测发现的(§24.3)。
+    // ------------------------------------------------------------------
+
+    private String adminAccessCookieName = "admin_access_token";
+
+    /** 只发给后台接口 —— 比 Path=/ 更收窄,顺带避免与 C 端 access 混在一起。 */
+    private String adminAccessCookiePath = "/api/v1/admin";
+
+    private String adminRefreshCookieName = "admin_refresh_token";
+
+    private String adminRefreshCookiePath = "/api/v1/admin/auth";
+
     /**
      * Cookie 的 SameSite 属性。
      *
@@ -119,6 +142,38 @@ public class JwtProperties {
 
     public void setRefreshCookiePath(String refreshCookiePath) {
         this.refreshCookiePath = refreshCookiePath;
+    }
+
+    public String getAdminAccessCookieName() {
+        return adminAccessCookieName;
+    }
+
+    public void setAdminAccessCookieName(String adminAccessCookieName) {
+        this.adminAccessCookieName = adminAccessCookieName;
+    }
+
+    public String getAdminAccessCookiePath() {
+        return adminAccessCookiePath;
+    }
+
+    public void setAdminAccessCookiePath(String adminAccessCookiePath) {
+        this.adminAccessCookiePath = adminAccessCookiePath;
+    }
+
+    public String getAdminRefreshCookieName() {
+        return adminRefreshCookieName;
+    }
+
+    public void setAdminRefreshCookieName(String adminRefreshCookieName) {
+        this.adminRefreshCookieName = adminRefreshCookieName;
+    }
+
+    public String getAdminRefreshCookiePath() {
+        return adminRefreshCookiePath;
+    }
+
+    public void setAdminRefreshCookiePath(String adminRefreshCookiePath) {
+        this.adminRefreshCookiePath = adminRefreshCookiePath;
     }
 
     public String getSameSite() {

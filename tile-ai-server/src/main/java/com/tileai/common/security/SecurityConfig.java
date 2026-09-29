@@ -117,8 +117,11 @@ public class SecurityConfig {
                                 "/api/v1/auth/login",
                                 "/api/v1/auth/refresh").permitAll()
 
-                        // 后台:登录放行,其余一律要后台身份
-                        .requestMatchers(HttpMethod.POST, "/api/v1/admin/auth/login").permitAll()
+                        // 后台:登录与刷新放行,其余一律要后台身份
+                        // (刷新凭 admin_refresh_token Cookie 自证,与 C 端 /auth/refresh 同理)
+                        .requestMatchers(HttpMethod.POST,
+                                "/api/v1/admin/auth/login",
+                                "/api/v1/admin/auth/refresh").permitAll()
                         .requestMatchers("/api/v1/admin/**").hasAuthority("ROLE_ADMIN")
 
                         // C 端需登录的接口
