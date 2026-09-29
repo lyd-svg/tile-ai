@@ -43,35 +43,13 @@ paths:
   # ==========================================================
   # 账户与鉴权(§5.1、§10.2、§11.1)
   # ==========================================================
-  /auth/sms/send:
+  /auth/register:
     post:
       tags: [auth]
-      summary: 发送短信验证码
-      description: 生成验证码并下发(60s 有效、同号/同 IP 限频)。§10.2、§15.6
-      security: []
-      requestBody:
-        required: true
-        content:
-          application/json:
-            schema:
-              type: object
-              required: [phone]
-              properties:
-                phone: { type: string, example: "13800000000" }
-      responses:
-        '200':
-          description: 发送结果;失败码 20002(发送过于频繁)、10001(手机号非法)
-          content:
-            application/json:
-              schema: { $ref: './openapi-common.yaml#/components/schemas/ApiResponse' }
-
-  /auth/login/sms:
-    post:
-      tags: [auth]
-      summary: 验证码登录(未注册自动进入注册流程)
+      summary: 注册(用户名 + 密码)
       description: |
-        校验验证码。老用户 → Set-Cookie(access_token + refresh_token),返回用户信息;
-        新手机号 → 返回 needSetPassword=true + 一次性临时令牌(10 分钟),**不下发任何 Cookie**。§11.1
+        创建账号并**直接下发登录态**。用户名唯一(重复返回 20003),密码 6–20 位(不合规返回 20004),
+        BCrypt 存储。**注册与登录各是一次请求** —— v1.7 起不再有「验证码登录 → 待设密码」的两阶段流程。§5.1、§10.2、§11.1
       security: []
       requestBody:
         required: true
@@ -79,41 +57,13 @@ paths:
           application/json:
             schema:
               type: object
-              required: [phone, code]
+              required: [username, password]
               properties:
-                phone: { type: string }
-                code: { type: string }
+                username: { type: string, maxLength: 50, example: tile_fan }
+                password: { type: string, minLength: 6, maxLength: 20, example: abc123456 }
       responses:
         '200':
-          description: 登录 / 待设密码(失败码 20001 验证码错误或过期)
-          content:
-            application/json:
-              schema:
-                allOf:
-                  - $ref: './openapi-common.yaml#/components/schemas/ApiResponse'
-                  - type: object
-                    properties:
-                      data: { $ref: '#/components/schemas/LoginSmsData' }
-
-  /auth/register/set-password:
-    post:
-      tags: [auth]
-      summary: 完成注册设置密码
-      description: 以验证码登录下发的临时令牌鉴权;设置 6–20 位密码(BCrypt 存储),创建用户并下发 Cookie。§10.2、§11.1
-      security:
-        - tempToken: []
-      requestBody:
-        required: true
-        content:
-          application/json:
-            schema:
-              type: object
-              required: [password]
-              properties:
-                password: { type: string, minLength: 6, maxLength: 20, example: "abc123456" }
-      responses:
-        '200':
-          description: 注册成功(失败码 20004 密码格式不合规)
+          description: 注册结果(失败码 20003 用户名已注册、20004 密码格式不合规)
           content:
             application/json:
               schema:
@@ -123,11 +73,13 @@ paths:
                     properties:
                       data: { $ref: './openapi-common.yaml#/components/schemas/UserInfo' }
 
-  /auth/login/password:
+  /auth/login:
     post:
       tags: [auth]
-      summary: 手机号 + 密码登录
-      description: 校验通过下发 Cookie。§10.2、§11.1
+      summary: 用户名 + 密码登录
+      description: |
+        校验通过下发 Cookie。失败**一律返回 20005,不区分「用户名不存在」与「密码错误」** ——
+        区分开等于对外提供一个账号枚举接口。§5.1、§10.2、§11.1
       security: []
       requestBody:
         required: true
@@ -135,9 +87,9 @@ paths:
           application/json:
             schema:
               type: object
-              required: [phone, password]
+              required: [username, password]
               properties:
-                phone: { type: string }
+                username: { type: string }
                 password: { type: string }
       responses:
         '200':
@@ -803,6 +755,8 @@ paths:
       description: |
         返回后台可配置的枚举字典(默认 `type=space`)。前端下拉、提交校验均以此为准,**不硬编码**。
         仅返回 `status=enabled` 项,按 `sort` 升序。§8.5 t_dict、§10.1、§10.2。D-14 定稿。
+
+        响应 `data` 为 `{ list: [...] }`,与 B 端 `/admin/dicts` 保持同构。
       security: []
       parameters:
         - name: type
@@ -821,8 +775,11 @@ paths:
                   - type: object
                     properties:
                       data:
-                        type: array
-                        items: { $ref: './openapi-common.yaml#/components/schemas/Dict' }
+                        type: object
+                        properties:
+                          list:
+                            type: array
+                            items: { $ref: './openapi-common.yaml#/components/schemas/Dict' }
 
 components:
   # 与 openapi-common.yaml 保持同步(F-4,见 openapi-verification.md §8.4)。
@@ -834,21 +791,10 @@ components:
       name: access_token
       description: |
         登录态由服务端 `Set-Cookie` 下发 `HttpOnly` Cookie(access_token 2h + refresh_token 14d,
-        refresh_token 的 Path 收窄至 /api/v1/auth)。不使用 Authorization 头,令牌不进响应体。§10.1
-    tempToken:
-      type: http
-      scheme: bearer
-      description: 注册临时令牌(一次性,10 分钟);设置密码接口以此鉴权。§10.1
+        refresh_token 的 Path 收窄至 /api/v1/auth)。不使用 Authorization 头,令牌不进响应体。
+        两个 Cookie 均带 `HttpOnly` 与 **`SameSite=Lax`**;`Secure` 在 HTTPS 环境必须开启。
+        `SameSite=Lax` 是 CSRF 防护的落点(架构 §13.5)。§10.1
   schemas:
-
-    LoginSmsData:
-      type: object
-      description: 验证码登录返回数据(§11.1)。老用户返回 user;新手机号返回 needSetPassword + tempToken。
-      properties:
-        needSetPassword: { type: boolean, description: 是否为新手机号、需先设置密码 }
-        tempToken: { type: string, nullable: true, description: 注册临时令牌(仅 needSetPassword=true 时返回) }
-        user: { $ref: './openapi-common.yaml#/components/schemas/UserInfo' }
-      x-todo: "旧/新用户两分支的字段命名(needSetPassword/tempToken)依 §10.2 描述推断"
 
     GenerateRequest:
       type: object

@@ -117,10 +117,42 @@ for key in ('c','admin','internal'):
                 elif 'ApiResponse' not in s:
                     t1_bad.append(f"{key} {method.upper()} {path} [{code}] {mtype}")
 
-t1_pass = t1_ok and not t1_bad
+# 追加断言:接口覆写的 data 类型必须与 ApiResponse.data 兼容。
+#
+# 响应体 schema 是 `allOf: [ApiResponse, {properties: {data: ...}}]`,allOf 要求
+# **两个子 schema 同时成立**。若接口把 data 覆写成 array,而 ApiResponse.data 是
+# object,则"既是 object 又是 array"—— **没有任何响应能满足它**,实现无从下手。
+# 这类缺陷语法合法、G1~G5 全过,只有把两个 schema 放在一起看才发现。
+api_data_type = ((api_resp.get('properties') or {}).get('data') or {}).get('type')
+t1_data_bad = []
+for key in ('c', 'admin', 'internal'):
+    doc = DOCS[key]
+    for path, method, op in iter_operations(doc):
+        for code, resp in (op.get('responses') or {}).items():
+            if '$ref' in resp:
+                continue
+            for mtype, mt in (resp.get('content') or {}).items():
+                if mtype != 'application/json':
+                    continue
+                sch = mt.get('schema', {})
+                if 'ApiResponse' not in json.dumps(sch, ensure_ascii=False):
+                    continue
+                for part in sch.get('allOf', []):
+                    data = ((part.get('properties') or {}).get('data') or {})
+                    declared = data.get('type')
+                    # 只挑"显式声明了不兼容类型"的:未声明 type 的($ref / allOf 包装)
+                    # 一律视为 object,不误报。
+                    if declared is not None and declared != api_data_type:
+                        t1_data_bad.append(
+                            f"{key} {method.upper()} {path} [{code}] "
+                            f"data.type={declared} 与 ApiResponse.data.type={api_data_type} 冲突")
+
+t1_pass = t1_ok and not t1_bad and not t1_data_bad
 t1_ev.append(f"ApiResponse.required 校验 = {'通过' if t1_ok else '失败'}")
 t1_ev.append(f"JSON 响应体中非 ApiResponse 的接口数 = {len(t1_bad)}")
 t1_ev += [f"  违规: {x}" for x in t1_bad]
+t1_ev.append(f"ApiResponse.data.type = {api_data_type};覆写 data 类型冲突的接口数 = {len(t1_data_bad)}")
+t1_ev += [f"  违规: {x}" for x in t1_data_bad]
 t1_ev += [f"  设计例外(SSE 流式,无法包 ApiResponse): {x}" for x in t1_exceptions]
 t1_ev += [f"  设计例外(二进制文件下载,无法包 ApiResponse): {x}" for x in t1_binary]
 record('T-1', '所有响应体为 ApiResponse(code/message/traceId 必填)', t1_pass, t1_ev)
@@ -178,10 +210,8 @@ print('# T-4  需登录接口 security=cookieAuth;公开接口 security=[]')
 print('#' * 72)
 # 期望表来自 tile-ai-architecture.md §10.2 鉴权列
 EXPECT_AUTH = {   # (path, method) -> 'login' | 'public' | 'temp'
-    ('/auth/sms/send','post'):'public',
-    ('/auth/login/sms','post'):'public',
-    ('/auth/register/set-password','post'):'temp',
-    ('/auth/login/password','post'):'public',
+    ('/auth/register','post'):'public',
+    ('/auth/login','post'):'public',
     ('/auth/password','post'):'login',
     ('/auth/logout','post'):'login',
     ('/auth/refresh','post'):'public',

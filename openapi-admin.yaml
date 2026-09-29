@@ -380,9 +380,14 @@ paths:
     get:
       tags: [templates]
       summary: 模板列表
-      description: 权限点 template:read。
+      description: |
+        权限点 template:read。
+        支持按 **房间数 + 面积区间 + 户型结构** 筛选 —— 三者均为 PRD §5.3.1 的要求,
+        且均为精确匹配(它们是后台录入时选定的分类值,不是自由文本)。
       parameters:
-        - { name: roomCount, in: query, required: false, schema: { type: integer } }
+        - { name: roomCount, in: query, required: false, schema: { type: integer, description: 居室数 } }
+        - { name: areaRange, in: query, required: false, schema: { type: string, description: "面积区间,例:80-100㎡" } }
+        - { name: structure, in: query, required: false, schema: { type: string, description: "户型结构,例:三室两厅" } }
         - { $ref: './openapi-common.yaml#/components/parameters/PageParam' }
         - { $ref: './openapi-common.yaml#/components/parameters/SizeParam' }
       responses:
@@ -560,8 +565,12 @@ paths:
       tags: [quote-params]
       summary: 新增/更新报价参数(按 param_key upsert)
       description: |
-        权限点 quote-param:write(仅 super_admin/operator,editor 不可)。§4.4。
-        参数:aux_unit_price(辅料单价)、loss_rate_min/loss_rate_max(损耗率上下限)。
+        权限点 quote-param:write(**仅 super_admin**)。§4.4。
+        报价参数(辅料单价 / 损耗率)直接决定所有报价金额,与账号管理同属高影响面配置 ——
+        operator 与 editor 均**不可读写**(quote-param:read 同样仅 super_admin)。
+        角色归属以架构 §4.4 的「权限点 → 角色」对照表为准(该表是唯一权威来源)。
+        参数:aux_unit_price(辅料单价,**元/㎡**)、loss_rate(**当前采用的损耗率**,小数)、
+        loss_rate_min/loss_rate_max(损耗率的**允许范围**,小数;不参与计算,仅作校验与提示)。
       requestBody:
         required: true
         content:
@@ -816,7 +825,10 @@ components:
       type: apiKey
       in: cookie
       name: access_token
-      description: 后台登录态 Cookie(HttpOnly,由 POST /admin/auth/login 下发)。§10.1、§4.4
+      description: |
+        后台登录态 Cookie(HttpOnly,由 POST /admin/auth/login 下发)。
+        带 **`SameSite=Lax`** —— CSRF 防护的落点(架构 §13.5);`Secure` 在 HTTPS 环境必须开启。
+        §10.1、§4.4
   schemas:
 
     ProductUpsert:
@@ -890,7 +902,7 @@ components:
       description: 新增/更新报价参数请求体(param_key upsert)。§8.5
       required: [paramKey, paramValue]
       properties:
-        paramKey: { type: string, enum: [aux_unit_price, loss_rate_min, loss_rate_max] }
+        paramKey: { type: string, enum: [aux_unit_price, loss_rate, loss_rate_min, loss_rate_max] }
         paramValue: { type: number, format: float }
         remark: { type: string }
 
@@ -934,7 +946,11 @@ components:
 
     ImportStatus:
       type: object
-      description: 批量导入进度 / 结果。§8.7
+      description: |
+        批量导入进度 / 结果。§8.7。
+        字段与架构 §8.7 的 `t_import_batch` **一一对应**(对外 camelCase、DB snake_case,
+        映射在 ORM 层完成,见 §10.1)。`status` 为 `pending` / `running` 时,
+        `successCount` / `failedCount` 可能仍在变化,前端应轮询。
       required: [batchId, status]
       properties:
         batchId: { type: string }
@@ -950,5 +966,4 @@ components:
             properties:
               row: { type: integer }
               reason: { type: string }
-        errorReportUrl: { type: string, description: 错误报告下载地址 }
-      x-todo: "§8.7 描述'错误报告(行号+原因)供下载',字段结构未定义;以上为推断"
+        errorReportUrl: { type: string, description: "错误报告下载地址,对应 t_import_batch.error_report_url" }

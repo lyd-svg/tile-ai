@@ -1,6 +1,7 @@
 # CLAUDE.md
 
-瓷砖选购 AI 效果图与报价系统。**文档先行**,实现尚未开始。
+瓷砖选购 AI 效果图与报价系统。**文档先行**;实现自 2026-09-29 起从阶段 0 起步
+(T-0.1 已完成),逐任务进度见 `tile-ai-tasks.md`。
 
 本文件只写"怎么在这里安全地做事"。系统是什么、有哪些字段、什么规则 ——
 见下列文档,**不要在此复述**。CLAUDE.md 每轮会话都会被加载,臃肿会稀释
@@ -87,12 +88,15 @@ tile-ai-prd.md             需求文档 v0.6   ← 冲突时以 PRD 为准
 | 约定 | 说明 |
 | --- | --- |
 | 业务错误码 | 统一 HTTP **200**,成败看响应体 `code`;**仅** 401/403 用真实状态码 |
-| 鉴权 | 服务端 `Set-Cookie` 下发 HttpOnly Cookie;**不用** `Authorization` 头,令牌**不进**响应体。唯一例外:注册临时令牌 `tempToken` 走 Bearer |
+| 鉴权 | 服务端 `Set-Cookie` 下发 HttpOnly Cookie;**不用** `Authorization` 头,令牌**不进**响应体(**v1.7 起无例外** —— 原注册临时令牌 `tempToken` 已随短信验证码方案取消) |
+| 登录标识 | C 端用户用 **`username`**(唯一)。**不要再引入手机号 / 短信 / 验证码** —— 短信通道已于 v0.7 取消(架构 §15.6 记录了原因),`t_sms_code` 与 `t_user.phone` 均已删除。登录失败**一律 20005**,不区分「用户名不存在」与「密码错误」 |
 | 损耗率 | 以**小数**存储,`0.06` 表示 6%(D-15 统一口径) |
 | 部位枚举 | 恒为 `floor` / `wall` / `local`。一期**不含美缝** |
 | 命名 | 对外 JSON 用 camelCase,DB 用 snake_case,映射在 ORM 层完成 |
 | 空间 / 风格 | 走后台字典(`t_dict` / `GET /dicts`),**前端与契约不硬编码**;契约里的 enum 只是内置默认值 |
 | 户型 | 静态存储加密(`layout_enc`,AES-256-GCM),**对外 API 传明文**。对外 schema 不得出现 `layout_enc` |
+| 数据库迁移 | Flyway 版本化迁移。**已应用的 `V*.sql` 绝不回改** —— 校验和失配会让应用起不来;新表一律用**新版本号追加** |
+| CSRF | Cookie 鉴权靠 **`SameSite=Lax`** + 前后端同源部署挡 CSRF(架构 §13.5)。**前端若改跨站部署,此防护即失效**,必须补 CSRF token |
 
 ---
 
@@ -140,15 +144,18 @@ tile-ai-prd.md             需求文档 v0.6   ← 冲突时以 PRD 为准
 
 ## 尚未确定 / 待办
 
-- **P0-3:MQ 选型未定**(RabbitMQ vs Redis Stream,架构 §15.9)。
-  `asyncapi-internal.yaml` 按 AMQP 书写,**消息体与选型无关**;选定后只需回填
-  `servers` 与 `channel.bindings`。
+- **P0-2 模型选型 / P0-4 产品库数据盘点** 两项依赖外部资源
+  (模型 API Key 与评测样本、产品库实际数据),尚未启动。
+  分别卡住 T-1.5 及全部 AI 任务、T-0.7 的真实数据验证。
+- ~~P0-1 短信通道报备~~ **已取消**(2026-09-29)—— 登录改为「用户名 + 密码」,
+  不再依赖短信通道;T-1.1 随之解阻,可立即开工。
 - **T-12** —— 契约 ↔ 实现导出 OpenAPI 的双向 diff,需实现落地后执行。
   **这是唯一能把契约与实现绑住的检查;不落地它,两者会从第一天起悄悄分叉,
   而 CI 依然全绿**(G1–G7 只校验契约自身)。
-- 实现尚未开始;技术选型(Vue 3 / Spring Boot 3 / FastAPI / MySQL / Qdrant 等)
-  见架构文档 §3,部署拓扑见 §12。
+- 技术选型(Vue 3 / Spring Boot 3 / FastAPI / MySQL / Qdrant 等)见架构文档 §3,
+  部署拓扑见 §12。**T-0.2 起需要 MySQL**,而本机 Docker Desktop 的 daemon 默认未启动。
 
-> D-13(MQ 消息体)已于 2026-09-29 关闭,产出 `asyncapi-internal.yaml`,
-> 记录见 `openapi-verification.md` §9。DLQ 粒度、对话异步落库(可选)、
+> D-13(MQ 消息体)已于 2026-09-29 关闭,产出 `asyncapi-internal.yaml`;
+> P0-3①(MQ 选型)同日裁决为 **RabbitMQ**,R-8 随之闭合。记录见
+> `openapi-verification.md` §9。DLQ 粒度、对话异步落库(可选)、
 > 二期进度回传仍未闭合,见 §9.5。

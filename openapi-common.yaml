@@ -29,13 +29,9 @@ components:
         登录态由服务端 `Set-Cookie` 下发 `HttpOnly` Cookie(access_token 2h + refresh_token 14d,
         refresh_token 的 Path 收窄至 /api/v1/auth)。后续请求由浏览器自动携带,**不使用 Authorization 头,
         令牌也不进响应体**。前端零存储(开发规范 §1.4 禁用 localStorage/sessionStorage)。
+        两个 Cookie 均带 `HttpOnly` 与 **`SameSite=Lax`**;`Secure` 在 HTTPS 环境必须开启。
+        `SameSite=Lax` 是 CSRF 防护的落点(架构 §13.5):跨站发起的状态变更请求不携带 Cookie。
         §10.1
-    tempToken:
-      type: http
-      scheme: bearer
-      description: |
-        注册临时令牌:验证码登录时若手机号未注册,返回 `needSetPassword=true` 与一次性临时令牌
-        (10 分钟有效,一次性)。设置密码接口以此鉴权。§10.1、§10.2
     serviceToken:
       type: apiKey
       in: header
@@ -213,8 +209,11 @@ components:
           items: { $ref: '#/components/schemas/Opening' }
         areas:
           allOf: [{ $ref: '#/components/schemas/LayoutAreas' }]
-          description: 各部位面积。**注意**:§8.3 示例中该字段出现在"解密后的户型快照"里,疑为服务端计算出的结果而非录入入参;录入时是否必填待确认。
-          x-todo: "areas 究竟是录入入参还是服务端计算结果,§8.3 未说明"
+          description: |
+            各部位面积(㎡)。**服务端派生字段,录入时可省略**(架构 §8.3)。
+            省略时由服务端依长宽高推导:`floor = 长×宽`、`wall = 2×(长+宽)×层高`、`local = 0`;
+            若已显式给出则**原样采用、不覆盖**。
+            此处是**毛面积**;扣减门窗开口得到有效面积属报价环节(§8.8)。
 
     LayoutModel:
       type: object
@@ -325,21 +324,25 @@ components:
       description: |
         业务错误码。§10.5。
         0 成功;10001 参数校验失败;10002 未登录/令牌无效;10003 令牌过期需刷新;
-        10004 无权限;10005 限流;20001 验证码错误或过期;20002 验证码发送过于频繁;
-        20003 手机号已注册;20004 密码格式不合规;20005 账号或密码错误;30001 资源不存在;
-        30002 状态不允许该操作;40001 生成任务失败;40002 生成服务繁忙;40003 任务不存在;
-        40004 部位补齐失败;50001 AI 咨询超出范围;90001 系统内部错误。
-      enum: [0, 10001, 10002, 10003, 10004, 10005, 20001, 20002, 20003, 20004, 20005, 30001, 30002, 40001, 40002, 40003, 40004, 50001, 90001]
+        10004 无权限;10005 限流;20003 用户名已注册;20004 密码格式不合规;
+        20005 账号或密码错误;30001 资源不存在;30002 状态不允许该操作;
+        40001 生成任务失败;40002 生成服务繁忙;40003 任务不存在;40004 部位补齐失败;
+        50001 AI 咨询超出范围;90001 系统内部错误。
+
+        **v1.7 变更**:原「验证码错误或过期」「验证码发送过于频繁」两个错误码已随短信通道
+        一并取消;原「手机号已注册」改义为「用户名已注册」。变更经过见 PRD §5.1 与架构 §15.6
+        —— 契约只定义**当前有效集合**,不兼作变更日志。
+      enum: [0, 10001, 10002, 10003, 10004, 10005, 20003, 20004, 20005, 30001, 30002, 40001, 40002, 40003, 40004, 50001, 90001]
 
     # ---- 鉴权相关 ----
 
     UserInfo:
       type: object
       description: 登录成功返回的用户信息(令牌不进响应体,仅 Set-Cookie)。§10.1、§11.1
-      required: [userId, phone]
+      required: [userId, username]
       properties:
         userId: { type: integer }
-        phone: { type: string, description: 手机号(脱敏或明文由前端约定) }
+        username: { type: string, description: 登录用户名(唯一) }
         nickname: { type: string, nullable: true }
 
     # ---- 搭配(§8.2) ----
@@ -510,12 +513,16 @@ components:
       type: object
       description: |
         报价参数。§8.5 t_quote_param
-        量纲约定(D-19):aux_unit_price 单位为**元/㎡**;loss_rate_min/loss_rate_max 为**小数**
+        量纲约定(D-19):aux_unit_price 单位为**元/㎡**;三个 loss_rate* 为**小数**
         (0.06 表示 6%)。§8.8、§10.6⑤
+
+        **`loss_rate` 才是参与报价计算的那个损耗率**;`loss_rate_min` / `loss_rate_max`
+        是它的**允许范围**(PRD §5.5「默认 6%,范围 5%~8%」),不参与计算。
+        三者关系见架构 §8.8「参数来源」。
       required: [id, paramKey, paramValue]
       properties:
         id: { type: integer }
-        paramKey: { type: string, enum: [aux_unit_price, loss_rate_min, loss_rate_max] }
+        paramKey: { type: string, enum: [aux_unit_price, loss_rate, loss_rate_min, loss_rate_max] }
         paramValue: { type: number, format: float }
         remark: { type: string, nullable: true }
 

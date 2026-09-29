@@ -15,9 +15,9 @@ info:
     因此每个 operation 用 `x-producer` / `x-consumer` 标注生产方与消费方
     (沿用 `openapi-internal.yaml` 的 `x-direction` 约定)。
 
-    **消息体与协议无关**:下方消息体仅描述**载荷结构**。架构 §15.9 尚未裁决
-    一期采用 RabbitMQ 还是 Redis Stream(P0-3);若改选 Redis Stream,
-    只需调整 `servers` 段与投递语义,消息体本身不变。
+    **消息体与协议无关**:下方消息体仅描述**载荷结构**。MQ 选型已于
+    2026-09-29 裁决(一期采用 **RabbitMQ**,见架构 §15.9 / P0-3①);
+    若扩展期改选其它协议,只需调整 `servers` 段与投递语义,消息体本身不变。
 
     **可靠性要求**(架构 §6.4,与消息体同等重要):
     - 消息由 Java 侧 **Outbox 模式**投递:与业务数据同事务写入 `t_outbox`,
@@ -35,9 +35,8 @@ servers:
     host: '{mq-host}:5672'
     protocol: amqp
     description: |
-      消息代理。架构 §15.9 尚未裁决 RabbitMQ 与 Redis Stream 的取舍(P0-3),
-      此处按 RabbitMQ 的 AMQP 协议书写;若改选 Redis Stream,本段与
-      channel.bindings 需相应调整,**消息体不变**。
+      消息代理。一期采用 **RabbitMQ**(2026-09-29 裁决,见架构 §15.9 / P0-3①);
+      若扩展期改选其它协议,本段与 channel.bindings 需相应调整,**消息体不变**。
 
       拓扑:topic 型交换机 `tile.topic`,各队列以自身名称作为 routing key 绑定;
       消息持久化(架构 §13.4 要求 MQ 持久化)。
@@ -46,7 +45,6 @@ servers:
     variables:
       mq-host:
         default: rabbitmq
-    x-todo: 'P0-3 未裁决:MQ 选型(RabbitMQ vs Redis Stream),见架构 §15.9'
 
 defaultContentType: application/json
 
