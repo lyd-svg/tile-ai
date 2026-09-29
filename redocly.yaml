@@ -1,0 +1,37 @@
+# Redocly 配置 —— 契约静态校验(CI 与本地共用)
+#
+# 用法(与本文件同级执行,配置会被自动发现):
+#   redocly lint openapi-common.yaml openapi-c.yaml openapi-admin.yaml openapi-internal.yaml
+#
+# 规则取舍的依据见 openapi-verification.md §8.5(非缺陷项)与 §8.8.5(R-1/R-2)。
+
+extends:
+  - recommended
+
+rules:
+  # ── 以下两条对 openapi-common.yaml 恒为假阳,故关闭 ──────────────
+  #
+  # 原因:openapi-common.yaml 是**纯组件库**(`paths: {}`),仅供其余 3 份契约
+  # 通过 `./openapi-common.yaml#/...` 引用,本身不是可独立调用的 API 文档。
+  #   - no-empty-servers     :纯组件库按设计无需 servers
+  #   - no-unused-components :组件被其它文件引用,但校验器只看单文件
+  #
+  # 关闭的代价经实测为**零**:outputs/scripts/rule_breakdown.py 统计显示,
+  # 这两条规则**只在 openapi-common.yaml 命中**,在 c / admin / internal 上
+  # 一次都不触发。
+  #
+  # 注:Redocly CLI v2.55 **已移除配置中的 `overrides` 字段**
+  # (使用会报 "Property `overrides` is not expected here"),因此无法按文件
+  # 精确关闭,只能全局关闭。若日后升级 Redocly 恢复了 overrides 能力,
+  # 建议改为仅对 openapi-common.yaml 关闭,把这两条规则在其余三份上重新打开。
+  no-empty-servers: off
+  no-unused-components: off
+
+  # ── 以下保持开启(均为 warning,不阻断 CI,但保留可见性) ────────
+  # operation-operationId / operation-4xx-response / info-license / info-contact
+  #   -> 风格建议,契约当前以"可读 + 可校验"为目标。若后续要由契约生成 SDK,
+  #      再统一补齐 operationId 等字段。
+  # no-ambiguous-paths (admin 命中 1 条)
+  #   -> `/products/import/{batchId}`(GET) 与 `/products/{id}/status`(PATCH)
+  #      结构歧义。因** HTTP 方法不同**,运行时不会实际冲突,属设计气味而非缺陷。
+  #      未关闭:保留可见性。若日后新增同方法的接口,需重新评估并调整路径。

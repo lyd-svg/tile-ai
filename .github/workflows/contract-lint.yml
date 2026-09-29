@@ -1,0 +1,66 @@
+name: 契约静态校验
+
+# 触发条件:契约 / 文档 / 校验脚本本身发生变更时。
+# 纯文档改动(不涉及 yaml 或 outputs/)不触发,避免无谓消耗。
+on:
+  push:
+    paths:
+      - '**.yaml'
+      - '**.yml'
+      - '**.md'
+      - 'outputs/**'
+      - '.github/workflows/contract-lint.yml'
+  pull_request:
+    paths:
+      - '**.yaml'
+      - '**.yml'
+      - '**.md'
+      - 'outputs/**'
+  workflow_dispatch:      # 支持手动触发
+
+# 同一分支的连续推送只保留最新一次,取消排队中的旧运行
+concurrency:
+  group: contract-lint-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read          # 只读仓库,最小权限
+
+jobs:
+  contract-lint:
+    name: 契约校验 (redocly / spectral / swagger-parser / T-1~T-15)
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+
+    steps:
+      - name: 检出代码
+        uses: actions/checkout@v4
+
+      - name: 安装 Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '24'
+          # 缓存 npm 依赖,key 取自 tools 的 lock 文件
+          cache: 'npm'
+          cache-dependency-path: outputs/tools/package-lock.json
+
+      - name: 安装 Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+
+      - name: 运行契约校验
+        # CI=true 会让 ci.sh 执行 `npm ci` 干净安装(严格按 lock 文件)
+        env:
+          CI: 'true'
+        run: bash outputs/scripts/ci.sh
+
+      - name: 上传校验报告
+        # 无论成败都上传 —— 失败时报告正是排查所需
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: contract-lint-reports
+          path: outputs/reports/
+          retention-days: 14
+          if-no-files-found: warn

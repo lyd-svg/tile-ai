@@ -58,6 +58,7 @@ print('RESULT:', 'ALL OK' if bad == 0 else f'{bad} 处异常')
 # 额外:全局断言 —— 每个 schema 属性的键必须全是 ASCII 关键字
 import re
 ALLOWED_NON_ASCII = set()
+global_bad = 0
 print()
 print('全局扫描:任何 mapping 中出现非 ASCII 键即报告')
 for fn in ['openapi-common.yaml','openapi-c.yaml','openapi-admin.yaml','openapi-internal.yaml']:
@@ -73,3 +74,12 @@ for fn in ['openapi-common.yaml','openapi-c.yaml','openapi-admin.yaml','openapi-
                 walk(v, f'{p}[{i}]')
     walk(docs[fn], '')
     print(f'  {fn}: {len(hits)} 处非 ASCII 键 {hits if hits else ""}')
+    if hits:
+        global_bad += len(hits)
+
+print()
+if bad or global_bad:
+    print(f'CI 判据:描述截断 {bad} 处 / 全局伪键 {global_bad} 处 -> 退出码 1')
+    sys.exit(1)
+print('CI 判据:全部通过 -> 退出码 0')
+sys.exit(0)

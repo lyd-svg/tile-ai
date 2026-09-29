@@ -55,10 +55,12 @@ def scan(fname):
     return findings
 
 total = 0
+per_file = {}
 for f in FILES:
     findings = scan(f)
     # 只保留看起来像"被逗号撕开的句子片段"的键:含中文且含数字/单位/标点
     suspicious = [x for x in findings if not x[1].isascii()]
+    per_file[f] = len(suspicious)
     print('=' * 72)
     print(f'FILE: {f}   可疑键(非 ASCII 键)={len(suspicious)}')
     print('=' * 72)
@@ -68,3 +70,11 @@ for f in FILES:
     total += len(suspicious)
     print()
 print(f'合计可疑键: {total}')
+
+if total:
+    print()
+    print('CI 判据:存在逗号撕裂 -> 退出码 1')
+    print('  这类缺陷 YAML 本身不报错,但会让 description 被静默截断并产生非法键。')
+    print('  修复方式见 openapi-verification.md §8.4 F-1。')
+    sys.exit(1)
+sys.exit(0)

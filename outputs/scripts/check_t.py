@@ -27,14 +27,17 @@ for k, fn in FILES.items():
     DOCS[k] = yaml.safe_load(RAW[k])
 
 RESULTS = []
-def record(tid, title, passed, evidence, detail=None):
+def record(tid, title, passed, evidence, detail=None, skip=False):
+    """skip=True 表示该断言当前不可执行(如依赖实现侧产物),不计入失败。
+    CI 判据:仅 FAIL 会令进程返回非零;SKIP 不阻断。"""
+    st = 'SKIP' if skip else ('PASS' if passed else 'FAIL')
     RESULTS.append({
         'id': tid, 'title': title,
-        'result': 'PASS' if passed else 'FAIL',
+        'result': st,
         'evidence': evidence,
         'detail': detail or [],
     })
-    print(f"[{'PASS' if passed else 'FAIL'}] {tid}  {title}")
+    print(f"[{st}] {tid}  {title}")
     for e in evidence if isinstance(evidence, list) else [evidence]:
         print(f"        {e}")
     print()
@@ -491,7 +494,7 @@ t12_ev = [
     "→ 该项**当前不可执行**(不可判 PASS/FAIL),属前置条件未满足,非契约缺陷",
 ]
 record('T-12', '实现导出的 OpenAPI 与本契约结构 diff(双向)', t12_pass, t12_ev,
-       detail=['不可执行:缺实现侧产物'])
+       detail=['不可执行:缺实现侧产物'], skip=True)
 
 # ============================================================
 # T-13 仅 401/403 用真实 HTTP 状态,其余业务结果 HTTP 200
@@ -606,8 +609,18 @@ print('# 汇总')
 print('#' * 72)
 for r in RESULTS:
     print(f"  {r['id']:<5} {r['result']:<4} {r['title']}")
+
+n_pass = sum(1 for r in RESULTS if r['result'] == 'PASS')
+n_fail = sum(1 for r in RESULTS if r['result'] == 'FAIL')
+n_skip = sum(1 for r in RESULTS if r['result'] == 'SKIP')
 print()
-print(f"PASS={sum(1 for r in RESULTS if r['result']=='PASS')}  "
-      f"FAIL={sum(1 for r in RESULTS if r['result']=='FAIL')}  "
-      f"共 {len(RESULTS)} 项")
+print(f"PASS={n_pass}  FAIL={n_fail}  SKIP={n_skip}  共 {len(RESULTS)} 项")
 print(f"结果已写入 {os.path.join(outdir, 't-results.json')}")
+
+if n_fail:
+    print()
+    print('CI 判据:存在 FAIL -> 退出码 1')
+    for r in RESULTS:
+        if r['result'] == 'FAIL':
+            print(f"  ✗ {r['id']}  {r['title']}")
+sys.exit(1 if n_fail else 0)

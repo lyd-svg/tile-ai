@@ -1,0 +1,74 @@
+#!/bin/sh
+# =============================================================================
+# pre-commit —— 契约快速校验
+#
+# 安装(每个克隆需执行一次;core.hooksPath 是本地配置,不入版本库):
+#     git config core.hooksPath .githooks
+#
+# 定位:只拦**最危险且最快**的两类问题,约 2-3 秒。
+#   - 逗号撕裂:YAML 流式映射里未加引号的逗号 -> 伪键 + description 被静默截断。
+#              这类缺陷 YAML 本身不报错、肉眼也难发现,必须在提交前拦。
+#   - 结构校验:$ref 悬空 / OpenAPI 3.0 结构非法。
+#
+# 全量校验(T-1~T-15 / redocly / spectral)刻意**不**放在这里 ——
+# 那部分留给 CI(outputs/scripts/ci.sh),避免拖慢每一次提交。
+#
+# 确需跳过: git commit --no-verify
+# =============================================================================
+
+set -u
+
+# 仅当本次提交涉及契约文件时才触发
+STAGED=$(git diff --cached --name-only --diff-filter=ACM | grep -E '^openapi-[A-Za-z0-9_-]+\.yaml$')
+if [ -z "$STAGED" ]; then
+  exit 0
+fi
+
+echo "pre-commit: 检测到契约文件变更 ——"
+echo "$STAGED" | sed 's/^/    /'
+echo ""
+
+PY=python
+command -v python >/dev/null 2>&1 || PY=python3
+
+FAIL=0
+
+# ---------------------------------------------------------------- 1. 逗号撕裂
+if command -v "$PY" >/dev/null 2>&1; then
+  OUT=$("$PY" outputs/scripts/detect_corruption.py 2>&1)
+  if [ $? -ne 0 ]; then
+    echo "$OUT"
+    echo "  ✗ 逗号撕裂扫描未通过"
+    FAIL=1
+  else
+    echo "  ✓ 逗号撕裂扫描通过"
+  fi
+else
+  echo "  ! 跳过逗号撕裂扫描:未找到 python"
+fi
+
+# ---------------------------------------------------------------- 2. 结构校验
+if [ -d outputs/tools/node_modules ]; then
+  OUT=$(NODE_PATH="$PWD/outputs/tools/node_modules" node outputs/scripts/validate-refs.js 2>&1)
+  if [ $? -ne 0 ]; then
+    echo "$OUT"
+    echo "  ✗ 结构校验未通过"
+    FAIL=1
+  else
+    echo "  ✓ 结构校验通过 (4 份契约)"
+  fi
+else
+  echo "  ! 跳过结构校验:outputs/tools/node_modules 不存在"
+  echo "      本地启用: npm ci --prefix outputs/tools"
+fi
+
+echo ""
+if [ "$FAIL" -ne 0 ]; then
+  echo "pre-commit 校验未通过,提交已中止。"
+  echo "  修复指引: openapi-verification.md §8"
+  echo "  确需跳过: git commit --no-verify"
+  exit 1
+fi
+
+echo "pre-commit: 快速校验通过(全量校验见 CI)。"
+exit 0
