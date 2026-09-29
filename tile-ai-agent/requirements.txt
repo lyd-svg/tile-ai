@@ -1,0 +1,19 @@
+# Python 3.11+(架构 §3 技术选型)
+# 版本与验证时实际安装的版本一致。
+fastapi~=0.136.1
+uvicorn[standard]~=0.44.0
+pydantic~=2.12.5
+pydantic-settings~=2.13.1
+
+# 向量索引(T-0.13;架构 §9)。Qdrant 是派生索引,写权归 Python 智能体(§6.2)。
+qdrant-client~=1.19.1
+
+# MQ 消费(T-0.13;queue.index.sync,架构 §6.2)
+pika~=1.4.4
+
+# 仅 tools/rebuild_index.py 使用 —— 那个独立运维工具要直连 MySQL(架构 §15.2)
+# 才谈得上"从 MySQL 恢复出一致的索引"。服务本身**不**使用它。
+PyMySQL~=1.2.3
+
+# 测试
+pytest~=9.1.1
