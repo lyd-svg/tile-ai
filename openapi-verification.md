@@ -1614,3 +1614,549 @@ mvn -s D:\dev-tools\maven-settings.xml test "-Ddb.verify=true" "-Dredis.verify=t
 另有一处细节:`cleanUp` 必须**先删搭配项再删产品** —— 反过来会留下
 指向已删产品的悬挂 `product_id`(正是 §14.1 硬删要挡的那个状态)。
 
+---
+
+## 22. 模型选型落定(2026-09-29)
+
+关闭缺口 **G-4**。记录性质为**产品决策**,不是评测结论。
+
+### 22.1 背景:决策顺序与原设计相反
+
+P0-2「模型选型 Bake-off」的原文是**不先验拍板** —— 架构 §15.1 建议
+"用真实样本横向评测后再定"。本次改为**先下选型决策**,理由:
+
+- 三类网关(§7.1)已抽象、候选协议收敛到 **OpenAI 兼容**,厂商选择退化为配置项;
+- 评测的**真实价值**不在"选谁",而在**定质量验收基线**(坏图率阈值、五维量化分数)——
+  这部分不以"选厂商"为前提。
+
+**故 §15.1 与新决策不矛盾,而是分工**:厂商已定,基线待测。
+
+### 22.2 产出(文档链改动)
+
+| 文档 | 版本 | 改动 |
+| --- | --- | --- |
+| `tile-ai-prd.md` | v0.7 → **v0.8** | §8 关键选型建议补已选厂商;§11 决策 #4/#5 细化 |
+| `tile-ai-architecture.md` | v1.7 → **v1.8** | §15.1 由"建议"改为"决策";§15.3 分期作废;§7.2 标注已选 |
+| `tile-ai-tasks.md` | v0.1 | P0-2 增进度块(明确标注"只有前半完成");附 C 关 G-4、新增 G-7 |
+
+**契约未改动** —— 本次不涉及任何接口、字段或枚举,4 份 OpenAPI 与
+`asyncapi-internal.yaml` **一字未动**,`openapi-common.yaml` 无需同步。
+
+### 22.3 三处关键判断
+
+**1. 图像模型的硬约束是"参考图张数",不是画质。**
+
+生产路径是"同空间类型底图 + 各部位瓷砖切片"的条件生成。按一个空间最多
+floor / wall / local 三部位计(PRD 决策 #11)=**最多 4 张参考图**:
+
+| 模型 | 参考图上限 | 结论 |
+| --- | --- | --- |
+| `wan2.5-i2i-preview` | 3 张 | ❌ **装不下**,不可用 |
+| `wan2.7-image-pro` | 9 张 | ✅ 不构成瓶颈,已选 |
+
+这条**反向约束产品能力**:换图像模型时必须重核上限,低于 4 就要收窄
+"多砖多部位"。**这是本次唯一"技术约束倒逼产品设计"的点**,已写入
+PRD §8 与架构 §15.3。
+
+**2. 模型 ID 会过期,配置里不要照抄教程。**
+
+`deepseek-flash` 是当前正式 ID(V4.1 Flash,2026-09-10)。同日
+`deepseek-v4-flash` 退役(仍路由,已非正式名);`deepseek-chat` /
+`deepseek-reasoner` 已于 **2026-07-24 停用**。网上教程与脚手架大量仍用停用名,
+实现 T-1.5 时极易照抄出错 —— 已写入架构 §15.1 的警示。
+
+**3. "选型落定"不等于 §15.3 的"达标"没了。**
+
+§15.3 原文写"并行验证垫图方案,**达标后替换**",而"达标"依赖**坏图率阈值**,
+阈值只能由真实样本测出。故 P0-2 的评测脚本与评分表**仍需产出**,
+只是验收目标从"选出厂商"变为"定出基线",且**必须按条件生成模式测** ——
+纯文生图下的排名与生产路径无关。
+
+### 22.4 未闭合:合规是硬前置,且当前无任务承载
+
+**这是本节最需要回看的一条。**
+
+面向公众提供生成式 AI 服务在国内走**三轨制**,不可互相替代:
+
+| 事项 | 办理对象 | 周期 |
+| --- | --- | --- |
+| 算法备案 | 对外提供的生成合成类算法服务,**不论模型来源** | 2–4 个月 |
+| 大模型登记 | 仅调用已备案模型、未做改造的应用方 | 1–3 个月 |
+| 大模型备案 | 自研或深度微调的模型底座 | 6–8 个月(本项目不需要) |
+
+三点直接命中本项目:
+
+1. **"调用已备案模型的 API 就不用办"是误区。** 2026-03 已有执法案例:企业
+   通过 API 调用已备案大模型对外提供服务,未做应用登记与安全评估,被约谈并
+   责令下线。2026-04 起"应备未备 / 应登未登"列入专项行动重点。
+2. **对输出做二次处理可能触发"升级"。** 架构 §7.3 要求"出图与问答前后接内容
+   审核";内容过滤/重组**有可能被认定为对模型的实质性修改**,从而使**登记升级
+   为备案**(周期 1–3 个月 → **6–8 个月**)。**这条应在 T-2.2 开工前就与属地
+   网信部门确认口径**。
+3. **合规反向约束选型。** 登记须报"调用哪个已备案模型",故候选须先确认在
+   已备案清单内 —— 这是**选型的前置筛选条件**,不是五维打分里的软性一维。
+
+另有《人工智能生成合成内容标识办法》要求的**生成内容标识**义务
+(效果图需显式标识 AI 生成)。
+
+**现状**:PRD §9 仅一句"内容安全(生成图、AI 问答合规)";架构 §13.9
+「兼容性与合规」只写浏览器兼容与报价免责;**任务清单中没有任何任务承载
+备案、登记、内容标识**。已记入架构 §15.1 合规前置、任务清单附 C 缺口 **G-7**,
+建议新增 **P0-5**。
+
+> **与 P0-1 的类比值得警惕**:P0-1(短信报备)因 **2–3 周**外部周期而被直接砍掉
+> 登录方案。备案是 **1–4 个月**,且**砍不掉**(总不能让用户不能问 AI)——
+> 现在启动才来得及。
+
+### 22.5 校验
+
+**契约侧**:本次未改动任何契约文件,但按 CLAUDE.md 的"改动后必跑"惯例执行:
+
+```
+bash outputs/scripts/ci.sh   →   EXIT=0
+G1-结构校验 PASS   G2-redocly PASS   G3-spectral PASS   G4-逗号撕裂 PASS
+G5-描述完整性 PASS   G6-T1-T15 PASS   G7-AsyncAPI PASS
+T-1~T-15:PASS=14  FAIL=0  SKIP=1(T-12 仍因无实现侧导出而不可执行)
+```
+
+**实现侧**:未改动代码,未重跑 263 个 Java 测试。
+
+---
+
+## 23. T-1.5 Python 智能体服务与模型网关(2026-09-29)
+
+### 23.1 为什么这次不碰契约
+
+T-1.5 的产物**不对应任何 HTTP 端点**。架构 §7.1 把三类网关画在 Python 服务
+内部;`openapi-internal.yaml` 的 7 个端点全是**智能体能力**(chat / parse-layout /
+material-map / complete-parts)与 Python→Java 回查/回传。
+
+因此:
+
+- 4 份 OpenAPI 与 `asyncapi-internal.yaml` **一字未动**,`openapi-common.yaml`
+  无需同步,本文件的追溯表(§1–§5)也无新增条目。
+- **`x-todo` 一个都没解**:`/internal/agent/*` 的 4 处 `x-todo` 属 T-1.6/1.7/1.9/1.10,
+  按 CLAUDE.md「决策点,先问别自己定」,本次不碰。契约里**不存在**
+  `/internal/quote/*` 这一条也未受任何影响(不变量 1)。
+
+把网关做成端点会凭空多一层对外面,且违反不变量 3(Python 仅内网)。
+
+### 23.2 产出
+
+新增包 `tile-ai-agent/app/gateway/`:
+
+| 文件 | 职责 |
+| --- | --- |
+| `ports.py` | 三类 Protocol + `Reply`/`ToolCallPlan`/`Images`/`Message`/`ToolDef`/`ToolCall`/`Usage`/`ReplyChunk` |
+| `errors.py` | 异常层次 + `counts_toward_failure_rate()`(重试口径与失败率口径**刻意不同**) |
+| `resilience.py` | `RetryPolicy` / `CircuitBreaker` / `FailureRateTracker` / `RedisTokenBucket` / `CostMeter` / `CallGuard` |
+| `openai_compat.py` | LLM(chat / chatWithTools / SSE 流式)与图像(多参考图)适配器;请求构造与响应解析为纯函数 |
+| `resilient.py` | 把韧性层套到网关上(LLM / Image 两个包装) |
+| `failover.py` | `FailoverLLMGateway` —— §13.7 的 10% 阈值切换与半开恢复 |
+| `factory.py` | 按配置组装(§7.2 的"唯一开关"),厂商预置表 |
+
+配置侧:`app/core/config.py` 补 backup/base_url/model/redis/韧性旋钮字段,
+**密钥字段改 `SecretStr`**;`requirements.txt` 补 `httpx` 与 `redis`
+(前者原已随 `qdrant-client` 间接装入,现提升为显式声明)。
+
+### 23.3 三处值得回看的判断
+
+**1. `is_transient()`(要不要重试)与 `counts_toward_failure_rate()`(算不算故障)
+是两个口径,不是一回事。**
+
+一度想当然地写成"只把瞬态故障计入失败率"。那样 401 密钥失效、响应格式错乱
+都不会被算作故障 —— 而它们恰恰说明**这个供应商当前不可用**,正是该切备份的
+情形,只是不该重试而已。故最终口径:**除本服务自己的保护动作(限流、熔断)外,
+所有网关层故障都计入失败率**。
+
+限流与熔断明确排除,因为它们不是供应商故障;熔断尤其不能计入 ——
+它本身就是失败率推导出的结论,再计回去就成了自我印证的循环,一旦打开
+就再也掉不下来。
+
+**2. 半开探测走真实请求,失败时由备份兜住。**
+
+切到备份后每隔 `probe_seconds` 放**一个真实请求**去试探主力:成功即切回,
+失败则继续用备份。比"定时发 ping"省一次调用,也不用为 ping 编造假对话。
+
+但有个必须处理的副作用:**不能让用户为我们的探测买单**。故探测失败时,
+这一次请求改由备份答完 —— 由 `test_failed_probe_still_answers_from_backup` 断言。
+
+**3. 三个真实缺陷由测试暴露,不是靠 review 看出来的。**
+
+| 缺陷 | 症状 | 后果 |
+| --- | --- | --- |
+| 半开探测名额不归还 | 非下游原因失败时不计入熔断,名额只减不增 | 名额耗尽后**熔断再也回不来**,变成事实上的永久打开。已加 `release()` |
+| 熔断中途打开会顶掉原始错误 | 一次调用内重试,第 2 次尝试被熔断挡下,抛出的是 `CircuitOpen` | 调用方看到"熔断"而非"为什么失败",**线索丢失**。已改为重抛原始错误 |
+| 端点依赖注入客户端的 base_url | 外部注入 client 时,请求**静默打到别的主机** | 最危险的一类:不报错、只是连错厂商。已改为适配器自己拼绝对 URL |
+
+第三条尤其值得记:它不会让任何测试变红(替身照样回 200),只有断言
+**请求真的打到哪台主机**时才暴露。
+
+### 23.4 §7.1 签名的两处刻意落法
+
+| 文档写法 | 实现 | 理由 |
+| --- | --- | --- |
+| `chatWithTools`、`refImages`、`toolDefs` | snake_case(`chat_with_tools` / `ref_images` / `tool_defs`) | 文档是跨语言伪码的 camelCase 记号。`chat` / `generate` / `embed` 三个词**逐字一致** |
+| `size`、`n` 未标 `?` | 给了默认值 | 默认值是**更宽松**的约束,不违反签名且更可用 |
+
+**这两处不是抄漏,是刻意的**,记在此以便评审时对照。
+
+### 23.5 校验
+
+**测试**:`tile-ai-agent` 下 `.venv/Scripts/python.exe -m pytest -q` ——
+**58 passed, 5 skipped**(T-0.13 的 14 条 + 本次新增 44 条;5 条真实联调默认跳过)。
+
+| 文件 | 条数 | 需要外部服务 |
+| --- | --- | --- |
+| `tests/test_gateway.py` | 39 | **无**(`httpx.MockTransport` + 注入时钟/sleep/抖动) |
+| `tests/test_gateway_integration.py` | 5 | Redis 6379 与 Qdrant 6333 |
+| `tests/test_gateway_live.py` | 5 | **真实厂商 API**(默认跳过,见 §23.6) |
+
+分两个文件的理由:韧性逻辑(重试、熔断、切换)用替身 + 注入时钟就能测全,
+不必真等 30 秒冷却;**但令牌桶的"跨实例共享额度"与 Embedding 插槽的接缝
+替身证明不了** —— 前者要的正是 Redis 服务端的原子性与它自己的时钟,
+后者要的正是"工厂造的网关能否真的被 `apply_event` 接受并写进 Qdrant"。
+
+关键断言与判据的对应:
+
+| 判据 | 断言 |
+| --- | --- |
+| §7.2 配置切换可生效(卡片验收项) | 换 provider 后**请求真的打到不同主机**(`api.deepseek.com` / `open.bigmodel.cn`);拼错 provider 抛 `GatewayConfigError` 而非静默降级 |
+| §7.2 超时 | 超时经重试后抛 `GatewayTimeout`,且确实发满 3 次 |
+| §7.2 重试 | 429 重试后成功(2 次请求);**4xx 只发 1 次**(重试不会变对);退避**只向上抖**不缩短 |
+| §7.2 熔断 | 达阈值后**不再发请求**(请求计数不增);冷却后半开放行一次,成功即归 closed |
+| §7.2 限流 | 本地限流挡下时**零出网、零退避**;令牌桶跨实例共享同一额度;令牌随时间回填;时间戳取自 Redis 的 `TIME` 而非客户端 |
+| §7.2 成本计量 | 单价取自配置(百万 token 计费);**按实际返回张数**计图费;无单价时记 0 成本但**仍记用量** |
+| **§13.7 失败率 > 10% 切备份** | 5 次中 1 次失败(20%)→ 切备份且**不再打主力** |
+| §13.7 的反面(样本不足) | 1 次失败(100%)但样本 < 5 → **不切**,避免一次抖动换一次切换 |
+| §15.1 双供应商恢复 | 主力恢复且到冷却点 → 探测成功切回,且**旧失败样本被清空**(否则立刻被按回备份位) |
+| §15.3 参考图硬约束 | 图像请求体里**四张参考图一张不少**(底图 + 三部位切片)—— 防"换了个上限只有 3 张的模型" |
+| §13.6 密钥 | 哨兵密钥不出现在**日志、异常消息、`repr`** 三处;且同时断言告警日志**确实产生过**(否则那条断言可能只是因为什么都没记) |
+| §7.1 流式 | 帧序为 delta… → 末帧带 usage → `[DONE]`;**usage 只认最后一帧**(按帧累加会重复计数);无法解析的行跳过而非炸掉整条流 |
+
+**回归保护**:`app/index/**` 与 `tests/test_index.py` **零改动**(`git status` 已核);
+旧 14 条断言全过。
+
+**契约侧**:契约未改动,仍按惯例跑 `bash outputs/scripts/ci.sh` → **EXIT=0**,
+7 门禁全 PASS。契约校验表无新增条目。
+
+**Java 侧**:本次不涉及 Java,**263 个测试未重跑**。
+
+### 23.6 真实联调(2026-09-29,DeepSeek)
+
+**原记录的"没有任何真实厂商调用被验证"已被推翻 —— LLM 侧已与厂商真实联调通过。**
+
+新增 `tests/test_gateway_live.py`(5 条),**默认跳过**,需显式设
+`RUN_LIVE_LLM=1` 才跑 —— 门控方式与 Java 侧 `-Ddb.verify=true` 的惯例一致:
+需要外部依赖的验证必须显式打开,不能让 `pytest` 顺手跑出去(会出网、会花钱)。
+密钥只在 `tile-ai-agent/.env`(已 gitignore),**不进代码、不进测试文件**。
+
+```
+RUN_LIVE_LLM=1 python -m pytest tests/test_gateway_live.py -v
+→ 5 passed
+```
+
+| 断言 | 实测结果 |
+| --- | --- |
+| `chat` 真实出网并返回内容 | usage 52 in / 184 out;内容「建议选浅色系,如白色、米色或浅灰,显亮又耐看。」 |
+| **预置模型 ID 被厂商接受** | 厂商回显 **`deepseek-flash`** —— 架构 §15.1 定的 ID 正确 |
+| 流式 | 31 帧,末帧带 usage |
+| 工具调用 | `search_products({"space": "bathroom"})` |
+| 成本计量 | 单价表从 `.env` 的 JSON 正确解析为 `ModelPrice(input=1.0, output=2.0)`;累计 456 in / 835 out → **¥0.0021** |
+
+> **模型 ID 这一条是本次联调最想确认的**:架构 §15.1 定的是 `deepseek-flash`,
+> 而网上教程大量仍在用已停用的 `deepseek-chat` / `deepseek-reasoner`
+> 或已退役的 `deepseek-v4-flash`。实测厂商接受并回显该 ID。
+>
+> 成本量级也印证了 §22 的判断:**LLM 成本可忽略**(单轮约 ¥0.002),
+> 图像才是成本大头。选型不该为省这几厘钱而降档。
+
+**联调中发现并修掉的一处自身问题**:live 测试最初用了空的 `CostMeter()`,
+于是"有 token 却算出 0 成本"。这不是网关的问题(无单价时记 0 成本是**有意设计**,
+已有单测钉住),而是**测试搭错了**:单价在配置里,替身却建了张空表。
+已改为从 `settings.gateway_model_prices` 取。
+
+#### 23.6.1 仍未验证(不得当作已交付)
+
+1. **`wan2.7-image-pro` 的请求/响应字段形态仍未与百炼文档核实** —— 无厂商文档与密钥。
+   已在 `openai_compat.py` 顶部显著标注。它被隔离在两个纯函数里,形态确认后只改那里;
+   **在此之前不能声称图像链路可用**。
+2. **智谱 GLM 的模型 ID 未定**,预置表里留空 —— 配置不填就报错,不猜。
+   故 §13.7 的**主力→备份切换只经过替身验证,未做过跨厂商真实演练**。
+3. **Embedding 真实适配器未落** —— 模型选型属 P0-2 残留,默认仍是确定性占位。
+4. 流式响应的 `tool_calls` 分片拼装未实现,留给 T-1.6。
+5. 网关未接入 FastAPI 启动流程(T-1.6 才有调用方);Prometheus 导出属 T-2.3。
+
+### 23.7 一处架构层面的偏离,需要评审确认
+
+**网关做成同步而非异步。** 理由:本项目既有代码全是同步的
+(`pika.BlockingConnection`、`QdrantClient`、显式构造注入),且
+`EmbeddingPort.embed` 是同步的 —— 若改成 async,`EmbeddingGateway` 就再也不能
+直接喂给 `apply_event`,**T-0.13 的接缝会断**。
+
+代价:T-1.6 的 SSE 端点需用 `run_in_threadpool` 调这些同步方法,流式部分
+返回同步迭代器由它逐帧转 SSE。**这个取舍建议在 T-1.6 开工时复核一次。**
+
+---
+
+## 24. 补后台会话接口:logout / me,并关闭后台登录的 x-todo(2026-09-29)
+
+### 24.1 背景
+
+`openapi-admin.yaml` 的 `/auth/login` 长期挂着一条 `x-todo`:
+
+> `§10.3/§10.2 未列出后台登录接口;由 §4.4'均需后台会话'推断,路径与字段待确认`
+
+而前端接入后台时发现两件事必须补接口:
+
+1. **契约里没有后台登出接口**,前端 `logout()` 只能清本地状态,服务端 Cookie 要等自然过期;
+2. **契约里没有"取当前账号"接口**,令牌在 HttpOnly Cookie 里读不到,前端只能把
+   `AdminUserView` 缓存在 sessionStorage 里 —— 那是把**展示状态当成凭证来源**:
+   账号被停用或降权后,界面会继续按旧角色渲染。
+
+故本次一并处理:补 `POST /auth/logout`、`GET /auth/me`,并**裁决关闭那条 x-todo**
+(现有 `/auth/login` 的路径与字段即为正式契约 —— 它已按此形态实测工作)。
+
+### 24.2 产出(文档链改动)
+
+| 文档 | 版本 | 改动 |
+| --- | --- | --- |
+| `tile-ai-prd.md` | v0.8 → **v0.9** | §7「后台管理端」补入**后台登录与退出** |
+| `tile-ai-architecture.md` | v1.8 → **v1.9** | §10.3 由一句话展开为**三个会话接口**,写明不需权限点、登出口径、以及为何需要 `me` |
+| `openapi-admin.yaml` | — | 新增 `/auth/logout`、`/auth/me`;**移除** `/auth/login` 的 `x-todo` |
+| 实现 | — | `AdminAuthController` +2 接口;`AdminAccountService.findEnabledById`;`AuthCookies.refreshTokenOf`(从 C 端控制器抽出来共用) |
+
+**鉴权口径**:三个会话接口**都不需要权限点** —— 它们是"我是谁"的接口,不是"我能做什么"。
+登出**沿用 C 端口径**(需要登录态,但 refresh 缺失/无效时不报错),
+理由见 §20.3 的既有裁决;做成"无需登录"等于对外提供一个人人可调的清 Cookie 接口。
+
+`GET /auth/me` 对**已停用账号返回 10002** 而非 30001:对调用方这是"会话失效、要重新登录",
+与"资源不存在"是两回事 —— 前者清态跳登录页,后者只需提示。
+
+### 24.3 ⚠️ 实测发现两个**既有缺口**(不是本次改动引入的)
+
+用真实 HTTP + Cookie 容器(.NET `CookieContainer`,与浏览器同规则)实测复现。
+
+**缺口 A:C 端与 B 端的 Cookie 同名同路径,同一浏览器会互相覆盖。**
+
+| 步骤 | 观察 |
+| --- | --- |
+| 同会话登录 C 端 | `access_token`(Path=/)写入 |
+| 同一会话再登录后台 | `access_token` **被覆盖**为 ADMIN 令牌 |
+| 再调 C 端受保护接口 | **403** —— C 端用户被踢下线 |
+
+根因:两端共用 `access_token` / `refresh_token` 两个名字与路径,
+而 JWT 里带 `styp`(ADMIN/USER)。覆盖后 C 端请求带着 ADMIN 令牌,
+`hasAuthority("ROLE_USER")` 不放行。反向同理。
+
+**缺口 B:后台的 `refresh_token` Cookie 被浏览器直接丢弃。**
+
+| 观察 | 结果 |
+| --- | --- |
+| 登录响应下发的 `Set-Cookie` | 两条都在(`access_token` + `refresh_token`) |
+| 浏览器 Cookie 容器里实际存下的 | **只有 `access_token`** |
+
+根因:`refresh_token` 的 `Path=/api/v1/auth`(契约要求收窄),而**后台登录在
+`/api/v1/admin/auth/login`** —— Cookie 的 Path **不覆盖发起请求的路径**,
+浏览器按规范拒绝存储。后果:**后台会话根本没有 refresh 令牌**,2 小时后
+access 过期就只能重新登录;后台登出也就无从"拉黑 refresh"。
+
+> 这一条也解释了为什么 §24.4 的 `adminLogoutDoesNotRevokeRefreshToken` 会通过 ——
+> 表面是"登出没拉黑",实际是"压根没有令牌可拉黑"。
+
+**两者共同根因**:会话模型没有区分 C 端与 B 端的主体。
+修复需要**给后台独立的 Cookie 名与路径**(如 `admin_access_token` Path=/api/v1/admin、
+`admin_refresh_token` Path=/api/v1/admin/auth),而 Cookie 名与路径写在
+`openapi-common.yaml#/components/securitySchemes/cookieAuth` 里 ——
+**属契约变更,影响面含 C 端,故本次不动,先记录**。缺口编号 **G-9**。
+
+**这两条已在 §25 修复。**
+
+### 24.4 校验
+
+**契约侧**:`bash outputs/scripts/ci.sh` → **EXIT=0**,7 门禁全 PASS
+(T-4 鉴权矩阵含新增的两个 `security: cookieAuth` 接口)。
+
+**Java 侧**:`mvn test -Ddb.verify=true -Dredis.verify=true -Drabbit.verify=true`
+
+```
+Tests run: 269, Failures: 0, Errors: 0, Skipped: 0
+BUILD SUCCESS
+```
+
+263 → 269,本轮 +6,全部落在 `AdminAuthIntegrationTest`:
+
+| 断言 | 判据 |
+| --- | --- |
+| `/me` 带会话返回账号(含 role,不含 passwordHash) | §10.3 |
+| `/me` 未登录 → **真实 401** | 契约 T-4 |
+| `/me` 对**签发后被停用**的账号 → **10002** | §4.4「权限判断读当下事实」 |
+| 登出清两条 Cookie(`Max-Age=0`) | §10.3 |
+| 登出未登录 → 401 | 与 C 端同口径(§20.3) |
+| `adminLogoutDoesNotRevokeRefreshToken` | 把缺口 B **钉住**(§25 修复后已改写为验证修复) |
+
+C 端 `AuthIntegrationTest` 全过 —— 证明把 `refreshTokenOf` 从 C 端控制器
+**抽到 `AuthCookies` 共用**没有破坏既有功能。抽取的理由:两端都要读它,
+各写一份就会有两份实现需要同步(本项目在 `securitySchemes` 重复定义上已吃过一次亏,F-4)。
+
+**前端侧**:`npm test` → **66 passed / 6 文件**;`npm run build`(含 `vue-tsc`)通过。
+
+**行为变更(前端)**:身份不再来自 `sessionStorage` 缓存,改为**每次页面加载问一次
+`/auth/me`**;路由守卫改为异步确认会话;登出改为**先请求服务端再跳转**,
+且服务端失败也照样清本地(不能把用户卡在登录态里)。
+
+### 24.5 未闭合
+
+1. **缺口 A / B 未修**(需契约变更,见 §24.3)。建议随 G-9 一并处理。
+2. **`/auth/me` 的响应体是否该带权限点列表**:目前只带 `role`,前端据架构 §4.4
+   的对照表自行推导权限。若日后角色-权限表要支持后台热配置,`me` 就该直接返回
+   权限点集合。**当前不必要**(表是静态的且已冻结在架构里)。
+3. **无"刷新后台会话"的能力**(缺口 B 的直接后果)。
+
+> §24.5 的三条**均已由 §25 解决或覆盖**。
+
+
+---
+
+## 25. 两端会话分离:修复缺口 G-9(2026-09-29)
+
+### 25.1 背景
+
+§24.3 实测发现两个既有缺口,共同根因是**会话模型没有区分 C 端与 B 端主体**:
+
+| 缺口 | 实测现象 | 影响 |
+| --- | --- | --- |
+| **A** | 同一浏览器先登 C 端再登后台,`access_token` 被覆盖 → 再调 C 端受保护接口得 **403** | 用户表现为"莫名掉线" |
+| **B** | 后台登录下发的 `refresh_token`(`Path=/api/v1/auth`)**被浏览器直接丢弃** —— 它不覆盖登录路径 `/api/v1/admin/auth/login` | 后台没有刷新令牌,2 小时后强制重登;后台登出也无从"拉黑 refresh" |
+
+本次按完整文档链修复:**PRD → 架构 → 契约 → 实现 → 校验**。
+
+### 25.2 产出
+
+| 文档 | 版本 | 改动 |
+| --- | --- | --- |
+| `tile-ai-prd.md` | — | **未改**。会话 Cookie 的名字与路径属技术设计,PRD 层面无对应描述;PRD §7「后台管理端」已在 v0.9 补过登录与退出 |
+| `tile-ai-architecture.md` | v1.9 → **v2.0** | §10.1 由"一套 Cookie"改为 **C/B 两端各一套**(名字与路径都分开),含实测依据;§10.3 补 `POST /admin/auth/refresh` |
+| `openapi-common.yaml` | — | 新增 `adminCookieAuth` scheme;**保留** `cookieAuth`(C 端) |
+| `openapi-admin.yaml` | — | `cookieAuth` → `adminCookieAuth`(含文档级默认与两处显式声明);新增 `/auth/refresh` |
+
+**两端 Cookie 的最终形态**:
+
+| 主体 | access(2h) | refresh(14d) |
+| --- | --- | --- |
+| C 端业主 | `access_token`,Path=`/` | `refresh_token`,Path=`/api/v1/auth` |
+| B 端后台 | `admin_access_token`,Path=`/api/v1/admin` | `admin_refresh_token`,Path=`/api/v1/admin/auth` |
+
+两条设计要点:
+
+1. **后台 refresh 的 Path 必须覆盖登录端点自身**。浏览器只在路径匹配时才存储/发送
+   Cookie —— 这正是缺口 B 的成因(`/api/v1/auth` 覆盖不到 `/api/v1/admin/auth/login`)。
+   **这一条有专门的测试锁住**(`adminRefreshPathCoversLoginEndpoint`)。
+2. **令牌的 `styp` 是第二道防线,但不能只靠它**。`hasAuthority("ROLE_USER"/"ROLE_ADMIN")`
+   能阻止越权,却阻止不了两端互相**覆盖** —— 那是 Cookie 名字与路径的职责。
+
+**实现侧**:`JwtProperties` 增后台四项配置;`AuthCookies` 全部方法改为**按主体**出票
+(写死一个名字正是两端覆盖的成因);`JwtAuthenticationFilter` **按请求路径**选读哪条
+access Cookie;`AuthSessionService.refreshAccess` 增**主体类型校验**(第四道);
+`AdminAuthController` 增 `refresh`。
+
+> **顺带加固**:`refreshAccess` 原先只校验"签名 + 类型 + 黑名单"三道。两端分离后,
+> 把 C 端刷新令牌塞进后台 Cookie 名里就能换到一个写在 `admin_access_token` 下的令牌 ——
+> 签名与类型都对,只有主体不符。虽然最终仍会被 `ROLE_ADMIN` 挡下,但那不该是唯一防线。
+> 故新增第**四**道主体校验,并有测试锁住。
+
+### 25.3 校验
+
+**契约侧**:`bash outputs/scripts/ci.sh` → **EXIT=0**,7 门禁全 PASS。
+(T-4 只校验 C 端文档,故新增 `adminCookieAuth` 不影响它。)
+
+**Java 侧**:`mvn test -Ddb.verify=true -Dredis.verify=true -Drabbit.verify=true`
+
+```
+Tests run: 277, Failures: 0, Errors: 0, Skipped: 0
+BUILD SUCCESS
+```
+
+269 → 277,本轮 +8:
+
+| 断言 | 锁住的判据 |
+| --- | --- |
+| `adminCookiesUseDistinctNames` | 后台两票用**完全不同**的名字 |
+| `adminRefreshPathCoversLoginEndpoint` | 后台 refresh 的 Path **覆盖登录端点**(缺口 B 的根因) |
+| `userAndAdminCookiesNeverCollide` | 四张 Cookie 的(名字, 路径)**两两不同** —— 这是"可并存"的充要条件 |
+| `adminLogoutRevokesRefreshToken` | 由"钉住缺口"改为**验证修复**:登出后令牌确实被拉黑 |
+| `refreshIssuesNewAccessToken` | 后台刷新链路端到端(且**不轮换** refresh) |
+| `refreshWithoutCookieIsUnauthenticated` | 缺 Cookie → 10002 |
+| `refreshTokenOfAnotherSubjectIsRejected` / `userRefreshTokenCannotRefreshAdminSession` | 主体类型不符必须拒绝 |
+| `adminLogoutDoesNotClearUserCookies` | 后台登出**不动** C 端会话 |
+
+**⚠️ 连带影响(必须记录)**:两端 Cookie 改名后,**所有后台集成测试的取票辅助方法都要改** ——
+不改会集体 401。实测首次重跑即 **100 条失败**,全部是同一原因。已逐一改为
+`admin_access_token`。**C 端测试保持不变**(它们本就用 `access_token`)。
+`SecurityFilterContractTest` 里三条"业主令牌访问后台接口"的用例也做了调整:
+令牌需放进**后台**的 Cookie 名里才能被过滤器读到、进而被 `ROLE_ADMIN` 拒成 403;
+若仍放 `access_token`,后台路径根本不读它,得到的是 401 —— 那样测的就不再是
+"ID 空间隔离",而是"这条 Cookie 没被读"。
+
+**前端侧**:`npm test` → **73 passed / 6 文件**(+7);`npm run build`(含 `vue-tsc`)通过。
+
+新增**令牌自动续期**:`http` 层在 **401** 或 **10003** 时调对应端的 refresh 端点并
+**重放原请求一次**。三个必须处理的点:
+
+- **403 不刷新** —— 那是"没权限",续期解决不了,只会白打一次请求;
+- **刷新端点自身不触发刷新** —— 否则失败时无限递归;
+- **只重试一次** —— 否则"刷新成功但原请求仍 401"会死循环。
+
+> 没有这一步,缺口 B 只修了一半:后台确实拿得到 refresh 令牌了,却没有任何代码去用它。
+
+**真实 HTTP 复测**(起真实 Java + MySQL,用 .NET `CookieContainer`,与浏览器同规则):
+
+| 断言 | 结果 |
+| --- | --- |
+| 后台登录下发 `admin_access_token` / `admin_refresh_token`,Path 分别为 `/api/v1/admin`、`/api/v1/admin/auth` | PASS |
+| **refresh 令牌这次被浏览器存下来了**(修复前被丢弃) | PASS |
+| 调 `/admin/auth/*` 带上 `admin_refresh_token`;**调 `/admin/products` 不带**(收窄生效) | PASS |
+| `/me` 返回当前账号;`/auth/refresh` 换到新的 access | PASS |
+| **登出后该 refresh 立即失效** | PASS |
+| **同浏览器先登 C 端再登后台:C 端 `access_token` 未被覆盖** | PASS |
+| **登录后台后 C 端仍可用(修复前是 403 掉线)** | PASS |
+| 同会话里后台接口同时可用 | PASS |
+
+四张 Cookie 的实际归属(实测输出):
+
+```
+C 端 /auth/*         -> refresh_token, access_token
+C 端 /products       -> access_token
+后台 /admin/auth/*   -> admin_refresh_token, admin_access_token, access_token
+后台 /admin/products -> admin_access_token, access_token
+```
+
+> `access_token`(Path=`/`)会随所有请求发出,后台路径下也在 —— 这是 Path=`/` 的固有含义。
+> 但**名字不同**(`admin_access_token` 才是后台那条),过滤器按路径取,故不会串。
+> 若要连这点暴露面也去掉,得把 C 端 access 的 Path 也收窄 —— 但那会改变 C 端的
+> 既有契约行为,收益有限,本次不做。
+
+### 25.4 过程中踩到的坑(记录以免重犯)
+
+1. **改 `openapi-common.yaml` 的 securitySchemes 时把 `serviceToken:` 那行删了** ——
+   它的正文挂到了新 scheme 下、键重复,被 G1/G2/G3/G7 当场拦下(`duplicated mapping key`)。
+   这正是 CLAUDE.md 陷阱 2 说的"4 份文件里重复定义、改一处要同步另一处"的地带。
+2. **`t_admin_user` 里的残留探针行**(上一轮跑挂在中途没清)导致主键冲突 ——
+   该项目第 **6** 次遇到"共享可变前置数据"(前五次见 §12.2 / §16.5 / §17.6 / §21.6)。
+   处置:清掉残留行后重跑。
+3. **测试取票辅助方法 `loginCookies()` 会再登录一次** —— 于是"登出"拉黑的是第二次签发的
+   令牌,而断言验的是第一次的,结论假阴性。已抽出 `cookiesOf(MvcResult)`,
+   强制用**同一次**登录响应里的 Cookie。
+
+### 25.5 未闭合
+
+1. **C 端 access 的 Path 仍为 `/`** —— 它会随后台请求一起发出(见 §25.3 末注)。
+   收敛它需改 C 端契约行为,收益有限,未做。
+2. **前端只做了"静默续期一次"**,没有做"续期失败后统一跳登录页"的全局处理。
+   当前是各调用点自己 catch —— 后台侧由路由守卫的 `ensureSession()` 兜底,
+   C 端页面尚未实现,待 F-1.x 落地时统一处理。
+3. **`admin_refresh_token` 的 14 天有效期没有做滑动续期** —— 与 C 端同口径
+   (契约明确"只刷访问令牌,不轮换 refresh"),不是遗漏。
+
+---
+
