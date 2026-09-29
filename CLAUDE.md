@@ -16,7 +16,8 @@ tile-ai-prd.md             需求文档 v0.6   ← 冲突时以 PRD 为准
        └─ openapi-common.yaml  公共契约(仅 components,无 paths)
           openapi-c.yaml       C 端契约(/api/v1)
           openapi-admin.yaml   B 端契约(/api/v1/admin)
-          openapi-internal.yaml 内部契约(/internal,Java ↔ Python)
+          openapi-internal.yaml 内部契约(/internal,Java ↔ Python 同步)
+          asyncapi-internal.yaml 异步契约(Java ↔ Python 的 MQ 消息)
             └─ openapi-verification.md  追溯表 + 校验记录
 ```
 
@@ -47,7 +48,7 @@ tile-ai-prd.md             需求文档 v0.6   ← 冲突时以 PRD 为准
   bash outputs/scripts/ci.sh
   ```
 
-  6 个门禁全部通过才算完。Windows 上可用 Git Bash 执行
+  7 个门禁全部通过才算完。Windows 上可用 Git Bash 执行
   (`D:\软件\Git\bin\bash.exe`)。
 - 首次克隆需启用本地钩子(每个克隆一次,`core.hooksPath` 不入版本库):
 
@@ -120,7 +121,7 @@ tile-ai-prd.md             需求文档 v0.6   ← 冲突时以 PRD 为准
    **既有假阳也有假阴**(把路径模板 `{sku}` 当撕裂、又漏掉括号内的逗号)。
    判断逗号撕裂请用 `detect_corruption.py`(基于 AST,与三份 lint 工具结论一致)。
 
-5. **只有 `ci.sh` 里的 6 个门禁是判据**,其余脚本是诊断工具,不参与成败判定。
+5. **只有 `ci.sh` 里的 7 个门禁是判据**,其余脚本是诊断工具,不参与成败判定。
 
 6. **G6(T-1~T-15)检测不到语法级缺陷**。实测:注入一处逗号撕裂后,G6 仍 PASS,
    而 G1/G2/G3/G4/G5 全部 FAIL。这 15 条查的是**语义一致性**,
@@ -139,9 +140,15 @@ tile-ai-prd.md             需求文档 v0.6   ← 冲突时以 PRD 为准
 
 ## 尚未确定 / 待办
 
-- **D-13** —— MQ 消息体(`queue.generate` / `queue.index.sync` / DLQ)上游未定义,
-  不在 OpenAPI 范围内,**建议另出 AsyncAPI**。做生成链路前需先补,否则
-  消息契约无据可依。
+- **P0-3:MQ 选型未定**(RabbitMQ vs Redis Stream,架构 §15.9)。
+  `asyncapi-internal.yaml` 按 AMQP 书写,**消息体与选型无关**;选定后只需回填
+  `servers` 与 `channel.bindings`。
 - **T-12** —— 契约 ↔ 实现导出 OpenAPI 的双向 diff,需实现落地后执行。
+  **这是唯一能把契约与实现绑住的检查;不落地它,两者会从第一天起悄悄分叉,
+  而 CI 依然全绿**(G1–G7 只校验契约自身)。
 - 实现尚未开始;技术选型(Vue 3 / Spring Boot 3 / FastAPI / MySQL / Qdrant 等)
   见架构文档 §3,部署拓扑见 §12。
+
+> D-13(MQ 消息体)已于 2026-09-29 关闭,产出 `asyncapi-internal.yaml`,
+> 记录见 `openapi-verification.md` §9。DLQ 粒度、对话异步落库(可选)、
+> 二期进度回传仍未闭合,见 §9.5。
