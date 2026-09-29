@@ -122,8 +122,11 @@ components:
       type: object
       description: |
         参数校验失败(10001)的明细元素,放于 data.errors[]。§10.5
-        ⚠️ TODO: 上游仅提及"明细放 data.errors[]",元素字段结构未定义,以下为推断。
-      x-todo: "§10.5 未定义 errors[] 元素结构;字段与命名待确认"
+
+        **本结构已随实现冻结(2026-09-29)**:Java 侧 `ErrorItem` 已按此实现并有断言锁定
+        (`AdminAuthIntegrationTest.missingFieldsIsValidationError` 断言
+        `"data":{"errors":[...]}`);户型解析失败也复用它说明"缺哪一项"
+        (见 openapi-internal.yaml 的 parse-layout)。
       required: [field, reason]
       properties:
         field:
@@ -151,7 +154,7 @@ components:
         部位瓷砖来源:用户显式选择 / AI 自动补齐。
         §11.2 时序"补齐后的 parts(标注 ai)"、§4.2"标注来源"。
       x-source: "架构 §11.2、§4.2"
-      x-todo: "上游只说'标注 ai/来源',未给字段名与枚举值;source 字段名与取值由契约推断"
+      x-note: "字段名与枚举由 D-4 裁决确定(见 openapi-verification.md §7)"
       enum: [user, ai]
 
     SpaceType:
@@ -294,7 +297,6 @@ components:
         source:
           allOf: [{ $ref: '#/components/schemas/PartSource' }]
           description: 来源(用户选择/AI 补齐)。响应中**必填**,请求中可省略(默认 user)。
-          x-todo: "字段名 source 与枚举 user/ai 为推断,见 PartSource"
 
     SkuRef:
       type: object

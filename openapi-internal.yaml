@@ -16,6 +16,18 @@ info:
 
     约定的"TODO"标记:`x-todo` 表示上游未定义、由契约作者推断,待评审。
 
+    ------------------------------------------------------------------
+    两条**跨端点**的约定(2026-09-29 评审确定,架构 §10.4):
+    ------------------------------------------------------------------
+
+    1. **错误码与对外同一套,但 Java 只透传「已定义的业务码」。**
+       本组接口的失败直接用 §10.5 的业务码,不引入"内部码 → 对外码"映射表
+       (那会多出一处最容易漂的东西)。但**未定义的内部异常**(Python 抛的技术性错误)
+       由 Java **折算为 90001**,不透传 —— 否则内部实现细节会漏到用户界面。
+
+    2. **SSE 流中途失败的表达见 `/internal/agent/chat`**:流一旦开始,
+       HTTP 状态码就改不了,错误只能用事件表达。
+
 servers:
   - url: http://{python-agent-host}:8000
     description: Python 智能体服务(内网;Java→Python 调用)
@@ -69,8 +81,11 @@ paths:
       responses:
         '200':
           description: |
-            SSE 流式事件。事件序列:若干 `data: {"delta": "..."}` → 至多一个 `data: {"refs":[...]}` →
-            `data: [DONE]`。§10.6③
+            SSE 流式事件(D-7 裁决冻结,2026-09-29 补 `error`)。**两种结局互斥**:
+
+            **正常**:若干 `data: {"delta": "..."}` → 至多一个 `data: {"refs":[...]}` → `data: [DONE]`
+            **失败**:若干 `data: {"delta": "..."}`(可能没有)→ 一个 `data: {"error":{...}}`,**不再发 `[DONE]`**
+
             application/json 为备用载体:非流式聚合返回(若 Java 侧选择非 SSE 调用)。
           content:
             text/event-stream:
@@ -78,7 +93,15 @@ paths:
                 type: string
                 description: |
                   逐行事件。delta 为增量文本;refs 为可采纳的搭配方案(SkuRef[]);
-                  结束标记 `data: [DONE]`。
+                  正常结束标记 `data: [DONE]`。
+
+                  **`error` 事件(2026-09-29 补)**:流一旦开始,HTTP 状态码就改不了,
+                  故模型超时、内容安全拦截这类**流中途失败只能用事件表达**。
+                  若没有它,前端只能靠"流意外断开"推断失败 —— 而网络抖动也会断,
+                  两者分辨不出的直接后果是**前端无法决定要不要重试**。
+
+                  `error` 必为**最后一帧**,且**与 `[DONE]` 互斥** —— 若两者都发,
+                  前端就得猜哪个算数。
                 example: |
                   data: {"sessionId":"s_88"}
                   data: {"delta":"浅灰地砖建议搭配…"}
@@ -86,7 +109,16 @@ paths:
                   data: [DONE]
             application/json:
               schema: { $ref: './openapi-common.yaml#/components/schemas/ApiResponse' }
-      x-todo: "D-7 裁决:冻结事件集 {sessionId(仅首帧)、delta、refs、[DONE]};sessionId 由服务端首个事件下发。是否存在 error 等其它事件待上游确认"
+      x-note: |
+        失败示例(与上面的 200 是同一状态码的另一种结局,仅示意事件形状):
+
+        ```
+        data: {"sessionId":"s_88"}
+        data: {"delta":"浅灰地砖…"}
+        data: {"error":{"code":90001,"message":"模型调用超时","traceId":"..."}}
+        ```
+
+        `error` 事件形状:`{error: {code, message, traceId}}`,`code` 取 §10.5 业务码。
 
   /internal/agent/parse-layout:
     post:
@@ -102,15 +134,27 @@ paths:
           application/json:
             schema:
               type: object
-              description: 两种输入形态之一:自然语言文本,或结构化表单参数。
+              description: |
+                两种输入形态:`text`(自然语言)或 `params`(结构化表单)。
+
+                **优先级:`params` 优先于 `text`** —— 结构化是用户明确填的,文本是模糊描述。
+                两者都不给 → **10001**。
               properties:
                 text: { type: string, description: 自然语言描述, example: "三室两厅,客厅 5m×4m,卫生间 2m×1.8m" }
                 params:
                   allOf: [{ $ref: './openapi-common.yaml#/components/schemas/LayoutModel' }]
-                  description: 直接表单录入的结构化参数(可选)
+                  description: 直接表单录入的结构化参数(可选;**与 text 同时给时以本字段为准**)
       responses:
         '200':
-          description: 解析成功
+          description: |
+            解析成功,直接返回 `LayoutModel`。
+
+            **失败(解析不出完整户型)按 10001 返回**(D-6 裁决),并用 `data.errors[]`
+            说明缺哪一项,例如 `{"field":"spaces[0].length","reason":"未给出客厅长宽"}`。
+
+            **不返回半成品**:`LayoutSpace` 的尺寸是**报价的输入**,缺尺寸会让面积算错、
+            报价悄悄偏掉 —— 宁可让用户补齐,也不能让一个看起来成功的户型流进报价。
+            提示用户补齐所需的"缺哪几项"就放在 `data.errors[]` 里,不需要新字段。
           content:
             application/json:
               schema:
@@ -119,7 +163,6 @@ paths:
                   - type: object
                     properties:
                       data: { $ref: './openapi-common.yaml#/components/schemas/LayoutModel' }
-      x-todo: "§10.2 仅一句说明,入参/出参字段结构未定义;text 与 params 的优先级、解析失败(能否解析)如何表达 待确认"
 
   /internal/agent/material-map:
     post:
@@ -160,11 +203,28 @@ paths:
                             type: array
                             items:
                               type: object
+                              required: [part, sku, phrases]
                               properties:
                                 part: { $ref: './openapi-common.yaml#/components/schemas/Part' }
                                 sku: { type: string }
-                                prompt: { type: string, description: 该部位的材质提示词片段 }
-      x-todo: "上游未定义 material-map 的响应结构;prompt 的粒度(整段/结构化字段)待确认"
+                                phrases:
+                                  type: object
+                                  description: 该部位瓷砖的**结构化材质短语**(§7.3)
+                                  properties:
+                                    material: { type: string, example: 釉面砖 }
+                                    surface: { type: string, description: 光泽度, example: 柔光 }
+                                    colorPattern: { type: string, example: 浅灰细石纹 }
+                                    spec: { type: string, example: 750×1500mm }
+      x-note: |
+        **为什么是结构化片段而不是整段 prompt**:架构 §7.3 把「材质映射」与「场景组装」
+        (空间类型 + 风格 + 各部位材质 + 陈设 + 视角)**分成两步**,整段提示词是**组装**的产物,
+        不该在这一步产出。结构化片段还**可断言** —— 测试能直接验"地面那块砖的
+        colorPattern 进没进去",而整段文本只能靠字符串包含,弱得多。组装在生成流程内部完成。
+
+        ⚠️ **本端点是否真会被调用,待 T-1.11 判定。** 若"场景组装"就在生成消费端(Python 内部),
+        则 Java 不需要绕这一圈,本端点即为**预留**;若 Java 侧需要预览提示词,它才有调用方。
+        在 T-1.11 落地前,**不要把"有调用方"当成既定事实** —— 一个没有调用方的端点
+        写得很详细,就成了没人测的契约面。
 
   /internal/agent/complete-parts:
     post:
@@ -207,7 +267,13 @@ paths:
                             description: 合并后的完整部位列表,补齐项 source=ai(§11.2"标注 ai")
                             items: { $ref: './openapi-common.yaml#/components/schemas/PartSelection' }
         # 失败场景:补齐未成功 → 业务码 40004(部位补齐失败,用户可重试),HTTP 仍返回 200
-      x-todo: "补齐失败(40004)是内部接口返回码还是 Java 对外码,待确认;'标注 ai' 的字段名见 common.PartSource"
+      x-note: |
+        **40004 既是内部返回码,也是用户看到的码** —— 本组接口复用同一套业务码(见文首约定),
+        Java **原样透传**,不做映射。
+
+        理由:引入"内部码 → 对外码"映射表会多出一处最容易漂的东西,而且加了码忘了映射,
+        症状是"用户看到一个莫名其妙的数字"。**但 Java 只透传已定义的业务码**,
+        未定义的内部异常一律折算 90001。
 
   # ==========================================================
   # Python → Java
@@ -265,9 +331,22 @@ paths:
                       data:
                         type: object
                         properties:
-                          prompt: { type: string, description: 陈设提示词 }
+                          prompt: { type: string, description: 陈设提示词;未配置时为空串 }
                           coverImage: { type: string, nullable: true, description: 展示图 URL(可选) }
-      x-todo: "§10.4 仅给路径;入参(是否仅 space/style)、返回字段结构未定义"
+                          furnishConfigured:
+                            type: boolean
+                            description: 该「空间 × 风格」是否已在后台配置。未配置时为 false
+      x-note: |
+        **入参只有 `space` + `style`** —— 与 `t_furnish_style` 的唯一键一致(架构 §8.5),没有别的数据源。
+
+        **未配置时降级,不报错**(架构 §13.3「降级不阻断主流程」):
+
+        返回 `prompt: ""` + **`furnishConfigured: false`**,生成照常进行,Python 侧记 **WARN 日志**。
+
+        为什么不返 30001:字典里空间 × 风格有 **20 个组合**,后台很可能配不全;
+        若未配置就让生成失败,用户选中没配的组合时会**直接看不到效果图**,而他还以为是自己操作错了。
+        陈设缺失是**画质问题**,不是功能问题 —— 把"后台漏配"暴露给**监控与后台**
+        (靠 WARN 与 `furnishConfigured`),而不是让用户承担。
 
   /internal/generate/callback:
     post:

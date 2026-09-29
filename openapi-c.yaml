@@ -149,7 +149,6 @@ paths:
         以 refresh_token Cookie 换取新的 access_token(refresh_token 的 Path 收窄至 /api/v1/auth)。
         触发场景:错误码 10003 令牌过期。§10.1
       security: []
-      x-todo: "§10.1 提及 refresh_token 与 10003,但 §10.2 接口清单**未列出刷新接口**;本路径与方法为推断,待确认"
       responses:
         '200':
           description: 刷新结果(Set-Cookie 新 access_token)
@@ -177,7 +176,7 @@ paths:
         - { name: priceMax, in: query, required: false, schema: { type: number }, description: 价格区间上限(元/㎡) }
         - { $ref: './openapi-common.yaml#/components/parameters/PageParam' }
         - { $ref: './openapi-common.yaml#/components/parameters/SizeParam' }
-      x-todo: "§10.2 仅一句'筛选/搜索',具体 query 参数名未定义;以上为推断"
+      x-note: "八个筛选参数由 D-8 裁决确定(见 openapi-verification.md §7);服务端与集成测试均按此实现"
       responses:
         '200':
           description: 列表
@@ -300,14 +299,23 @@ paths:
       responses:
         '200':
           description: |
-            SSE 事件:`data: {"sessionId":"..."}`(仅首帧,D-7) → 若干 `data: {"delta":"..."}`
-            → 至多一个 `data: {"refs":[...]}` → `data: [DONE]`。失败码 50001(AI 咨询超出范围)。
+            SSE 事件(D-7 裁决冻结,2026-09-29 补 `error`)。**两种结局互斥**:
+
+            **正常**:`data: {"sessionId":"..."}`(仅首帧)→ 若干 `data: {"delta":"..."}`
+            → 至多一个 `data: {"refs":[...]}` → `data: [DONE]`
+
+            **失败**:若干 `data: {"delta":"..."}`(可能没有)
+            → `data: {"error":{"code":…,"message":…,"traceId":…}}`,**不再发 `[DONE]`**
+
+            失败码 50001(AI 咨询超出范围)。**流一旦开始,HTTP 状态码就改不了**,
+            故流中途的失败只能用 `error` 事件表达 —— 前端据此才分得清"模型报错"与
+            "网络断了",进而决定要不要重试。
           content:
             text/event-stream:
               schema: { type: string }
         '401':
           $ref: './openapi-common.yaml#/components/responses/Unauthorized'
-      x-todo: "D-7 裁决:sessionId 由服务端在流的首个事件下发(见请求体 sessionId 说明)"
+      x-note: "sessionId 由服务端在流的首个事件下发(D-7)"
 
   /agent/chat/sessions:
     get:
@@ -431,7 +439,10 @@ paths:
                   - type: object
                     properties:
                       data: { $ref: './openapi-common.yaml#/components/schemas/LayoutModel' }
-      x-todo: "§10.2 仅一句说明;入参/出参字段为推断。解析失败按 10001(参数校验失败)返回(D-6 裁决)"
+      x-note: |
+        解析失败按 **10001** 返回(D-6 裁决),并用 `data.errors[]` 说明缺哪一项。
+        **`params`(结构化表单)优先于 `text`(自然语言)**;两者都不给 → 10001。
+        **不返回半成品** —— 尺寸是报价的输入,缺了会让面积算错。详见 openapi-internal.yaml 的对应说明。
 
   # ==========================================================
   # 效果图生成(§5.4、§11.2)

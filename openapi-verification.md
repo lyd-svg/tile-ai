@@ -2160,6 +2160,94 @@ C 端 /products       -> access_token
 
 ---
 
+## 27. 内部契约 x-todo 评审:关闭 5 处决策点(2026-09-29)
+
+### 27.1 为什么必须先把它们关掉
+
+T-1.6 / T-1.7 / T-1.9 / T-1.10 这四张卡**全部从一条未评审的 `x-todo` 开始**:
+
+| 任务 | 卡在哪条 |
+| --- | --- |
+| T-1.6 AI 咨询 | `/internal/agent/chat` —— 除冻结的四类事件外**是否还有 error** |
+| T-1.7 户型录入 | `/internal/agent/parse-layout` —— 入参/出参结构、`text` 与 `params` 优先级、失败如何表达 |
+| T-1.9 部位补齐 | `/internal/agent/complete-parts` —— `40004` 是内部码还是对外码 |
+| T-1.10 材质映射 | `/internal/agent/material-map` 响应结构与粒度;`/internal/furnish/prompts` 入参与返回 |
+
+CLAUDE.md 把 `x-todo` 定义为**决策点而非自由发挥的空间** —— 所以先评审、再开工,
+否则每张卡开工时都要停下来问一次。
+
+### 27.2 五条裁决
+
+| # | 决策点 | 裁决 |
+| --- | --- | --- |
+| 1 | 对话流的错误表达 | **加 `error` 事件,与 `[DONE]` 互斥**(error 必为最后一帧) |
+| 2 | 户型解析 | **`params` 优先于 `text`**;出参就是 `LayoutModel`;**失败 10001 + `data.errors[]`,不返回半成品** |
+| 3 | 材质映射粒度 | 返回**结构化片段** `phrases{material,surface,colorPattern,spec}`,去掉整段 `prompt`;**该端点是否真被调用留待 T-1.11 判定** |
+| 4 | `40004` 归属 | **内部与对外同一套码**,Java 原样透传;**但只透传已定义业务码,未定义的折 90001** |
+| 5 | 陈设缺失 | **降级不阻断**:空陈设继续出图 + WARN 日志 + `furnishConfigured: false` |
+
+### 27.3 两处在复核时被推翻的原建议(值得回看)
+
+**① 陈设缺失原拟返 30001 —— 与 §13.3 冲突。**
+
+初版建议"未配置就报 30001",理由是"别静默出空图"。复核时发现:
+
+- 架构 §13.3 明写「**降级不阻断主流程**」,而陈设缺失**是画质问题不是功能问题**;
+- 字典里空间 × 风格有 **20 个组合**,后台很难配全。若未配置就失败,用户选中没配的组合时
+  **直接看不到效果图**,而他会以为是自己操作错了 —— 让用户承担了本该后台承担的疏漏。
+
+改为降级,并把"后台漏配"暴露给**监控与后台**(WARN + `furnishConfigured`)。
+
+**② 材质映射的"该端点是否被调用"不该现在定。**
+
+初版只谈响应粒度。复核时意识到:`material-map` 是 Java→Python 的端点,
+而**"场景组装"若就在生成消费端(Python 内部),Java 根本不需要绕这一圈** ——
+那这个端点就是死的。它取决于 T-1.11 的实现位置,**我没有依据现在判断**。
+故:定响应形状 + 标注「预留」,把判定留到 T-1.11。
+
+> 教训:五条建议在同一轮里给出,复看时两条有问题。其中 ① 是我引用了 §7.3 的半句
+> ("结构化")却漏掉了另一条(§13.3"降级不阻断")—— **同一次评审值得做第二遍**。
+
+### 27.4 顺带清掉的陈旧标记
+
+这些 x-todo 所指的问题**早已裁决或实现**,只是标记没摘,留着会让后来人以为这里还没定:
+
+| 位置 | 依据 |
+| --- | --- |
+| `openapi-c.yaml /auth/refresh` | 已实现且 `AuthIntegrationTest` 覆盖 |
+| `openapi-c.yaml /products` 八参数 | **D-8 裁决**;Java `allEightFiltersWork` 覆盖 |
+| `openapi-common.yaml PartSource` / `PartSelection.source` | **D-4 裁决**(`source ∈ {user, ai}`) |
+| `openapi-common.yaml ErrorItem` | **决策 2 依赖它** —— Java 已实现并有断言锁定。不清理则决策 2 落不了地 |
+
+`openapi-internal.yaml` 现在 **0 个 `x-todo`**。
+
+**仍保留的 5 条**(对应任务未做,留着是对的):`/generate` 的 `planId`(T-1.11)、
+`/plans/{id}/share` 返回结构(T-1.13)、以及 admin 侧两条导入模板相关的(其中一条还带着
+"建议同时覆盖搭配/户型模板/陈设/报价参数的模板"这个未决建议)。
+
+### 27.5 文档链
+
+| 文档 | 改动 |
+| --- | --- |
+| `tile-ai-prd.md` | **未改**。本轮全是接口内部形态与降级规则,PRD 层面无对应描述 |
+| `tile-ai-architecture.md` v2.1 → **v2.2** | §10.4 增**内部接口四条约定** |
+| `openapi-internal.yaml` | 逐个端点写入裁决;**5 条 x-todo 全部清除** |
+| `openapi-c.yaml` | `/agent/chat` 补 `error` 事件;`/layout/parse` 补口径;清 2 条陈旧标记 |
+| `openapi-common.yaml` | `ErrorItem` / `PartSource` / `PartSelection.source` 清标记 |
+
+### 27.6 校验
+
+**契约侧**:`bash outputs/scripts/ci.sh` → **EXIT=0**,7 门禁全 PASS。
+
+**过程中修掉一处自己造的缺陷**:给 `/internal/agent/chat` 补 `error` 示例时,
+误加了**第二个 `responses:` 键** —— 被 G1 当场拦下(`duplicated mapping key`)。
+与 §25.4 记的 `serviceToken:` 那次是同一类错误(重复顶层/次级键)。
+
+**实现侧**:本轮只改契约与文档,**未改动任何代码**,故未重跑 Java / Python / 前端测试。
+下一步 T-1.7 开工时按新契约实现。
+
+---
+
 ## 26. 图像模型实测:纠正一个从未验证过的协议假设(2026-09-29)
 
 ### 26.1 为什么这次实测非做不可
