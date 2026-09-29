@@ -2,8 +2,12 @@
 # =============================================================================
 # 契约静态校验 —— 统一 CI 入口
 #
-# 设计目标:把 4 份 OpenAPI 契约的全部校验收成**一个可判成败的命令**。
+# 设计目标:把全部契约(4 份 OpenAPI + 1 份 AsyncAPI)的校验收成
+#          **一个可判成败的命令**。
 # 平台无关:Linux(GitHub Actions / GitLab CI)与 Windows(Git Bash)均可运行。
+#
+# 门禁:G1 结构 / G2 redocly / G3 spectral / G4 逗号撕裂 /
+#       G5 描述完整性 / G6 T-1~T-15 / G7 AsyncAPI
 #
 # 用法:
 #   bash outputs/scripts/ci.sh              # 本地:缺依赖时才安装
@@ -118,6 +122,12 @@ run_gate "g5-descriptions" "G5-描述完整性" \
 # G6  T-1~T-15 断言(FAIL 阻断;SKIP 不阻断)
 run_gate "g6-t1-t15" "G6-T1-T15" \
   python "$ROOT/outputs/scripts/check_t.py"
+
+# G7  AsyncAPI 契约(Java↔Python 的 MQ 消息,D-13)
+#     三层校验:结构合法性 / 跨文件 $ref 解析 / 语义断言(幂等键等)。
+#     语义层是关键 —— 文档合法不等于契约完整(删掉幂等键依然"合法")。
+run_gate "g7-asyncapi" "G7-AsyncAPI" \
+  node "$ROOT/outputs/scripts/validate-asyncapi.js"
 
 # ---------------------------------------------------------------- 3. 汇总
 title "汇总"

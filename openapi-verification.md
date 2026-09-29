@@ -531,3 +531,124 @@ powershell -File outputs/scripts/run-lint.ps1
 
 留档:`outputs/reports/`(修复前的 redocly-*.json 已被修复后结果覆盖,如需修复前基线请查阅本节 §8.4 的表格记录)。
 
+---
+
+## 9. D-13 关闭:MQ 消息契约(AsyncAPI)
+
+### 9.1 背景
+
+§4 待确认项 **D-13** 与 §7.2 挂起项均记录:
+
+> MQ 消息规范(queue.generate / queue.index.sync / DLQ)无上游可依,
+> 建议另出 AsyncAPI 或消息规范文档跟踪。
+
+架构 §6.2 / §6.4 把**可靠性机制**写得很细(Outbox 模式、手动 ACK、指数退避重试、
+死信队列、以 taskId 幂等、补偿扫描),但**未定义消息体结构**;§15.2 亦把
+"定义 `index.sync` 事件结构"列入**阶段 0「先定」清单**。
+
+这是本项目中**唯一"输入缺失"的硬缺口** —— 其余待办(docs 缺口 G-2/G-3/G-6 等)
+均可在别处找到答案,而 MQ 消息体无任何权威来源。
+
+### 9.2 产出
+
+新增契约 **`asyncapi-internal.yaml`**(AsyncAPI **3.1.0**),与 4 份 OpenAPI 契约同级。
+
+| 通道 | 地址 | 方向 | 依据 |
+| --- | --- | --- | --- |
+| 生成任务派发 | `queue.generate` | Java → Python | 架构 §6.2、§11.2 |
+| 向量索引同步 | `queue.index.sync` | Java → Python | 架构 §6.2、§9、§15.2 |
+| 生成任务死信 | `queue.generate.dlq` | 代理 → 人工/脚本 | 架构 §6.4 |
+| 索引同步死信 | `queue.index.sync.dlq` | 代理 → 人工/脚本 | 架构 §6.4 |
+
+消息体:`GenerateTaskPayload`、`IndexSyncPayload`、`DlqPayload`。
+
+**结果回传不经 MQ**:Python 完成出图后走 **HTTP 回调**
+`POST /internal/generate/callback`(已在 `openapi-internal.yaml` 中定义),
+故本契约只覆盖**单向派发**。
+
+### 9.3 关键设计决策
+
+1. **复用 `openapi-common.yaml` 的 schema,不重复定义**。
+   `Part` / `TaskType` / `SpaceType` / `StyleType` / `LayoutModel` / `PartSelection` /
+   `ErrorCode` 均通过跨文件 `$ref` 引用(如
+   `./openapi-common.yaml#/components/schemas/Part`)。
+   **已实测验证** `@asyncapi/parser` 3.6.3 可正确解析并取回目标 schema ——
+   这避免了重演 **F-4** 式"同一枚举存在多份真源"的问题。
+
+2. **方向标注**。本契约描述**两个服务之间的共享契约**,而非单一应用的接口。
+   沿用 `openapi-internal.yaml` 的约定,每个 operation 标注
+   `x-producer` / `x-consumer`。
+
+3. **消息体与协议无关**。§15.9 尚未裁决 RabbitMQ 与 Redis Stream(P0-3);
+   契约的 `servers` 与 `channel.bindings` 按 AMQP 书写,**但消息体不受选型影响** ——
+   改选 Redis Stream 时只需调整这两处。
+
+4. **DLQ 粒度**:架构仅提"死信队列(DLQ)"未指明粒度,本契约按**每源队列一个 DLQ**
+   (AMQP 惯例)拆分,已标 `x-todo` 待确认。
+
+5. **可靠性要求写入契约描述**:手动 ACK、幂等去重键、Outbox 投递、指数退避等
+   要求与消息体**同等重要**,故在 `info.description` 与各 operation 描述中明确。
+
+### 9.4 校验(G7 门禁)
+
+新增校验脚本 `outputs/scripts/validate-asyncapi.js`,接入 `ci.sh` 作为 **G7** 门禁。
+分三层:
+
+| 层 | 内容 | 为什么需要 |
+| --- | --- | --- |
+| ① 结构合法性 | AsyncAPI 3.x 规范校验 | 基础 |
+| ② 跨文件 `$ref` 解析 | 确认能取回 `openapi-common.yaml` 的真实 schema | 防止"解析通过但引用没落地" |
+| ③ **语义断言** | 幂等键必填、方向标注齐全、队列齐备、DLQ 枚举覆盖、`parts.minItems=1` | **文档合法 ≠ 契约完整** |
+
+**第 ③ 层经负向验证证明是必要的**:
+
+| 注入的缺陷 | ① 结构 | ③ 语义 | 退出码 |
+| --- | --- | --- | --- |
+| 从 `GenerateTaskPayload.required` 移除 `taskId` | ✓ **仍然合法** | ✗ 捕获 | 1 |
+| `asyncapi` 版本改为 `9.9.9` | ✗ 捕获 | — | 1 |
+
+第一行是关键:删掉幂等键后,文档**依然通过结构校验** —— 若只有前两层,
+这个会让 Java 与 Python 的幂等实现失去契约依据,而 CI 仍显示绿色。
+
+#### 9.4.1 新增契约暴露的覆盖盲区(已修复)
+
+引入 `asyncapi-internal.yaml` 后做回归验证时发现:**该文件被原有的检测能力完全漏掉**。
+
+向 AsyncAPI 契约注入一处逗号撕裂(`description: 单价,元/㎡`)后,门禁反应如下:
+
+| 门禁 | 修复前 | 原因 |
+| --- | --- | --- |
+| **G4 逗号撕裂** | ❌ **扫不到** | 文件清单是**硬编码的 4 份 OpenAPI**,不含 AsyncAPI |
+| **G5 描述完整性** | ❌ **扫不到** | 同上 |
+| **G7 AsyncAPI** | ❌ **显示"结构合法"通过** | AsyncAPI 解析器**不校验 schema 对象的键白名单** —— 这与 redocly 的 `struct` 规则不同,异物键不会被拦 |
+
+**即:同一类曾导致 16 处缺陷的漏洞,在新契约中当时完全不可见。**
+
+修复:
+
+1. `detect_corruption.py` / `verify_descriptions.py` 的文件清单**由硬编码改为 `glob`**
+   (`openapi-*.yaml` + `asyncapi-*.yaml`)。今后新增任何契约文件自动纳入,
+   同类问题不会重演。
+2. `.githooks/pre-commit` 的触发条件同步扩展为 `^(openapi|asyncapi)-.*\.yaml$`。
+
+修复后重测:同一注入被 G4 与 G5 捕获,退出码 1。回滚后 7 个门禁全部通过。
+
+> **本次修复自身也暴露了一个假阳**:检测器以"键含非 ASCII 字符"为撕裂特征,
+> 而新增的 `x-not-covered` 段误用了中文键(`项:` / `说明:`)。
+> 该写法同时**违反了本仓库"对外键一律英文"的既有约定**(参见 `x-todo` /
+> `x-source` / `x-direction`),已改回 `item` / `note`。
+> 检测器的启发式保持不变 —— 它在此前抓出了全部 16 处真实缺陷,代价可接受。
+
+### 9.5 仍未闭合
+
+| # | 事项 | 性质 |
+| --- | --- | --- |
+| R-8 | **P0-3:MQ 选型**(RabbitMQ vs Redis Stream) | 架构 §15.9 要求阶段 0 裁决;本契约按 AMQP 书写,选定后需回填 `servers`/`bindings` |
+| R-9 | DLQ 粒度(每队列一个 vs 全局一个) | 推断项,已标 `x-todo` 待确认 |
+| R-10 | 对话消息异步落库(架构 §6.2 称"**可选**") | 未纳入契约;若实现阶段采用,需补 `queue.chat.persist` |
+| R-11 | 二期进度回传的 MQ 路径(架构 §6.3) | 一期经 HTTP 回调即可,二期再补 |
+
+> **未回改架构文档**:架构 §10.4 列出了接口契约清单但未提及 AsyncAPI。
+> 本契约属**新增**而非变更既有接口,且架构 §7(D-13)本就建议另出 AsyncAPI。
+> 是否在架构 §10.4 补一行指引,留待上游决定。
+

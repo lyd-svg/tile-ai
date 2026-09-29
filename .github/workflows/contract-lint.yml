@@ -28,7 +28,7 @@ permissions:
 
 jobs:
   contract-lint:
-    name: 契约校验 (redocly / spectral / swagger-parser / T-1~T-15)
+    name: 契约校验 (swagger-parser / redocly / spectral / 撕裂扫描 / T-1~T-15 / AsyncAPI)
     runs-on: ubuntu-latest
     timeout-minutes: 10
 

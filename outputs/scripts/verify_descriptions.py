@@ -1,6 +1,6 @@
 # -*- coding: utf-8 -*-
 """修复后:确认 16 处字段的 description 已完整(不再被截断),且无伪键残留"""
-import sys, io, os, yaml
+import sys, io, os, glob, yaml
 
 sys.stdout = io.TextIOWrapper(sys.stdout.buffer, encoding='utf-8')
 ROOT = os.path.abspath(os.path.join(os.path.dirname(__file__), '..', '..'))
@@ -25,7 +25,11 @@ CASES = [
     ('openapi-internal.yaml', ['paths','/internal/generate/callback','post','requestBody','content','application/json','schema','properties','taskId'], '回调幂等键'),
 ]
 
-ALL_FILES = ['openapi-common.yaml','openapi-c.yaml','openapi-admin.yaml','openapi-internal.yaml']
+# 同上:用 glob 覆盖全部契约文件,避免新增文件被静默漏检。
+ALL_FILES = [os.path.basename(p) for p in sorted(
+    glob.glob(os.path.join(ROOT, 'openapi-*.yaml'))
+    + glob.glob(os.path.join(ROOT, 'asyncapi-*.yaml'))
+)]
 docs = {}
 for f in ALL_FILES:
     with open(os.path.join(ROOT, f), 'r', encoding='utf-8') as fh:
@@ -61,7 +65,7 @@ ALLOWED_NON_ASCII = set()
 global_bad = 0
 print()
 print('全局扫描:任何 mapping 中出现非 ASCII 键即报告')
-for fn in ['openapi-common.yaml','openapi-c.yaml','openapi-admin.yaml','openapi-internal.yaml']:
+for fn in ALL_FILES:
     hits = []
     def walk(n, p):
         if isinstance(n, dict):

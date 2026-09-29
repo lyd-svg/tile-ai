@@ -6,21 +6,23 @@
 会解析成 description='规格' 和 '如 750x1500mm'=None 两个键。
 用 yaml.compose() 拿节点行号,精确定位。
 """
-import sys, io, yaml
+import os, sys, io, glob, yaml
 
 sys.stdout = io.TextIOWrapper(sys.stdout.buffer, encoding='utf-8')
 
-FILES = ['openapi-common.yaml', 'openapi-c.yaml', 'openapi-admin.yaml', 'openapi-internal.yaml']
+_ROOT = os.path.abspath(os.path.join(os.path.dirname(__file__), '..', '..'))
 
-# OpenAPI Schema Object 的合法关键字(用于判断哪些键是"撕裂"出来的异物)
-SCHEMA_KEYWORDS = {
-    'type', 'format', 'description', 'example', 'default', 'enum', 'required',
-    'properties', 'items', 'allOf', 'oneOf', 'anyOf', 'not', 'nullable',
-    'minimum', 'maximum', 'minItems', 'maxItems', 'minLength', 'maxLength',
-    'pattern', 'additionalProperties', 'title', '$ref', 'readOnly', 'writeOnly',
-    'deprecated', 'uniqueItems', 'multipleOf', 'externalDocs', 'xml', 'discriminator',
-    'x-todo', 'x-source', 'x-direction', 'x-example', 'x-unit', 'x-note',
-}
+# 用 glob 扫描**所有**契约文件,而非硬编码清单。
+#
+# 教训:本文件原先硬编码 4 份 OpenAPI。新增 asyncapi-internal.yaml 后,
+# 同一处逗号撕裂注入进 AsyncAPI,**7 个门禁全部显示通过** ——
+# 因为 G4 不扫它,而 AsyncAPI 解析器又不拦这类缺陷(它不校验 schema 对象的
+# 键白名单,与 redocly 的 struct 规则不同)。改用 glob 后,今后新增任何
+# openapi-*.yaml / asyncapi-*.yaml 都会自动纳入。
+FILES = sorted(
+    glob.glob(os.path.join(_ROOT, 'openapi-*.yaml'))
+    + glob.glob(os.path.join(_ROOT, 'asyncapi-*.yaml'))
+)
 
 def walk(node, path, out, parent_is_properties=False):
     """递归遍历 compose 出来的节点树,收集异常键"""
@@ -62,7 +64,7 @@ for f in FILES:
     suspicious = [x for x in findings if not x[1].isascii()]
     per_file[f] = len(suspicious)
     print('=' * 72)
-    print(f'FILE: {f}   可疑键(非 ASCII 键)={len(suspicious)}')
+    print(f'FILE: {os.path.relpath(f, _ROOT)}   可疑键(非 ASCII 键)={len(suspicious)}')
     print('=' * 72)
     for lineno, key, path in suspicious:
         print(f'  L{lineno:<5} key={key!r}')

@@ -18,8 +18,9 @@
 
 set -u
 
-# 仅当本次提交涉及契约文件时才触发
-STAGED=$(git diff --cached --name-only --diff-filter=ACM | grep -E '^openapi-[A-Za-z0-9_-]+\.yaml$')
+# 仅当本次提交涉及契约文件时才触发(OpenAPI 与 AsyncAPI 都要覆盖)
+STAGED=$(git diff --cached --name-only --diff-filter=ACM \
+         | grep -E '^(openapi|asyncapi)-[A-Za-z0-9_.-]+\.yaml$')
 if [ -z "$STAGED" ]; then
   exit 0
 fi
@@ -48,14 +49,26 @@ else
 fi
 
 # ---------------------------------------------------------------- 2. 结构校验
+# 触发条件已覆盖 openapi-* 与 asyncapi-*,故两类契约都要校验,保持一致。
 if [ -d outputs/tools/node_modules ]; then
-  OUT=$(NODE_PATH="$PWD/outputs/tools/node_modules" node outputs/scripts/validate-refs.js 2>&1)
+  export NODE_PATH="$PWD/outputs/tools/node_modules"
+
+  OUT=$(node outputs/scripts/validate-refs.js 2>&1)
   if [ $? -ne 0 ]; then
     echo "$OUT"
-    echo "  ✗ 结构校验未通过"
+    echo "  ✗ OpenAPI 结构校验未通过"
     FAIL=1
   else
-    echo "  ✓ 结构校验通过 (4 份契约)"
+    echo "  ✓ OpenAPI 结构校验通过 (4 份)"
+  fi
+
+  OUT=$(node outputs/scripts/validate-asyncapi.js 2>&1)
+  if [ $? -ne 0 ]; then
+    echo "$OUT"
+    echo "  ✗ AsyncAPI 契约校验未通过"
+    FAIL=1
+  else
+    echo "  ✓ AsyncAPI 契约校验通过"
   fi
 else
   echo "  ! 跳过结构校验:outputs/tools/node_modules 不存在"

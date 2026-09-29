@@ -1,0 +1,476 @@
+asyncapi: 3.1.0
+
+info:
+  title: 瓷砖选购 AI 效果图与报价系统 — 异步消息契约(Java ↔ Python)
+  version: 0.1.0
+  description: |
+    本文件定义 Java 业务核与 Python 智能体服务之间的**异步消息契约**,用于补齐
+    `openapi-internal.yaml` 覆盖不到的 MQ 部分(即 `openapi-verification.md` 中的
+    **D-13**)。
+
+    上游依据:架构文档 §6.2(异步 MQ)、§6.4(可靠性与一致性)、§8.6(t_outbox /
+    t_generation_task)、§9(向量库)、§15.2(索引同步机制)。
+
+    **方向说明**:本文件描述的是**两个服务之间的共享契约**,而非单一应用的接口。
+    因此每个 operation 用 `x-producer` / `x-consumer` 标注生产方与消费方
+    (沿用 `openapi-internal.yaml` 的 `x-direction` 约定)。
+
+    **消息体与协议无关**:下方消息体仅描述**载荷结构**。架构 §15.9 尚未裁决
+    一期采用 RabbitMQ 还是 Redis Stream(P0-3);若改选 Redis Stream,
+    只需调整 `servers` 段与投递语义,消息体本身不变。
+
+    **可靠性要求**(架构 §6.4,与消息体同等重要):
+    - 消息由 Java 侧 **Outbox 模式**投递:与业务数据同事务写入 `t_outbox`,
+      由独立投递器扫描发送,失败按**指数退避**重试。
+    - 消费端**手动 ACK**;处理失败重试,超过阈值进入死信队列(DLQ)。
+    - 消费端必须**幂等**:`queue.generate` 以 `taskId` 去重,
+      `queue.index.sync` 以 `eventId` 去重。重复投递不得产生副作用。
+    - 兜底:索引同步失败由**定期全量重建**兜底(架构 §15.2);
+      生成任务由**补偿扫描**重新投递(§6.4)。
+
+    约定的"TODO"标记:`x-todo` 表示上游未定义、由契约作者推断,待评审。
+
+servers:
+  broker:
+    host: '{mq-host}:5672'
+    protocol: amqp
+    description: |
+      消息代理。架构 §15.9 尚未裁决 RabbitMQ 与 Redis Stream 的取舍(P0-3),
+      此处按 RabbitMQ 的 AMQP 协议书写;若改选 Redis Stream,本段与
+      channel.bindings 需相应调整,**消息体不变**。
+
+      拓扑:topic 型交换机 `tile.topic`,各队列以自身名称作为 routing key 绑定;
+      消息持久化(架构 §13.4 要求 MQ 持久化)。
+      (交换机拓扑属基础设施配置,AsyncAPI 的 server 级 amqp binding 不承载
+      该信息,故以文字说明。)
+    variables:
+      mq-host:
+        default: rabbitmq
+    x-todo: 'P0-3 未裁决:MQ 选型(RabbitMQ vs Redis Stream),见架构 §15.9'
+
+defaultContentType: application/json
+
+channels:
+
+  # ==========================================================
+  # 生成任务派发(Java → Python)
+  # ==========================================================
+  queueGenerate:
+    address: queue.generate
+    title: 效果图生成任务队列
+    description: |
+      Java 受理生成请求并落 `t_generation_task`(pending)后,经 Outbox 投递到此队列。
+      Python 消费后执行:材质映射 → 组装陈设提示词 → 内容安全审核 → 调用图像生成网关。
+      完成后**经 HTTP 回调** `POST /internal/generate/callback` 回传结果(见
+      `openapi-internal.yaml`),**不回投 MQ**。架构 §6.2、§11.2。
+    messages:
+      generateTask:
+        $ref: '#/components/messages/GenerateTask'
+    bindings:
+      amqp:
+        is: queue
+        queue:
+          name: queue.generate
+          durable: true
+          autoDelete: false
+        bindingVersion: '0.3.0'
+
+  # ==========================================================
+  # 向量索引同步(Java → Python)
+  # ==========================================================
+  queueIndexSync:
+    address: queue.index.sync
+    title: 向量索引同步队列
+    description: |
+      Java 在 SKU / 搭配 / 知识库变更后投递此事件,Python 据此更新 Qdrant 集合。
+      **Qdrant 是派生索引**,权威数据在 MySQL(架构 §9.1);因此本队列允许
+      at-least-once 投递,由消费端幂等 + 定期全量重建兜底(§15.2)。
+    messages:
+      indexSync:
+        $ref: '#/components/messages/IndexSync'
+    bindings:
+      amqp:
+        is: queue
+        queue:
+          name: queue.index.sync
+          durable: true
+          autoDelete: false
+        bindingVersion: '0.3.0'
+
+  # ==========================================================
+  # 死信队列(架构 §6.4:"DLQ 中的任务由人工或脚本兜底")
+  # ==========================================================
+  dlqGenerate:
+    address: queue.generate.dlq
+    title: 生成任务死信队列
+    description: |
+      重试超过阈值或消息无法处理时进入此队列。**无自动消费方** ——
+      由人工或运维脚本兜底(架构 §6.4)。DLQ 消息数 > 0 必须告警(§13.7)。
+    messages:
+      dlqEntry:
+        $ref: '#/components/messages/DlqEntry'
+    bindings:
+      amqp:
+        is: queue
+        queue:
+          name: queue.generate.dlq
+          durable: true
+          autoDelete: false
+        bindingVersion: '0.3.0'
+    x-todo: '架构仅提"死信队列(DLQ)"未指明粒度;此处按每源队列一个 DLQ(AMQP 惯例)拆分,待确认'
+
+  dlqIndexSync:
+    address: queue.index.sync.dlq
+    title: 索引同步死信队列
+    description: |
+      同上。注意:索引同步失败**另有定期全量重建兜底**(架构 §15.2),
+      因此本队列的积压不必然导致数据不一致。
+    messages:
+      dlqEntry:
+        $ref: '#/components/messages/DlqEntry'
+    bindings:
+      amqp:
+        is: queue
+        queue:
+          name: queue.index.sync.dlq
+          durable: true
+          autoDelete: false
+        bindingVersion: '0.3.0'
+
+operations:
+
+  publishGenerateTask:
+    action: send
+    x-producer: Java 业务核(generate 模块)
+    x-consumer: Python 智能体服务
+    summary: 投递生成任务
+    description: |
+      Java 侧经 Outbox 投递。投递器扫描 `t_outbox` 中 `topic=queue.generate`
+      的未发送记录,成功后标记 `sent`;失败按指数退避重试(架构 §6.4)。
+    channel:
+      $ref: '#/channels/queueGenerate'
+    messages:
+      - $ref: '#/channels/queueGenerate/messages/generateTask'
+
+  consumeGenerateTask:
+    action: receive
+    x-producer: Java 业务核(generate 模块)
+    x-consumer: Python 智能体服务
+    summary: 消费生成任务
+    description: |
+      Python 消费并**手动 ACK**。处理流程:材质映射 → 陈设提示词组装 →
+      内容安全审核 → 调用图像网关(默认 1 张;`angles > 1` 为多角度)。
+      完成后经 `POST /internal/generate/callback` 回传,不在此队列回投。
+      **必须以 `taskId` 去重**(架构 §6.4)。
+    channel:
+      $ref: '#/channels/queueGenerate'
+    messages:
+      - $ref: '#/channels/queueGenerate/messages/generateTask'
+
+  publishIndexSync:
+    action: send
+    x-producer: Java 业务核(产品库 / 搭配模块)
+    x-consumer: Python 智能体服务
+    summary: 投递索引同步事件
+    description: |
+      SKU / 搭配 / 知识库发生变更时投递。同样经 Outbox 投递(架构 §6.4)。
+    channel:
+      $ref: '#/channels/queueIndexSync'
+    messages:
+      - $ref: '#/channels/queueIndexSync/messages/indexSync'
+
+  consumeIndexSync:
+    action: receive
+    x-producer: Java 业务核(产品库 / 搭配模块)
+    x-consumer: Python 智能体服务
+    summary: 消费索引同步事件
+    description: |
+      Python 据此 upsert / delete Qdrant 中的点。**必须以 `eventId` 去重**。
+      下架产品在检索过滤中排除(架构 §9.3 一致性)。
+    channel:
+      $ref: '#/channels/queueIndexSync'
+    messages:
+      - $ref: '#/channels/queueIndexSync/messages/indexSync'
+
+  consumeDlqGenerate:
+    action: send
+    x-producer: 消息代理(重试耗尽后自动转入)
+    x-consumer: 人工 / 运维脚本(无自动消费方)
+    summary: 死信进入(生成)
+    description: 无自动消费方;由人工或脚本兜底处理(架构 §6.4)。
+    channel:
+      $ref: '#/channels/dlqGenerate'
+    messages:
+      - $ref: '#/channels/dlqGenerate/messages/dlqEntry'
+
+  consumeDlqIndexSync:
+    action: send
+    x-producer: 消息代理(重试耗尽后自动转入)
+    x-consumer: 人工 / 运维脚本(无自动消费方)
+    summary: 死信进入(索引同步)
+    description: 同上;索引侧另有定期全量重建兜底(架构 §15.2)。
+    channel:
+      $ref: '#/channels/dlqIndexSync'
+    messages:
+      - $ref: '#/channels/dlqIndexSync/messages/dlqEntry'
+
+components:
+
+  messages:
+
+    GenerateTask:
+      name: GenerateTask
+      title: 效果图生成任务
+      summary: Java 派发给 Python 的单空间效果图生成任务
+      description: |
+        依据架构 §11.2 时序与 §8.6 `t_generation_task.payload`。
+        **注意**:发出前 Java 已完成**未选部位 AI 补齐**(架构 §4.2、§11.2),
+        因此 `parts` 是**补齐后的完整部位列表**,补齐项 `source=ai`。
+      contentType: application/json
+      payload:
+        $ref: '#/components/schemas/GenerateTaskPayload'
+
+    IndexSync:
+      name: IndexSync
+      title: 向量索引同步事件
+      summary: SKU / 搭配 / 知识库变更后同步 Qdrant
+      description: |
+        依据架构 §9.2(集合划分)、§9.3(嵌入策略)、§15.2(payload 保留 updated_at)。
+      contentType: application/json
+      payload:
+        $ref: '#/components/schemas/IndexSyncPayload'
+
+    DlqEntry:
+      name: DlqEntry
+      title: 死信条目
+      summary: 重试耗尽的消息及其失败上下文
+      description: |
+        架构 §6.4 未定义 DLQ 消息体,此为推断结构 —— 目标是让运维**无需查原始日志**
+        即可判断失败原因并决定重投或丢弃。
+      contentType: application/json
+      payload:
+        $ref: '#/components/schemas/DlqPayload'
+      x-todo: '§6.4 仅提及 DLQ,未定义消息结构;以下为推断'
+
+  schemas:
+
+    # ----------------------------------------------------------
+    # 生成任务载荷
+    # ----------------------------------------------------------
+    GenerateTaskPayload:
+      type: object
+      title: GenerateTaskPayload
+      description: |
+        对应架构 §8.6 `t_generation_task` 的 `payload` 入参与 §11.2 时序图。
+        枚举与数据结构直接复用 `openapi-common.yaml`,**不重复定义**
+        (避免出现多份真源 —— 参见 `securitySchemes` 的教训 `openapi-verification.md` §8.4 F-4)。
+      required:
+        - taskId
+        - type
+        - space
+        - style
+        - angles
+        - parts
+        - layout
+        - traceId
+        - enqueuedAt
+      properties:
+        taskId:
+          type: string
+          description: |
+            对外唯一任务号,**幂等键**。Python 消费与 Java 回调均以此去重;
+            回调可能重复到达,靠状态机防护(已 success 则忽略)。架构 §6.4。
+          examples: ['g_1027f3']
+        type:
+          $ref: './openapi-common.yaml#/components/schemas/TaskType'
+        traceId:
+          type: string
+          description: 全链路追踪 ID,跨进程定位用。架构 §13.7。
+        userId:
+          type: integer
+          description: 发起用户,用于留痕与限额。
+        planId:
+          type: integer
+          description: |
+            重新编辑时携带:非空表示**覆盖原方案**(架构 §11.4 覆盖分支);
+            另存为走 `POST /plans/{id}/copy` 后带新 id。
+            不参与本任务时不传(字段可缺省)。
+        space:
+          $ref: './openapi-common.yaml#/components/schemas/SpaceType'
+        style:
+          $ref: './openapi-common.yaml#/components/schemas/StyleType'
+        angles:
+          type: integer
+          minimum: 1
+          default: 1
+          description: 生成角度数。默认 1(单张);>1 为多角度。PRD §5.4。
+        parts:
+          type: array
+          minItems: 1
+          description: |
+            **补齐后的完整部位列表**(至少含 floor / wall;local 为可选部位,
+            不强制补齐 —— PRD §5.2.4)。补齐项 `source=ai`。
+          items:
+            $ref: './openapi-common.yaml#/components/schemas/PartSelection'
+        layout:
+          $ref: './openapi-common.yaml#/components/schemas/LayoutModel'
+        attempt:
+          type: integer
+          minimum: 1
+          default: 1
+          description: 投递尝试次数,由 Java 投递器递增(架构 §6.4 指数退避)。
+        enqueuedAt:
+          type: string
+          format: date-time
+          description: 入队时间(ISO 8601)。
+      x-source: '架构 §11.2、§8.6 t_generation_task'
+
+    # ----------------------------------------------------------
+    # 索引同步载荷
+    # ----------------------------------------------------------
+    IndexSyncPayload:
+      type: object
+      title: IndexSyncPayload
+      description: |
+        对应架构 §8.6 `t_outbox` 中 `aggregate_type=index_sync` 的记录。
+        一个事件通常对应**一个**聚合变更,但允许批量(如全量重建后的批量补发)。
+      required:
+        - eventId
+        - collection
+        - items
+        - traceId
+        - enqueuedAt
+      properties:
+        eventId:
+          type: string
+          description: 事件唯一号,**幂等键**;消费端据此去重(架构 §6.4)。
+        collection:
+          type: string
+          enum: [product, combo, kb]
+          description: |
+            目标集合,取值对应架构 §9.2 的三张表:
+            `product` → product_index;`combo` → combo_index;`kb` → kb_index。
+        items:
+          type: array
+          minItems: 1
+          items:
+            $ref: '#/components/schemas/IndexSyncItem'
+        traceId:
+          type: string
+        attempt:
+          type: integer
+          minimum: 1
+          default: 1
+        enqueuedAt:
+          type: string
+          format: date-time
+      x-source: '架构 §9.2、§9.3、§15.2'
+
+    IndexSyncItem:
+      type: object
+      title: IndexSyncItem
+      description: |
+        单条索引变更。`payload` 中应携带该集合用于**检索过滤**的字段
+        (架构 §9.2 的 Payload 列),使 Python 无需回查 MySQL 即可更新索引 ——
+        这是"Qdrant 为派生索引、Python 不直连 MySQL"约束下的必要设计
+        (架构 §5 关键约定)。
+      required: [id, action]
+      properties:
+        id:
+          type: string
+          description: |
+            该集合的业务主键:product 用 `sku_code`、combo 用 `combo_id`、
+            kb 用 `doc_id`。
+        action:
+          type: string
+          enum: [upsert, delete]
+          description: |
+            `upsert` 新增或更新;`delete` 删除对应点(如 SKU 已下架且不再需要检索)。
+        payload:
+          type: object
+          description: |
+            该集合的检索字段(架构 §9.2)。按 `collection` 取用不同子集:
+            · product:`sku_code` `name` `material` `surface` `style_tags`
+              `spaces` `price` `status`
+            · combo:`combo_id` `name` `space` `style` `status`
+            · kb:`doc_id` `category` `title` `source`
+            `updated_at` 为**所有集合共有**,§15.2 明确要求保留,用于漂移排查。
+          properties:
+            sku_code: { type: string }
+            name: { type: string }
+            material: { type: string }
+            surface: { type: string }
+            style_tags: { type: array, items: { type: string } }
+            spaces: { type: array, items: { type: string } }
+            price: { type: number, format: float, description: "单价,元/㎡" }
+            status:
+              type: string
+              description: 上下架状态;下架产品在检索过滤中排除(§9.3)
+              enum: [on_sale, off_sale]
+            combo_id: { type: string }
+            space: { type: string }
+            style: { type: string }
+            doc_id: { type: string }
+            category: { type: string }
+            title: { type: string }
+            source: { type: string }
+            updated_at:
+              type: string
+              format: date-time
+              description: §15.2 要求保留,用于排查索引漂移
+      x-source: '架构 §9.2、§9.3'
+
+    # ----------------------------------------------------------
+    # 死信条目
+    # ----------------------------------------------------------
+    DlqPayload:
+      type: object
+      title: DlqPayload
+      description: |
+        架构 §6.4 规定"DLQ 中的任务由人工或脚本兜底",但未定义消息结构。
+        本结构为**推断**,目标:运维不必回查原始日志即可判断失败原因。
+      required: [originalQueue, originalMessage, attempts, failedAt, lastError]
+      properties:
+        originalQueue:
+          type: string
+          description: 原队列名,取值同各 channel 的 address。
+          enum: [queue.generate, queue.index.sync]
+        originalMessage:
+          type: object
+          additionalProperties: true
+          description: 原始消息载荷(完整保留,便于重投)。
+        attempts:
+          type: integer
+          minimum: 1
+          description: 进入死信前已尝试的次数。
+        failedAt:
+          type: string
+          format: date-time
+        lastError:
+          type: object
+          required: [message]
+          properties:
+            code:
+              $ref: './openapi-common.yaml#/components/schemas/ErrorCode'
+            message:
+              type: string
+        traceId:
+          type: string
+      x-todo: '§6.4 未定义 DLQ 消息体;以上字段为推断,待评审'
+
+# ============================================================
+# 本契约明确未覆盖的范围(与 openapi-verification.md §6 呼应)
+# ============================================================
+x-not-covered:
+  - item: 对话留存的异步落库
+    note: |
+      架构 §6.2 提到"对话消息**可选**异步落库"。因属可选项、且同步写入亦可满足
+      一期需求,本契约暂不定义;若实现阶段采用异步,需在此补充
+      `queue.chat.persist` 通道。
+  - item: 进度回传的 MQ 路径
+    note: |
+      架构 §6.3 提到二期 SSE 方案中"Java 内部从 MQ/Redis 订阅 Python 回传的进度"。
+      **一期不涉及** —— 一期进度经 HTTP 回调 `POST /internal/generate/callback`
+      的 `progress` 字段回传(见 openapi-internal.yaml)。二期再补。
+  - item: 模型网关内部接口
+    note: Python 服务内部实现细节,不属 Java↔Python 契约(架构 §7.1)。
