@@ -11,6 +11,13 @@ qdrant-client~=1.19.1
 # MQ 消费(T-0.13;queue.index.sync,架构 §6.2)
 pika~=1.4.4
 
+# 模型网关出网调用(T-1.5;架构 §7.2)。候选厂商均走 OpenAI 兼容协议。
+# 原本已随 qdrant-client 间接装进环境,现提升为**显式声明** —— 直接依赖不该靠别人带进来。
+httpx~=0.28.1
+
+# 限流令牌桶(T-1.5;架构 §13.2 明文指定 Redis 令牌桶)
+redis~=8.1.0
+
 # 仅 tools/rebuild_index.py 使用 —— 那个独立运维工具要直连 MySQL(架构 §15.2)
 # 才谈得上"从 MySQL 恢复出一致的索引"。服务本身**不**使用它。
 PyMySQL~=1.2.3

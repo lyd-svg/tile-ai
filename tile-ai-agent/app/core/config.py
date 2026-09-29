@@ -2,9 +2,33 @@
 
 密钥一律经环境变量注入,**不落代码、不落库**(架构 §13.6 / §12.3)。
 本文件只声明字段与默认值,任何真实密钥都不得出现在这里。
+
+**密钥字段用 `SecretStr`**:`repr()` 只会打印 `**********`,
+于是"日志脱敏"(§13.6)是**结构性保证**,不靠编码纪律 —— 谁不小心把
+`settings` 打进日志,也不会泄密。取值须显式 `.get_secret_value()`。
+
+配置键命名说明:架构 §7.2 写的是 `model.llm.provider` 这类**点号路径**,
+那是文档记号;落到本服务就是环境变量 `MODEL_LLM_PROVIDER`。两者的对应关系
+集中在 `app/gateway/factory.py` 里,不散落各处。
 """
 
+from __future__ import annotations
+
+from pydantic import BaseModel, SecretStr
 from pydantic_settings import BaseSettings, SettingsConfigDict
+
+
+class ModelPrice(BaseModel):
+    """单价表(成本计量用,架构 §7.2)。
+
+    **单价只从配置来,不硬编码** —— 厂商调价是常态(DeepSeek 就调过多次),
+    写死在代码里会让成本账目悄悄失真。
+    单位:每百万 token 的人民币价,与每一张图的单价。
+    """
+
+    input_per_million: float = 0.0
+    output_per_million: float = 0.0
+    per_image: float = 0.0
 
 
 class Settings(BaseSettings):
@@ -21,26 +45,74 @@ class Settings(BaseSettings):
     java_base_url: str = "http://localhost:8080"
 
     # 服务间鉴权:请求头 X-Service-Token(openapi-common.yaml#/components/securitySchemes)
-    service_token: str = ""
+    service_token: SecretStr = SecretStr("")
 
-    # 模型网关配置(架构 §7.2「实现与配置」)。
-    # 厂商选型与密钥待 P0-2(模型 bake-off)结论,当前留空。
+    # ------------------------------------------------------------------
+    # 模型网关(架构 §7.1 / §7.2;选型见 §15.1)
+    # ------------------------------------------------------------------
+    # provider 取值见 app/gateway/factory.py 的预置表;留空表示未配置。
     model_llm_provider: str = ""
-    model_llm_api_key: str = ""
+    model_llm_api_key: SecretStr = SecretStr("")
+    model_llm_base_url: str = ""
+    model_llm_model: str = ""
+
+    # 备份供应商 —— 架构 §15.1 要求「主力 + 备份双供应商」,
+    # §13.7 规定失败率 > 10% 时切换。
+    model_llm_backup_provider: str = ""
+    model_llm_backup_api_key: SecretStr = SecretStr("")
+    model_llm_backup_base_url: str = ""
+    model_llm_backup_model: str = ""
+
     model_image_provider: str = ""
-    model_image_api_key: str = ""
+    model_image_api_key: SecretStr = SecretStr("")
+    model_image_base_url: str = ""
+    model_image_model: str = ""
+
     model_embedding_provider: str = ""
+    model_embedding_api_key: SecretStr = SecretStr("")
+    model_embedding_base_url: str = ""
+    model_embedding_model: str = ""
+
+    # 成本计量单价表,形如 {"deepseek": {"input_per_million": 1, "output_per_million": 2}}
+    gateway_model_prices: dict[str, ModelPrice] = {}
+
+    # ------------------------------------------------------------------
+    # 韧性旋钮(架构 §7.2「统一封装:超时、重试、限流、熔断、成本计量」)
+    # ------------------------------------------------------------------
+    # 超时:图像 60s 是架构 §7.3 / §13.1 的**硬指标**(单图 ≤60s),不可放宽。
+    gateway_llm_timeout_seconds: float = 30.0
+    gateway_image_timeout_seconds: float = 60.0
+
+    gateway_max_attempts: int = 3
+    gateway_backoff_base_seconds: float = 0.5
+    gateway_backoff_max_seconds: float = 8.0
+
+    # 限流:架构 §13.2 明文指定用 **Redis 令牌桶**保护下游模型额度。
+    gateway_rate_limit_rps: float = 5.0
+    gateway_rate_limit_burst: int = 10
+    # Redis 连不上时限流失效(降级放行)而不是把请求打挂 —— 架构 §13.3
+    # 「模型不可用时降级不阻断主流程」。限流保护的是下游额度,不是本服务可用性。
+    redis_url: str = "redis://localhost:6379/0"
+
+    gateway_circuit_failure_threshold: int = 5
+    gateway_circuit_recovery_seconds: float = 30.0
+
+    # §13.7「模型调用失败率 > 10%(触发切换备份供应商)」
+    gateway_failover_failure_rate: float = 0.10
+    # 样本太少时不下判定 —— 否则第一次调用失败(1/1 = 100%)就会切走。
+    gateway_failover_min_samples: int = 5
+    gateway_failover_window: int = 20
+    # 切到备份后,每隔这么久放一个真实请求去主供应商试探(半开)
+    gateway_failover_probe_seconds: float = 60.0
 
     # Qdrant —— 派生索引(架构 §9)。随时可由 MySQL 全量重建,非权威存储。
     qdrant_url: str = "http://localhost:6333"
-    qdrant_api_key: str = ""
-
-    # 向量维度。架构 §9.2 写"由 Embedding 网关决定(如 1024)",
-    # 真实值待 P0-2 模型选型。改它需要重建集合并全量重放(索引可重建,安全)。
+    qdrant_api_key: SecretStr = SecretStr("")
+    # 向量维度。架构 §9.2 写"由 Embedding 网关决定(如 1024)";
+    # 真实值待 P0-2 的 Embedding 选型。改它需要重建集合并全量重放(索引可重建,安全)。
     index_vector_size: int = 1024
 
     # RabbitMQ —— 异步任务(架构 §6.2;P0-3① 已裁决一期采用 RabbitMQ)。
-    # 口令只走环境变量(§13.6)。
     rabbitmq_url: str = "amqp://tileai:tileai@localhost:5672/"
 
 
