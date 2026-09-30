@@ -20,6 +20,7 @@ import org.springframework.test.web.servlet.MvcResult;
 
 import com.tileai.admin.AdminAccountService;
 
+import com.tileai.common.agent.AgentProperties;
 import com.tileai.common.error.ErrorCode;
 import com.tileai.common.error.GlobalExceptionHandler;
 import com.tileai.common.probe.ProbeController;
@@ -52,6 +53,12 @@ import static org.springframework.test.web.servlet.request.MockMvcRequestBuilder
  * 一并拉进切片上下文,而它依赖访问数据库的 {@code AdminAccountService} ——
  * 切片里没有数据源。探针路径不在 {@code /api/v1/admin/**} 下,该拦截器实际不会执行,
  * 打桩只是让上下文能起来,不影响本测试的断言。
+ *
+ * <p>{@code AgentProperties} 打桩是同一个理由的第二次出现:{@code ServiceTokenInterceptor}
+ * (T-1.11)也在切片里,而它依赖 {@code @ConfigurationProperties} 的 {@code AgentProperties}
+ * —— 那个 bean 由启动类上的 {@code @ConfigurationPropertiesScan} 注册,
+ * <b>切片上下文不跑那个扫描</b>,不打桩就起不来。同理,探针路径不在 {@code /internal/**} 下,
+ * 该拦截器不会执行。
  */
 @WebMvcTest(controllers = ProbeController.class,
         excludeAutoConfiguration = {
@@ -66,6 +73,9 @@ class ApiResponseContractTest {
 
     @MockitoBean
     private AdminAccountService adminAccountService;
+
+    @MockitoBean
+    private AgentProperties agentProperties;
 
     @Autowired
     private ObjectMapper objectMapper;

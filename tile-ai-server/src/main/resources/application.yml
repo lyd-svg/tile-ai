@@ -61,6 +61,29 @@ tile:
     # 没有超时的内部调用会把上游请求线程一起拖住。
     timeout: 30s
 
+  # 隐私字段的静态加密(架构 §13.5 / §8.3):t_layout.layout_enc / t_plan.layout_enc
+  crypto:
+    # Base64 编码的 32 字节密钥,**只走环境变量**(§13.6)。本地生成:
+    #   openssl rand -base64 32
+    # 留空时应用照常启动,但任何"保存方案"都会失败 —— 刻意不退化明文(见 AesGcmCipher)。
+    layout-key: ${LAYOUT_ENC_KEY:}
+
+  # 生成编排(架构 §6.4)。这几个数字**上游一个都没给**,取值理由见
+  # openapi-verification.md §35.1 —— 改这里等于改那节。
+  generate:
+    # pending 卡住阈值。注意:还有待发的 outbox 行时不算卡住(投递器仍在处理它)
+    pending-stuck-after: 60s
+    # running 卡住阈值 = 最坏真实耗时(4 张 × 60s)的 1.5 倍。
+    # 活着的任务扫不到它 —— 每次进度回调都会刷新 updated_at
+    running-stuck-after: 360s
+    # 重投上限。每次重投都可能等于 4 次真实模型调用,要比索引同步收得紧
+    max-attempts: 3
+    # 硬截止:给 running 分支兜底(一直"活着"地卡着的任务,单靠上面那条永远等不到)
+    hard-deadline: 30m
+    compensation-enabled: true
+    # 扫描间隔。它是安全网不是主路径;§13.7 的告警窗口是 5 分钟,60s 落在窗口之内
+    compensation-interval: 60s
+
   # Outbox 投递(架构 §6.4)
   outbox:
     enabled: true
