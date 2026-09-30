@@ -298,9 +298,22 @@ def test_single_angle_yields_exactly_one_default_view():
     assert views_for_angles(0) == (DEFAULT_VIEW,)
 
 
-def test_multi_angle_yields_default_plus_angle_n():
-    """逐字落地契约 `PlanImage.view` 的约定:`default` + `angle1`…`angleN`。"""
-    assert views_for_angles(2) == ("default", "angle1", "angle2")
+@pytest.mark.parametrize("angles", [1, 2, 3, 5])
+def test_view_count_equals_angle_count(angles):
+    """**张数 = 角度数**(D-5 2026-09-30 修订)。
+
+    修订前契约写作 `default` + `angle1`…`angleN`,照抄会出 N+1 张 ——
+    与 `angles` 自身"生成角度数"的含义对不上。这条断言就是那个口径的锚。
+    """
+    views = views_for_angles(angles)
+    assert len(views) == angles
+    assert views[0] == DEFAULT_VIEW
+
+
+def test_multi_angle_names_angle1_through_angle_n_minus_1():
+    """`default` 占掉第一张,故 N 张的最后一个视角是 `angle{N-1}`。"""
+    assert views_for_angles(2) == ("default", "angle1")
+    assert views_for_angles(3) == ("default", "angle1", "angle2")
 
 
 def test_angle_views_get_a_distinct_hint_but_share_the_scene():
@@ -308,7 +321,7 @@ def test_angle_views_get_a_distinct_hint_but_share_the_scene():
     parts = map_parts([a_selection("floor", "TL-2043")], FakeSkuSource())
     result = build_prompts(space="kitchen", style="modern", parts=parts, angles=2)
 
-    assert [v.view for v in result.views] == ["default", "angle1", "angle2"]
+    assert [v.view for v in result.views] == ["default", "angle1"]
     scene = [line for line in result.views[0].prompt.splitlines() if not line.startswith("视角：")]
     for view in result.views[1:]:
         assert "视角：" in view.prompt

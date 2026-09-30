@@ -283,18 +283,22 @@ def _map_parts(
 # ----------------------------------------------------------------------
 
 def views_for_angles(angles: int) -> tuple[str, ...]:
-    """角度数 → 视角名列表(D-5)。
+    """角度数 → 视角名列表(D-5,**2026-09-30 修订**)。
 
-    契约 `PlanImage.view` 的约定逐字落地:`angles=1` 时**仅** `default`;
-    `angles=N` 时 `default` + `angle1`…`angleN`。
+    **张数 = 角度数**:`angles = N` 出 N 张。第 1 张为 `default`,
+    第 k 张(`k ≥ 2`)为 `angle{k-1}` —— 故 N 张的视角是
+    `default` + `angle1`…`angle{N-1}`(N=1 时仅 `default`)。
 
-    ⚠️ 照抄约定的后果是 **`angles=N` 出 N+1 张图**(`default` 之外还有 N 个),
-    与"生成角度数 = N"读起来不一致。这是契约层面的口径问题,由 T-12 的
-    契约 ↔ 实现双向 diff 提出,本模块**不擅自改** —— 改契约要走文档链四步。
+    修订前契约写的是 `default` + `angle1`…`angleN`,照抄会出 **N+1** 张,
+    与 `angles` 自身"生成角度数"的含义、PRD §5.4「默认 1 张 / 可选多角度」、
+    架构 §11.2「默认 1 张 / 多角度 N 张」三处都对不上。
+    裁决与追溯见 `openapi-verification.md` §32。
     """
-    if angles <= 1:
-        return (DEFAULT_VIEW,)
-    return (DEFAULT_VIEW,) + tuple(f"angle{index}" for index in range(1, angles + 1))
+    total = max(1, angles)
+    return tuple(
+        DEFAULT_VIEW if index == 1 else f"angle{index - 1}"
+        for index in range(1, total + 1)
+    )
 
 
 def assemble_prompt(
