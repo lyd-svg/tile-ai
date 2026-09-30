@@ -91,17 +91,41 @@ CONSTRAINTS: tuple[str, ...] = (
     "空间结构与给定户型尺寸一致",
 )
 
-#: 视角短语。**上游只定了命名,没定语义** —— 契约 `PlanImage.view` 仅约定
-#: 「angles=1 时仅 `default`;angles=N 时 `default` + `angle1`…`angleN`」(D-5),
-#: 没说明 angle1 与 angle2 在画面上差在哪。下列措辞是按惯例推断,**与契约里的
-#: `x-todo` 同性质:是决策点,可随时改,改这一处即可。**
-VIEW_PHRASES: Mapping[str, str] = {}
-
-#: `angleN` 类视角的通用短语(见 `VIEW_PHRASES` 的说明)。
-ANGLE_PHRASE = "从另一个角度拍摄同一空间"
-
 #: 单视角的视角名 —— 与契约 `PlanImage.view` 的 `example: default` 一致。
 DEFAULT_VIEW = "default"
+
+#: 视角短语(有序):第 i 张图用哪句。**"多角度"= 同一张照片的不同机位** ——
+#: 只换相机位置与朝向,空间、陈设与瓷砖必须完全不变(故多角度时另加
+#: `MULTI_ANGLE_CLAUSE`,把这条不变量写进提示词)。
+#:
+#: 四个机位按"信息量"排序:第 1 张是能一眼看全空间的定妆照,往后依次强调
+#: 空间关系、地面铺贴、墙面纹理。用户要的角度越多,拿到的信息越全。
+#:
+#: 上游只定了**命名**(契约 `PlanImage.view`,D-5),语义由本处决定
+#: (2026-09-30,见 `openapi-verification.md` §33)。要加/改机位就改这一个表 —
+#: 名字里的序号与 `views_for_angles` 生成的视角名一一对应。
+VIEW_PHRASES: Mapping[str, str] = {
+    DEFAULT_VIEW: "正面平视全景，镜头与视线同高",
+    "angle1": "从房间一角斜向俯视，同时看到地面与两面墙",
+    "angle2": "高位俯瞰，重点呈现地面铺贴",
+    "angle3": "贴近墙面拍摄，重点呈现墙面瓷砖的纹理与光泽",
+}
+
+#: 要的视角超出上表时的兜底。不重复已有表述 —— 重复的机位只会得到一张
+#: 近乎一样的图,那是在浪费一次生成(单图 ≤60s 且要计费)。
+#:
+#: ⚠️ 契约已封 `angles` 上限(`GenerateRequest.maximum: 4`,架构 §7.3),
+#: 所以**正常路径走不到这里**。留着它是纵深防御:本模块也会被内部调用方直接使用,
+#: 不该因为对方没做校验就崩或默默越界。
+ANGLE_FALLBACK_PHRASE = "换一个拍摄角度"
+
+#: 契约允许的最大角度数(`GenerateRequest.angles.maximum`)。
+#: **它必须等于 `VIEW_PHRASES` 的条目数** —— 上限就是"有多少个已定义机位"。
+#: 加机位就要同步改契约的 `maximum`(测试里有一条盯住这个等式)。
+MAX_ANGLES = 4
+
+#: 多角度时附加的不变量:多张图必须像"同一张照片的不同角度"。
+MULTI_ANGLE_CLAUSE = "同一空间的同一组瓷砖,仅拍摄角度不同"
 
 
 # ----------------------------------------------------------------------
@@ -308,12 +332,17 @@ def assemble_prompt(
     parts: Sequence[PartMaterial],
     furnish: FurnishConfig | None = None,
     view: str = DEFAULT_VIEW,
+    multi_angle: bool = False,
 ) -> str:
     """按 §7.3 的公式组装一条提示词:
 
     `空间类型 + 风格 + 各部位材质 + 常规陈设提示词 + 视角` (+ 约束)
 
     陈设未配置时**跳过该段**(不填占位、不报错,§13.3)。
+
+    `multi_angle=True`(本次请求出多张)时,视角段后附 `MULTI_ANGLE_CLAUSE`
+    —— 多张图要像"同一张照片的不同角度",这条不变量得让模型看见。
+    单张时不附(没有"不同的角度"可比)。
     """
     space_label = _label(SPACE_LABELS, space)
     style_label = _label(STYLE_LABELS, style)
@@ -330,9 +359,10 @@ def assemble_prompt(
     if furnish is not None and furnish.configured and furnish.prompt.strip():
         lines.append(f"陈设：{furnish.prompt.strip()}。")
 
-    phrase = _view_phrase(view)
+    phrase = view_phrase(view)
     if phrase:
-        lines.append(f"视角：{phrase}。")
+        clause = f"（{MULTI_ANGLE_CLAUSE}）" if multi_angle else ""
+        lines.append(f"视角：{phrase}{clause}。")
 
     lines.append(f"{'；'.join(CONSTRAINTS)}。")
     return "\n".join(lines)
@@ -361,11 +391,15 @@ def build_prompts(
             style,
         )
 
+    view_names = views_for_angles(angles)
+    multi_angle = len(view_names) > 1
+
     views = tuple(
         ViewPrompt(view=view, prompt=assemble_prompt(
             space=space, style=style, parts=parts, furnish=furnish, view=view,
+            multi_angle=multi_angle,
         ))
-        for view in views_for_angles(angles)
+        for view in view_names
     )
     return AssembledPrompts(
         views=views,
@@ -407,12 +441,12 @@ def prepare_prompts(
 # 小工具
 # ----------------------------------------------------------------------
 
-def _view_phrase(view: str) -> str:
-    """视角名 → 短语。见 `VIEW_PHRASES` 的说明(措辞是惯例推断)。"""
+def view_phrase(view: str) -> str:
+    """视角名 → 机位措辞。表里没收录的 `angleN` 走兜底,不臆造新机位。"""
     if view in VIEW_PHRASES:
         return VIEW_PHRASES[view]
     if view.startswith("angle"):
-        return ANGLE_PHRASE
+        return ANGLE_FALLBACK_PHRASE
     return ""
 
 

@@ -16,12 +16,16 @@ import logging
 import pytest
 
 from app.agent.prompt import (
+    ANGLE_FALLBACK_PHRASE,
     CONSTRAINTS,
     DEFAULT_VIEW,
+    MAX_ANGLES,
+    MULTI_ANGLE_CLAUSE,
     PARTS,
     PART_LABELS,
     SPACE_LABELS,
     STYLE_LABELS,
+    VIEW_PHRASES,
     AssembledPrompts,
     FurnishConfig,
     MaterialPhrase,
@@ -31,6 +35,7 @@ from app.agent.prompt import (
     map_material,
     map_parts,
     prepare_prompts,
+    view_phrase,
     views_for_angles,
 )
 
@@ -220,7 +225,8 @@ def test_assembly_follows_the_section_7_3_formula():
     assert body[1].startswith("地面：铺贴釉面砖，柔光，浅灰细石纹，750×1500mm。")
     assert body[2].startswith("墙面：铺贴抛光砖，亮光，米白大理石纹，600×1200mm。")
     assert body[3] == "陈设：马桶、洗手台、淋浴房。"
-    assert body[4] == f"{'；'.join(CONSTRAINTS)}。"
+    assert body[4].startswith("视角：")
+    assert body[5] == f"{'；'.join(CONSTRAINTS)}。"
 
 
 def test_furnish_text_is_used_verbatim():
@@ -326,6 +332,70 @@ def test_angle_views_get_a_distinct_hint_but_share_the_scene():
     for view in result.views[1:]:
         assert "视角：" in view.prompt
         assert [line for line in view.prompt.splitlines() if not line.startswith("视角：")] == scene
+
+
+# ----------------------------------------------------------------------
+# 视角语义:同一张照片的不同机位(2026-09-30 定,见 §33)
+# ----------------------------------------------------------------------
+
+def test_every_named_view_has_its_own_camera_position():
+    """四个机位各不相同 —— 重复的机位只会得到一张近乎一样的图,白花一次生成。"""
+    assert views_for_angles(MAX_ANGLES) == ("default", "angle1", "angle2", "angle3")
+    phrases = [view_phrase(name) for name in views_for_angles(MAX_ANGLES)]
+    assert len(set(phrases)) == MAX_ANGLES
+    assert all(phrases)
+
+
+def test_max_angles_equals_the_number_of_defined_camera_positions():
+    """`angles` 的上限就是"有多少个已定义机位"。
+
+    契约里的 `GenerateRequest.angles.maximum: 4`(架构 §7.3)与这张机位表
+    必须同步 —— 加机位时忘了改契约,用户就会被挡在"已经支持"的角度之外;
+    改了契约忘了加机位,多出来的那张图只能是重复的机位。
+    这条断言把两者钉在一起。
+    """
+    assert MAX_ANGLES == len(VIEW_PHRASES)
+
+
+def test_the_api_ceiling_is_actually_reachable():
+    """上限处仍必须给出四个**互不相同**的真实机位,不能是靠兜底凑数。"""
+    names = views_for_angles(MAX_ANGLES)
+    assert all(name in VIEW_PHRASES for name in names)
+
+
+def test_camera_positions_are_ordered_from_overview_to_detail():
+    """第 1 张是"一眼看全"的定妆照,往后依次强调空间关系、地面、墙面。
+
+    顺序有业务含义:用户只要 1 张时拿到的必须是最有信息量的那张,
+    而不是随机一个机位。
+    """
+    first = view_phrase(DEFAULT_VIEW)
+    assert "全景" in first
+    assert "俯瞰" in view_phrase("angle2")
+    assert "墙面" in view_phrase("angle3")
+
+
+def test_multi_angle_tells_the_model_the_tiles_must_not_change():
+    """多张图得是"同一张照片的不同角度" —— 这条不变量要写进提示词,
+    否则模型很可能每张都重新布置一次房间,"多角度"就退化成"同风格的几张图"。"""
+    parts = map_parts([a_selection("floor", "TL-2043")], FakeSkuSource())
+    multi = build_prompts(space="kitchen", style="modern", parts=parts, angles=2)
+    single = build_prompts(space="kitchen", style="modern", parts=parts, angles=1)
+
+    assert all(MULTI_ANGLE_CLAUSE in view.prompt for view in multi.views)
+    # 单张没有"不同的角度"可比,不该出现这句
+    assert MULTI_ANGLE_CLAUSE not in single.views[0].prompt
+
+
+def test_angles_beyond_the_defined_positions_fall_back_not_crash():
+    """要的机位超出已定表 → 兜底措辞,不臆造新机位、也不报错。"""
+    result = build_prompts(
+        space="kitchen", style="modern",
+        parts=map_parts([a_selection("floor", "TL-2043")], FakeSkuSource()),
+        angles=5,
+    )
+    assert result.views[-1].view == "angle4"
+    assert ANGLE_FALLBACK_PHRASE in result.views[-1].prompt
 
 
 # ----------------------------------------------------------------------
