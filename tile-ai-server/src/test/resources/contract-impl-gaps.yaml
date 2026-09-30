@@ -1,0 +1,97 @@
+# 契约 ↔ 实现比对的「挂账 / 豁免」清单(比对骨架的输入之一)
+#
+# 这个文件只回答一个问题:契约里写了、实现里还没有的接口,是「已知没开工」还是「出事了」?
+#
+# 规则(完整版见 openapi-verification.md §36):
+#   1. 已知未开工 → 写进 knownGaps,**必须带 source**(任务号或需求出处)。
+#      不许只写「以后再做」—— 没有出处的缺失会被单独高亮成「意外缺失」。
+#   2. 挂账里列了、这次却真的匹配上了 → 报告「挂账已过期」。
+#      防的是:清单变成漂移的藏身处,接口早就做完了却没人删。
+#   3. 豁免(ignoredImplPaths)必须写理由。豁免要看得见,新冒出来的路由才会刺眼。
+#   4. canaries 是「必然存在」的锚点。任一条没在两侧同时匹配上 → 直接判红。
+#      防的是最隐蔽的假绿:路径拼接写错导致一条都没匹配上,报告空空如也,看起来像全对。
+
+canaries:
+  - POST /api/v1/auth/login
+  - GET /api/v1/products
+  - GET /api/v1/products/{sku}
+  - POST /api/v1/quote/calc
+  - GET /api/v1/dicts
+  - POST /api/v1/admin/auth/login
+  - GET /api/v1/admin/products
+  - GET /internal/products/{sku}
+
+ignoredImplPaths:
+  - path: /error
+    reason: Spring 内置错误页(BasicErrorController)会被注册进路由表,不属于对外契约
+
+# 已知未开工。source 一栏是「出处」—— 任务号 T-x.y 或需求条目。
+knownGaps:
+  - method: POST
+    path: /api/v1/agent/chat
+    source: T-1.6
+    note: AI 咨询(路径 C,SSE 流式)未开工
+  - method: GET
+    path: /api/v1/agent/chat/sessions
+    source: T-1.6
+    note: 对话记录列表未开工
+  - method: GET
+    path: /api/v1/agent/chat/sessions/{id}
+    source: T-1.6
+    note: 对话记录详情未开工
+  - method: GET
+    path: /api/v1/plans
+    source: T-1.12
+    note: 我的方案列表未开工
+  - method: GET
+    path: /api/v1/plans/{id}
+    source: T-1.12
+    note: 方案详情未开工
+  - method: PATCH
+    path: /api/v1/plans/{id}
+    source: T-1.12
+    note: 重命名方案未开工
+  - method: DELETE
+    path: /api/v1/plans/{id}
+    source: T-1.12
+    note: 删除方案未开工
+  - method: POST
+    path: /api/v1/plans/{id}/copy
+    source: T-1.12
+    note: 另存为未开工
+  - method: POST
+    path: /api/v1/plans/{id}/share
+    source: T-1.13
+    note: 生成分享链接 / 二维码未开工
+  - method: DELETE
+    path: /api/v1/plans/{id}/share
+    source: T-1.13
+    note: 废除分享链接未开工
+  - method: GET
+    path: /api/v1/share/{token}
+    source: T-1.13
+    note: 公开只读分享页未开工
+  - method: POST
+    path: /api/v1/plans/{id}/recalc
+    source: T-1.15
+    note: 按当前价格重算报价未开工
+  - method: GET
+    path: /api/v1/admin/accounts
+    source: PRD §10.3 未展开字段(见 tile-ai-tasks.md:934)
+    note: 后台账号列表未开工
+  - method: POST
+    path: /api/v1/admin/accounts
+    source: PRD §10.3 未展开字段(见 tile-ai-tasks.md:934)
+    note: 新增后台账号未开工
+  - method: PUT
+    path: /api/v1/admin/accounts/{id}
+    source: PRD §10.3 未展开字段(见 tile-ai-tasks.md:934)
+    note: 编辑账号 / 分配角色未开工
+  - method: DELETE
+    path: /api/v1/admin/accounts/{id}
+    source: PRD §10.3 未展开字段(见 tile-ai-tasks.md:934)
+    note: 删除账号未开工
+  - method: GET
+    path: /api/v1/admin/logs
+    source: PRD §10.3 未展开字段(见 tile-ai-tasks.md:934)
+    note: 操作日志列表未开工

@@ -24,3 +24,7 @@ PyMySQL~=1.2.3
 
 # 测试
 pytest~=9.1.1
+
+# 契约 ↔ 实现比对(T-2.1 骨架;tests/test_contract_diff.py 要读 openapi-*.yaml)。
+# 原本已随别的包间接装进环境,现提升为**显式声明** —— 直接依赖不该靠别人带进来。
+PyYAML~=6.0.3

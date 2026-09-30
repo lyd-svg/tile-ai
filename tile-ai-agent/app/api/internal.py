@@ -18,7 +18,7 @@ from typing import Any
 from fastapi import APIRouter, Depends, HTTPException, Request
 from pydantic import BaseModel, Field
 
-from app.agent.layout_parse import LayoutParseError, parse_layout
+from app.agent.layout_parse import LayoutParseError, parse_layout, validate_layout
 from app.core.config import settings
 from app.gateway.factory import build_llm_gateway
 
@@ -43,12 +43,21 @@ CODE_INTERNAL_ERROR = 90001
 class ParseLayoutRequest(BaseModel):
     """契约 `POST /internal/agent/parse-layout` 的请求体。
 
-    **`params` 优先于 `text`**;两者都不给由 Java 侧拦下(Java 不会调到这里)。
-    本端点只处理 `text` —— 结构化表单在 Java 就地校验与派生,不必绕一趟模型
-    (理由见 app/agent/layout_parse.py 的模块头第 3 条)。
+    两种输入形态(契约原文):`text`(自然语言)或 `params`(结构化表单)。
+    **`params` 优先于 `text`**;两者都不给 → 10001。
+
+    `params` 用 `dict` 而不是建一个 pydantic 模型,是为了**不让失败跑到信封外面**:
+    FastAPI 对模型校验失败会直接返 HTTP 422(detail 结构也与契约信封不同),
+    而本组接口的约定是"失败一律 200 + 业务码"(架构 §10.4 约定 1)。收下 `Any` 形状、
+    用与文本路径**同一个** `validate_layout` 校验,错误才长得一样。
     """
 
     text: str = Field(default="", description="自然语言描述")
+
+    params: dict[str, Any] | None = Field(
+        default=None,
+        description="结构化表单(契约 LayoutModel);与 text 同时给出时以本字段为准",
+    )
 
 
 def _envelope(code: int, message: str, data: Any = None, trace_id: str = "") -> dict[str, Any]:
@@ -80,7 +89,7 @@ def require_service_token(request: Request) -> None:
     summary="自然语言 → 结构化户型",
 )
 def parse_layout_endpoint(request: Request, payload: ParseLayoutRequest) -> dict[str, Any]:
-    """把自然语言解析为 `LayoutModel`。
+    """把自然语言**或结构化表单**解析为 `LayoutModel`。
 
     失败**一律 10001 + `data.errors[]`**,而不是 5xx ——
     "用户描述里没给尺寸"是**输入问题**,不是服务故障,前端据此提示用户补齐。
@@ -88,11 +97,27 @@ def parse_layout_endpoint(request: Request, payload: ParseLayoutRequest) -> dict
     """
     trace_id = _trace_of(request)
 
+    if payload.params is not None:
+        # 表单路径:不调模型(契约:params 优先于 text)。
+        # 校验复用 text 路径同一个 validate_layout —— 两条入口对同一份数据
+        # 必须给出同样的结论,否则"从表单进来能过、从描述进来不过"这种差异
+        # 会变成后端之间的口径分叉。
+        errors = validate_layout(payload.params)
+        if errors:
+            return _envelope(CODE_PARAM_INVALID, "参数校验失败",
+                             {"errors": errors}, trace_id)
+        # 与 text 路径一样**不派生 areas** —— 派生只在 Java 发生一次(见下)。
+        # 注:Java 目前对结构化表单就地处理、不调本端点(T-1.7),
+        # 所以这条分支暂无生产调用方;实装它是为了与契约对齐(§36.8)。
+        return _envelope(0, "ok", payload.params, trace_id)
+
     if not payload.text.strip():
+        # 走到这里 = params 没给、text 也空 —— 契约的「两者都不给 → 10001」。
+        # 两条都给时不会到这里(params 已经在上面返回了)。
         return _envelope(
             CODE_PARAM_INVALID,
             "参数校验失败",
-            {"errors": [{"field": "text", "reason": "描述为空"}]},
+            {"errors": [{"field": "text", "reason": "描述为空,且未给出结构化参数 params"}]},
             trace_id,
         )
 

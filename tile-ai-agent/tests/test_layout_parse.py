@@ -249,6 +249,73 @@ def test_gateway_failure_is_90001_not_10001(monkeypatch):
     assert body["data"] is None
 
 
+def test_endpoint_accepts_structured_params_without_calling_model(monkeypatch):
+    """`params`(结构化表单)路径 —— 契约的两种输入形态之一,且**不调模型**。
+
+    契约:两种形态 `text` / `params`,**`params` 优先**,两者都不给才 10001。
+    表单是用户明确填的,不需要模型去猜 —— 所以这条路径连网关都不该建。
+    """
+    built = []
+    monkeypatch.setattr(internal_api, "build_llm_gateway",
+                        lambda: built.append(1) or FakeLLM(arguments="{}"))
+
+    body = client.post(URL, json={"params": {"spaces": [a_room()]}}).json()
+
+    assert built == [], "表单路径不该碰模型网关"
+    assert body["code"] == 0
+    assert body["data"]["spaces"][0]["type"] == "bathroom"
+
+
+def test_endpoint_does_not_derive_areas_for_params(monkeypatch):
+    """表单路径同样**不派生 areas** —— 派生只在 Java 发生一次(模块头第 3 条)。"""
+    monkeypatch.setattr(internal_api, "build_llm_gateway",
+                        lambda: FakeLLM(arguments="{}"))
+
+    body = client.post(URL, json={"params": {"spaces": [a_room()]}}).json()
+
+    assert body["code"] == 0
+    assert "areas" not in body["data"]["spaces"][0]
+
+
+def test_endpoint_prefers_params_over_text(monkeypatch):
+    """两者都给时以 `params` 为准(契约原文)。"""
+    built = []
+    monkeypatch.setattr(internal_api, "build_llm_gateway",
+                        lambda: built.append(1) or FakeLLM(
+                            arguments=json.dumps({"spaces": [a_room(type="kitchen")]})))
+
+    body = client.post(URL, json={
+        "text": "卫生间 2m×1.8m",
+        "params": {"spaces": [a_room()]},
+    }).json()
+
+    assert built == [], "params 优先 —— 给了表单就不该再去调模型"
+    assert body["data"]["spaces"][0]["type"] == "bathroom", "应返回 params 里的内容,而不是文本解析结果"
+
+
+def test_endpoint_invalid_params_is_10001_with_errors(monkeypatch):
+    """表单不完整 → 与文本路径**同一套** 10001 + 逐项原因。
+
+    两条入口对同一份数据必须给出同样的结论;校验复用的是同一个 validate_layout。
+    """
+    monkeypatch.setattr(internal_api, "build_llm_gateway", lambda: FakeLLM(arguments="{}"))
+
+    body = client.post(URL, json={"params": {"spaces": [a_room(width=None)]}}).json()
+
+    assert body["code"] == 10001
+    assert body["data"]["errors"][0]["field"] == "spaces[0].width"
+
+
+def test_endpoint_with_neither_input_is_10001(monkeypatch):
+    """契约:两者都不给 → 10001(不是 500,也不是"解析了个空")。"""
+    monkeypatch.setattr(internal_api, "build_llm_gateway", lambda: FakeLLM(arguments="{}"))
+
+    body = client.post(URL, json={}).json()
+
+    assert body["code"] == 10001
+    assert body["data"]["errors"], "要说清缺什么,否则调用方不知道补哪一项"
+
+
 def test_endpoint_echoes_trace_id(monkeypatch):
     """透传 Java 的 traceId —— 跨进程串联同一条链路(§13.7)。"""
     monkeypatch.setattr(internal_api, "build_llm_gateway",

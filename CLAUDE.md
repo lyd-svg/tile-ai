@@ -158,11 +158,18 @@ tile-ai-prd.md                需求            ← 冲突时以 PRD 为准
 # 改动契约后必须跑 —— 7 个门禁全过才算完
 bash outputs/scripts/ci.sh          # Windows: D:\软件\Git\bin\bash.exe
 
+# 新增或改动接口后**必须跑一次、并看清单** —— 契约 ↔ 实现比对(比路径 + 方法 + 字段名)
+bash outputs/scripts/contract-diff.sh   # 清单落 outputs/reports/
+
 # 首次克隆需启用本地钩子(每个克隆一次,core.hooksPath 不入版本库)
 git config core.hooksPath .githooks
 ```
 
 **校验报告**落在 `outputs/reports/`(已 gitignore,可随时重新生成)。
+
+比对**只出清单、不阻断构建**(2026-09-30 定:开关保持默认关,不自动判红)——
+所以它是**靠人跑、靠人看**的规矩;**清单里「无法比对」那几行尤其要人看 —— 跳过 ≠ 通过**。
+范围、豁免与**它抓不到什么**见 `openapi-verification.md` §36(枚举值漂移这类分叉它 100% 漏掉)。
 
 **本机环境**(详见 `tile-ai-roadmap.md` §5):
 

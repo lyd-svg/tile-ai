@@ -226,6 +226,29 @@ class QuoteEngineRegressionTest {
     }
 
     // ------------------------------------------------------------------
+    // source:契约声明了、实现必须收得下(§36.8 的第一处分叉)
+    // ------------------------------------------------------------------
+
+    @Test
+    @DisplayName("带 source 的请求金额与不带完全一致 —— 该字段在本接口只收不用")
+    void sourceDoesNotChangeMoney() throws Exception {
+        JsonNode withoutSource = calc(exampleRequest());
+        JsonNode withSource = calc(exampleRequestWithSource());
+
+        assertDecimal(withoutSource.get("materialTotal").decimalValue().toPlainString(),
+                withSource.get("materialTotal"), "材料费合计不该被 source 影响");
+        assertDecimal(withoutSource.get("total").decimalValue().toPlainString(),
+                withSource.get("total"), "总价不该被 source 影响");
+        assertEquals(withoutSource.get("items").size(), withSource.get("items").size(),
+                "分项数不该被 source 影响");
+
+        // 理由:契约 QuoteItem 里没有 source,预览也不落库 —— 收下只是为了
+        // 让照契约传参的前端不被静默丢字段,它不参与计算。
+        assertTrue(!withSource.get("items").get(0).has("source"),
+                "报价分项不该凭空多出 source:契约的 QuoteItem 没有这个字段");
+    }
+
+    // ------------------------------------------------------------------
     // 边界
     // ------------------------------------------------------------------
 
@@ -299,6 +322,17 @@ class QuoteEngineRegressionTest {
                 {"space":"bathroom",
                  "parts":[{"part":"floor","sku":"%s","area":3.6},
                           {"part":"wall","sku":"%s","area":13.9}],
+                 "openings":[{"part":"wall","openings":[{"type":"door","w":0.8,"h":2.1},
+                                                        {"type":"window","w":1.0,"h":1.2}]}]}
+                """.formatted(SKU_FLOOR, SKU_WALL);
+    }
+
+    /** 同一份示例,只是每个部位都照契约带上 {@code source}。 */
+    private String exampleRequestWithSource() {
+        return """
+                {"space":"bathroom",
+                 "parts":[{"part":"floor","sku":"%s","area":3.6,"source":"ai"},
+                          {"part":"wall","sku":"%s","area":13.9,"source":"user"}],
                  "openings":[{"part":"wall","openings":[{"type":"door","w":0.8,"h":2.1},
                                                         {"type":"window","w":1.0,"h":1.2}]}]}
                 """.formatted(SKU_FLOOR, SKU_WALL);

@@ -44,7 +44,7 @@
 | --- | --- | --- |
 | **P0** | ~~P0-1~~ 已取消、**P0-3** MQ 契约 | `asyncapi-internal.yaml` + G7 门禁;校验记录 §9 |
 | **阶段 0** | **T-0.1 ~ T-0.13 全部完成** | 迁移 V1–V9;校验记录 §10–§18;263→288 个 Java 测试 |
-| **阶段 1** | T-1.1 登录、T-1.2 产品浏览、T-1.3 搭配、T-1.4 字典、**T-1.5 智能体网关**、**T-1.7 户型录入**、T-1.8 报价引擎、**T-1.10 提示词组装**、**T-1.11 生成编排**、T-1.14 门店 | 校验记录 §19–§21、§23、§26、**§28**、§31、**§35**;333 个 Java 测试 / 167 条 Python 测试 |
+| **阶段 1** | T-1.1 登录、T-1.2 产品浏览、T-1.3 搭配、T-1.4 字典、**T-1.5 智能体网关**、**T-1.7 户型录入**、T-1.8 报价引擎、**T-1.10 提示词组装**、**T-1.11 生成编排**、T-1.14 门店 | 校验记录 §19–§21、§23、§26、**§28**、§31、**§35**;361 个 Java 测试 / 174 条 Python 测试 |
 | **前端 B 端** | F-0.1 公共层、F-0.2 后台登录、F-0.3 产品库 | 校验记录 §24;87→97 条前端测试 |
 | **前端 C 端** | F-1.1 登录、F-1.2 选砖、F-1.3 搭配、F-1.4 门店 | 同上 |
 
@@ -251,6 +251,7 @@
 | — | `seed` 不受支持 | "同输入出图方差"不可控,只能靠交互兜(PRD 已允许可选多角度) | **已明确推迟**(§29) |
 | — | **Python 侧 INFO 日志打不出来** | 应用日志默认落到 root logger,而 uvicorn 只配了自己的 logger,root 停在 WARNING —— 于是编排层的完成/进度日志(`生成任务完成 taskId=… images=… refImages=…`)一条都看不到,WARNING 能看。实测发现(2026-09-30) | 想在生产日志里看到"这次出了几张图、有没有参考图",需要显式配一次日志级别 |
 | — | **出图质量未评估** | 只验了"能不能出图",没验"出得像不像" | **已明确推迟**(§29):先跑通,再评质量;需真实产品样本(P0-4) |
+| — | **契约 ↔ 实现只比路径/方法/字段名** | **枚举值漂移 100% 漏掉** —— §31.2 那次真实分叉恰恰是这个形态;类型/必填/状态码/SSE 事件集同样不在范围内 | 骨架已立并跑通(T-2.1 进度块、§36);**默认只出清单、不判红**(2026-09-30 已定为常态,靠人跑),真正的 T-12(导出真 OpenAPI + 全结构 diff)未落地 |
 
 ### 4.4 未验证项(不得读成"已可用")
 
@@ -271,6 +272,12 @@
 - **T-1.10 已完成**,但**"多角度出图确有差异"在替身下验不出** —— 机器位与提示词
   的差异有测试盯着,图本身要等换回真模型(§29)
 - **前端没有生成入口**(F-1.5 / F-1.7 未做),故**浏览器里人工点不到"看到图"这一步**
+- **契约 ↔ 实现对账(2026-09-30 起)可以跑了,但"跑过"不等于"绑住了"**:
+  `bash outputs/scripts/contract-diff.sh` 两侧都绿,它证明的是**路径、方法、顶层字段名**
+  对得上;类型 / 必填 / 枚举值 / 状态码 / SSE 事件集**一律看不出**(§36.5)。
+  首次清单抓到的 2 处真实分叉已按「**改实现、不改契约**」处置完毕(§36.8):
+  `/quote/calc` 请求体补上 `source`、`parse-layout` 实装 `params`。
+  ⚠️ 处置完不代表绑住了 —— 上面说的类型 / 必填 / 枚举值等仍看不出
 
 ---
 
@@ -288,31 +295,47 @@ bash outputs/scripts/ci.sh          # Windows 用 D:\软件\Git\bin\bash.exe
 G5 描述完整性 / G6 T-1~T-15 / G7 AsyncAPI)。
 ⚠️ **只有这 7 个是判据**,其余脚本是诊断工具。
 
-### 5.2 Java
+### 5.2 契约 ↔ 实现比对(新增或改动接口后必跑)
+
+```bash
+bash outputs/scripts/contract-diff.sh              # 只出清单
+GATE=1 bash outputs/scripts/contract-diff.sh       # 顺带把「有分叉」判成红
+```
+
+清单落 `outputs/reports/contract-impl-diff.md`(Java)与 `-python.md`(Python)。
+**默认不红是刻意的,而且已定为常态**(2026-09-30 用户裁决):规矩就是"改接口后跑一次、
+**人看清单**",不自动判红 —— 所以它**靠人记得跑**,这一点没有自动挡着。
+`GATE=1` 是手动诊断手段:想确认"还有没有分叉"时打开,红了就是有。
+但「锚点未命中」与「挂账已过期」**无论开关如何都判红**。
+范围与**抓不到什么**见 §36 —— 尤其:枚举值漂移它 100% 漏掉。
+⚠️ 此脚本**不在 `ci.sh` 里**(CI 无 JDK)。
+
+### 5.3 Java
 
 ```powershell
 $env:JAVA_HOME = "D:\dev-tools\jdk17"
 $env:DB_PASSWORD = "<本机 MySQL 口令>"
-$env:LAYOUT_ENC_KEY = "<Base64 的 32 字节>"      # 见 §5.5,不配则方案存不下来
+$env:LAYOUT_ENC_KEY = "<Base64 的 32 字节>"      # 见 §5.6,不配则方案存不下来
 cd tile-ai-server
 mvn -s D:\dev-tools\maven-settings.xml test -Ddb.verify=true -Dredis.verify=true -Drabbit.verify=true
 ```
 
-需要 **MySQL / Redis / RabbitMQ** 在线。当前基线:**333 passed / 0 skipped**。
+需要 **MySQL / Redis / RabbitMQ** 在线。当前基线:**361 passed / 0 skipped**
+(2026-09-30 起 +28:契约↔实现比对 17 条、报价契约绑定 10 条、报价端到端 source 1 条)。
 (不带 `-Ddb.verify` 时集成测试会跳过 —— 别把"跳过"当成"通过"。)
 
-### 5.3 Python
+### 5.4 Python
 
 ```powershell
 cd tile-ai-agent
-.\.venv\Scripts\python.exe -m pytest -q                      # 基线:167 passed, 11 skipped
+.\.venv\Scripts\python.exe -m pytest -q                      # 基线:174 passed, 11 skipped
 $env:RUN_LIVE_LLM = "1"; .\.venv\Scripts\python.exe -m pytest tests/test_gateway_live.py -v
 ```
 
 **需要 Qdrant(6333)与 Redis(6379)**;真实联调需 `.env` 里的密钥(已 gitignore)。
 ⚠️ **`RUN_LIVE_LLM` 默认不开是刻意的** —— 会出网、会花钱。
 
-### 5.4 前端
+### 5.5 前端
 
 ```powershell
 cd tile-ai-web
@@ -320,7 +343,7 @@ npm test          # 基线:97 passed / 8 文件
 npm run build     # 含 vue-tsc 类型检查
 ```
 
-### 5.5 起本地环境
+### 5.6 起本地环境
 
 ```powershell
 # 中间件(MySQL 走本机原生,不在 compose 里)
