@@ -818,14 +818,16 @@ components:
         planId:
           type: integer
           nullable: true
-          description: 重新编辑时携带:覆盖原方案(§11.4 覆盖分支);另存为走 /plans/{id}/copy 后带新 id。
+          description: |
+            重新编辑时携带。生成完成后按此 id **覆盖原方案**(upsert);**不带则新建方案**
+            并把新方案 id 经 `TaskProgress.planId` 返回。另存为走 `/plans/{id}/copy`
+            拿到新 id 后再带新 id 提交。§11.2、§11.4
         layout: { $ref: './openapi-common.yaml#/components/schemas/LayoutModel' }
         parts:
           type: array
           minItems: 1
           description: 部位映射,**允许只传部分部位(至少 1 个)**;缺失的地面/墙面由后端 AI 补齐(§10.6①)
           items: { $ref: './openapi-common.yaml#/components/schemas/PartSelection' }
-      x-todo: "§10.6① 示例无 planId,但 §11.4 时序显示覆盖原方案时携带 planId;此处按需补充,待确认字段名"
 
     GenerateAccepted:
       type: object
