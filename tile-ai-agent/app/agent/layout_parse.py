@@ -49,8 +49,10 @@ SPACE_TYPES: tuple[str, ...] = (
     "dining_room", "study", "balcony", "other",
 )
 
-#: 开口类型(契约 OpeningType)。
-OPENING_TYPES: tuple[str, ...] = ("door", "window", "bay_window", "other")
+#: 开口类型(契约 `common.OpeningType`,枚举 `[door, window]`)。
+#: **不要在这里加值** —— 架构 §8.3 的「结构化户型模型字段定义」表同样只列
+#: `door` / `window`,多出来的值会让 Java 侧的 `LayoutModel` 校验拒收。
+OPENING_TYPES: tuple[str, ...] = ("door", "window")
 
 #: 模型必须返回的字段 —— 缺一即失败(见模块头第 2 条)。
 REQUIRED_SPACE_FIELDS: tuple[str, ...] = ("type", "length", "width", "height")
