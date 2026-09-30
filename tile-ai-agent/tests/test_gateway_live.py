@@ -231,3 +231,55 @@ def test_image_generate_n_two_returns_two_images(image_gateway):
 
     assert len(images.images) == 2, f"n=2 只拿到 {len(images.images)} 张"
     print(f"\n  n=2 -> 拿到 {len(images.images)} 张")
+
+
+# ----------------------------------------------------------------------
+# 户型解析:真实模型从中文里抽尺寸(T-1.7)
+# ----------------------------------------------------------------------
+
+def test_parse_layout_extracts_dimensions_from_chinese(gateway):
+    """真实解析:中文描述 → 结构化户型。
+
+    这条验的是**模型到底能不能干这活** —— 单测用假体只能验代码逻辑,
+    验不了"它认不认得『卫生间 2m×1.8m』"。
+    """
+    from app.agent.layout_parse import parse_layout
+
+    layout = parse_layout(gateway, "卫生间 2米×1.8米,层高 2.7 米")
+
+    assert len(layout["spaces"]) == 1
+    space = layout["spaces"][0]
+    assert space["type"] == "bathroom", space
+    assert space["length"] == pytest.approx(2.0, abs=0.01)
+    assert space["width"] == pytest.approx(1.8, abs=0.01)
+    assert space["height"] == pytest.approx(2.7, abs=0.01)
+    print(f"\n  解析结果 = {layout}")
+
+
+def test_parse_layout_handles_multiple_rooms(gateway):
+    """多个房间都要列出来,不能只取第一个。"""
+    from app.agent.layout_parse import parse_layout
+
+    layout = parse_layout(
+        gateway, "三室两厅,客厅 5m×4m,主卧 4m×3.5m,次卧 3m×3m"
+    )
+
+    assert len(layout["spaces"]) >= 3, f"应识别出至少 3 个空间:{layout}"
+    types = {space["type"] for space in layout["spaces"]}
+    assert "living_room" in types, types
+    assert "bedroom" in types, types
+    print(f"\n  识别出 {len(layout['spaces'])} 个空间:{types}")
+
+
+def test_parse_layout_refuses_to_invent_dimensions(gateway):
+    """**描述里没有尺寸时必须失败,不能瞎编。**
+
+    这是提示词里"不要猜"那条的实测验证。编出来的尺寸会直接进面积、进报价 ——
+    比"解析失败"危险得多,因为没人看得出它是编的。
+    """
+    from app.agent.layout_parse import LayoutParseError, parse_layout
+
+    with pytest.raises(LayoutParseError) as caught:
+        parse_layout(gateway, "我想要一个大一点的客厅,采光好一点")
+
+    print(f"\n  正确拒绝:{caught.value}")

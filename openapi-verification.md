@@ -2248,6 +2248,112 @@ CLAUDE.md 把 `x-todo` 定义为**决策点而非自由发挥的空间** —— 
 
 ---
 
+## 28. T-1.7 户型录入(2026-09-29)
+
+### 28.1 产出
+
+| 侧 | 文件 | 内容 |
+| --- | --- | --- |
+| **Python** | `app/agent/layout_parse.py` | 自然语言 → `LayoutModel`;**用 function calling 拿结构化输出**;校验不齐即失败 |
+| | `app/api/internal.py` | 实装 `POST /internal/agent/parse-layout`(此前是骨架注释) |
+| **Java** | `common/agent/AgentProperties` | Python 服务地址/令牌/超时 |
+| | `common/agent/AgentClient` | **Java 侧第一个出网口**:服务令牌 + traceId 透传 + 错误码白名单透传 |
+| | `layout/LayoutParseService` | 两条路径:params 就地处理、text 交 Python |
+| | `layout/api/CLayoutController` | `GET /layout/templates`(仅上架)、`POST /layout/parse` |
+| | `layout/LayoutTemplateService.pageOnSale` | C 端模板列表(只返回上架) |
+
+**两处公共类的加法改动**(为透传 `data.errors[]` 所需,均向后兼容):
+`BusinessException` 增可选 `data`;`ErrorCode` 增 `of(int)` 按码查找;
+`GlobalExceptionHandler.handleBusiness` 把 `data` 带进响应体。
+
+### 28.2 三个设计决定
+
+**① 用 function calling,不"让它吐 JSON 再解析"。**
+
+提示词里写"请输出 JSON"然后去捞,是这类任务最常见的做法,也最脆 ——
+模型多写一句解释就整条断。改用工具调用:把 `LayoutModel` 的 schema 作为工具参数,
+模型按 schema 填,拿到的一定是合法结构。
+
+**② `params` 在 Java 就地处理,不绕 Python。**
+
+结构化表单不需要模型。走模型等于花一次调用换一次"可能解析错",还多一个故障点。
+校验用 `LayoutSpace` 上**已有的** jakarta 注解(控制器 `@Valid`),失败自动产出
+10001 + 字段明细 —— 与自然语言路径的失败形状一致。
+
+**③ 面积派生只在 Java 做一次。**
+
+`areas` 是服务端派生字段,而派生公式的实现**已经在 `LayoutAreaCalculator`**。
+故 Python **刻意不派生**(`tests/test_layout_parse.py::test_endpoint_does_not_derive_areas`
+明确断言响应里没有 `areas`),两条路径最终都经过 Java 那一个实现 ——
+避免两份公式迟早不一致。
+
+### 28.3 校验
+
+**Python 离线**:`pytest -q` 全绿。`test_layout_parse.py` **21 条**覆盖校验、解析、端点三层:
+
+| 断言 | 判据 |
+| --- | --- |
+| 逐个抽掉必填字段都被抓住 | 不返回半成品 |
+| 空 `spaces`、非正数、未知空间类型、开口缺尺寸 | 同上 |
+| 模型不调工具 / 参数非法 JSON → 失败 | 不"尽力解析" |
+| 端点:`params` 有值时**不调模型** | 见设计② |
+| **端点响应里没有 `areas`** | 见设计③ |
+| **网关不可用 → 90001,不是 10001** | 服务故障不能伪装成"你的描述有问题" |
+| traceId 透传 | §13.7 |
+
+**Python 真实联调**(`RUN_LIVE_LLM=1`):**3 条全过**
+
+```
+"卫生间 2米×1.8米,层高 2.7 米"
+  → {'type': 'bathroom', 'length': 2, 'width': 1.8, 'height': 2.7}
+"三室两厅,客厅 5m×4m,主卧 4m×3.5m,次卧 3m×3m" → 识别出 3 个空间
+"我想要一个大一点的客厅,采光好一点" → **正确拒绝**(没尺寸不编造)
+```
+
+**Java**:`CLayoutIntegrationTest` **11 条**(`AgentClient` 为替身);全量 **288 passed**
+(277 → +11)。
+
+**真实跨进程联调**(起 Python + Java,走真实 DeepSeek):
+
+| 场景 | 结果 |
+| --- | --- |
+| 自然语言 → 结构化 | ✅ `code=0`,**1275ms**;bathroom 2.0×1.8×2.7 |
+| Java 派生面积 | ✅ floor=3.6、wall=20.52 |
+| 多房间 | ✅ 3 个空间(客厅 + 主卧 + 次卧) |
+| **无尺寸描述** | ✅ **10001 + `data.errors[]`**(不编造尺寸) |
+| `params` 路径 | ✅ 不走 Python,面积照常派生 |
+| `params` 缺尺寸 | ✅ 10001 |
+| 模板列表 | ✅ **只返回上架**(建了 1 在售 + 1 下架,只看到 1 条) |
+
+### 28.4 顺带修掉一处**测试脆弱性**(第七次"共享可变数据")
+
+全量回归时 `CEndBrowseIntegrationTest` 的 3 条搭配用例挂了 ——
+**但代码没问题,是我灌的演示数据撞的**。
+
+它断言 `assertEquals(1, list.size(), "只应返回上架的那一条")` ——
+**隐含假设"整张表只有本测试的数据"**。库里一旦有真实运营数据(或任何人灌过演示数据),
+断言就崩,而实现完全正确。同一测试里还有 `list.get(0)` 取"第一条",
+第一条是别人的数据时,它验的就不是自己要验的东西了。
+
+**已改为只对自己造的数据下结论**(按 id 找自己那条、判它在不在,不判全表条数)。
+
+> 这是本项目**第七次**遇到"共享可变前置数据"(§12.2 / §16.5 / §17.6 / §21.6 记过六次)。
+> 前六次的教训都是"**必须显式重置**",但这一条重置救不了 ——
+> **你没法把共享库重置成"只有我的数据"**。
+> 真正的规矩是:🎯 **断言只针对自己造的数据,不对全表状态下结论。**
+
+### 28.5 未闭合
+
+1. **前端户型录入页(F-1.5)未做** —— 后端接口已通,页面属另一张卡。
+2. **空间类型取值未校验字典** —— Python 按契约 `SpaceType` 的**内置默认值**校验;
+   D-14 说真实可选集由字典决定,若后台加了新空间(如 `storage`),解析会判为"未知类型"。
+   当前字典与内置值一致(5 个 vs 8 个默认值),**尚未暴露**;等字典扩充时需一并处理。
+3. **未做超时/降级的实测** —— `AgentProperties.timeout=30s`,Python 不可用时 Java 折 90001
+   (有单测),但**没有真的把 Python 停掉试一次**。
+4. **模板与产品的 C 端筛选项未做联动**(如"按面积区间"目前要用户自己填)。
+
+---
+
 ## 26. 图像模型实测:纠正一个从未验证过的协议假设(2026-09-29)
 
 ### 26.1 为什么这次实测非做不可

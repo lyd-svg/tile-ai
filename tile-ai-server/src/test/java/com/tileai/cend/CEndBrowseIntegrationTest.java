@@ -1,6 +1,7 @@
 package com.tileai.cend;
 
 import java.math.BigDecimal;
+import java.util.ArrayList;
 import java.util.List;
 
 import org.junit.jupiter.api.AfterAll;
@@ -31,6 +32,7 @@ import com.tileai.store.entity.Store;
 import com.tileai.store.mapper.StoreMapper;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
@@ -86,6 +88,7 @@ class CEndBrowseIntegrationTest {
     private StoreMapper storeMapper;
 
     private long onSaleComboId;
+    private long offSaleComboId;
 
     /**
      * 每个用例都从干净的前置数据开始。
@@ -102,7 +105,7 @@ class CEndBrowseIntegrationTest {
                 "99.00", Product.STATUS_OFF_SALE, List.of("kitchen"), List.of("nordic"));
 
         onSaleComboId = insertCombo("在售搭配", RecommendCombo.STATUS_ON_SALE);
-        insertCombo("下架搭配", RecommendCombo.STATUS_OFF_SALE);
+        offSaleComboId = insertCombo("下架搭配", RecommendCombo.STATUS_OFF_SALE);
 
         setDict(DICT_KEY, "探针空间", 5, DictEntry.STATUS_ENABLED);
         setDict("t12_disabled_space", "停用空间", 9, "disabled");
@@ -203,20 +206,30 @@ class CEndBrowseIntegrationTest {
     void comboListReturnsOnSaleOnly() throws Exception {
         JsonNode list = data("/api/v1/combos", "size", "100").get("list");
 
-        assertEquals(1, list.size(), "只应返回上架的那一条");
-        assertEquals(onSaleComboId, list.get(0).get("id").asLong());
+        // ⚠️ **只对自己造的数据下结论,不对全表条数下结论。**
+        //
+        // 原先这里断言 `list.size() == 1`("只应返回上架的那一条")——
+        // 它隐含假设"整张表只有本测试的数据"。库里一旦有**真实运营数据**
+        // (或任何人灌过演示数据),断言就崩,而代码毫无问题。
+        // 这是本项目第七次遇到"共享可变前置数据",前六次都在讲同一个道理:
+        // **测试不该假设它独占数据库。**
+        List<Long> ids = idsOf(list);
+        assertTrue(ids.contains(onSaleComboId), "自己的在售搭配应出现");
+        assertFalse(ids.contains(offSaleComboId), "自己的下架搭配不该出现");
 
-        JsonNode first = list.get(0);
+        JsonNode mine = findById(list, onSaleComboId);
         for (String field : new String[]{"id", "name", "space", "style", "refPriceMin",
                 "refPriceMax", "coverImage", "status", "sort", "items"}) {
-            assertTrue(first.has(field), "契约 Combo 应含字段 " + field + ": " + first);
+            assertTrue(mine.has(field), "契约 Combo 应含字段 " + field + ": " + mine);
         }
     }
 
     @Test
     @DisplayName("T-1.3 判据:items 的 part 恒为 floor / wall / local 三值(T-9)")
     void comboItemPartsAreThreeValued() throws Exception {
-        JsonNode combo = data("/api/v1/combos", "size", "100").get("list").get(0);
+        // 取**自己那条**(按 id 找),不用 list.get(0) —— 第一条是别人的数据时,
+        // 这条断言验的就不是自己要验的东西了
+        JsonNode combo = findById(data("/api/v1/combos", "size", "100").get("list"), onSaleComboId);
 
         assertTrue(combo.get("items").size() > 0, "搭配应含至少一个 SKU");
         for (JsonNode item : combo.get("items")) {
@@ -238,10 +251,34 @@ class CEndBrowseIntegrationTest {
     @Test
     @DisplayName("T-1.3 按 space / style 筛选")
     void comboFiltersWork() throws Exception {
-        assertEquals(1, data("/api/v1/combos", "space", "bathroom", "size", "100")
-                .get("list").size());
-        assertEquals(0, data("/api/v1/combos", "space", "kitchen", "size", "100")
-                .get("list").size(), "下架那条不该被筛出来");
+        // 同样:判"自己那条在不在",不判"总共有几条"
+        List<Long> bathroom = idsOf(data("/api/v1/combos", "space", "bathroom", "size", "100")
+                .get("list"));
+        assertTrue(bathroom.contains(onSaleComboId), "按空间筛应命中自己的在售搭配");
+        assertFalse(bathroom.contains(offSaleComboId), "下架那条不该被筛出来");
+
+        List<Long> kitchen = idsOf(data("/api/v1/combos", "space", "kitchen", "size", "100")
+                .get("list"));
+        assertFalse(kitchen.contains(onSaleComboId), "空间不符不该命中");
+        assertFalse(kitchen.contains(offSaleComboId), "空间不符不该命中");
+    }
+
+    /** 列表里的全部 id。用于"判自己那条在不在",避免对全表条数下结论。 */
+    private static List<Long> idsOf(JsonNode list) {
+        List<Long> ids = new ArrayList<>();
+        for (JsonNode row : list) {
+            ids.add(row.get("id").asLong());
+        }
+        return ids;
+    }
+
+    private static JsonNode findById(JsonNode list, long id) {
+        for (JsonNode row : list) {
+            if (row.get("id").asLong() == id) {
+                return row;
+            }
+        }
+        throw new AssertionError("列表里找不到 id=" + id + ":" + list);
     }
 
     // ===============================================================

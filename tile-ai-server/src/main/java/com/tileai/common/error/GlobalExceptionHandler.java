@@ -40,9 +40,9 @@ public class GlobalExceptionHandler {
     private static final String BODY_FIELD = "body";
     private static final String REQUEST_FIELD = "request";
 
-    /** 业务异常 —— 错误码与文案都由抛出方指定。 */
+    /** 业务异常 —— 错误码与文案都由抛出方指定;可携带 data(如 10001 的 errors[])。 */
     @ExceptionHandler(BusinessException.class)
-    public ResponseEntity<ApiResponse<Void>> handleBusiness(BusinessException ex) {
+    public ResponseEntity<ApiResponse<Object>> handleBusiness(BusinessException ex) {
         ErrorCode code = ex.errorCode();
         // 401/403 是安全事件,记 warn 便于审计;其余业务失败属预期控制流,记 info 即可。
         if (code == ErrorCode.UNAUTHENTICATED || code == ErrorCode.TOKEN_EXPIRED
@@ -51,7 +51,7 @@ public class GlobalExceptionHandler {
         } else {
             log.info("业务失败 code={} msg={}", code.code(), ex.getMessage());
         }
-        return build(code, ex.getMessage(), null);
+        return build(code, ex.getMessage(), ex.data());
     }
 
     /** @Valid 校验失败(请求体)。 */

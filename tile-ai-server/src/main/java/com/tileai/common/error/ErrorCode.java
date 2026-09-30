@@ -1,5 +1,10 @@
 package com.tileai.common.error;
 
+import java.util.Arrays;
+import java.util.Map;
+import java.util.Optional;
+import java.util.stream.Collectors;
+
 import org.springframework.http.HttpStatus;
 
 /**
@@ -73,5 +78,20 @@ public enum ErrorCode {
      */
     public HttpStatus httpStatus() {
         return httpStatus;
+    }
+
+    private static final Map<Integer, ErrorCode> BY_CODE =
+            Arrays.stream(values()).collect(Collectors.toUnmodifiableMap(ErrorCode::code, c -> c));
+
+    /**
+     * 按业务码查找。未知码返回空。
+     *
+     * <p>用于判断"别处传来的码是不是**已定义的**" —— 典型场景是内部服务
+     * (Python 智能体)返回了一个码,Java 要决定该透传还是折算成 90001。
+     * 架构 §10.4 约定:**只透传已定义业务码**,其余折 90001 ——
+     * 否则内部实现细节(甚至第三方 SDK 的错误码)会漏到用户界面。
+     */
+    public static Optional<ErrorCode> of(int code) {
+        return Optional.ofNullable(BY_CODE.get(code));
     }
 }

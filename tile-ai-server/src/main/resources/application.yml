@@ -50,6 +50,17 @@ tile:
     # HTTPS 下必须置 true(生产);本地 http 保持 false,否则浏览器不保存 Cookie
     secure: ${COOKIE_SECURE:false}
 
+  # Python 智能体服务(架构 §6.1)。Java 侧唯一出网口,见 AgentClient。
+  # 仅内网可达;/internal/* 对外由网关阻断(§6.1、§12.1)。
+  agent:
+    base-url: ${AGENT_BASE_URL:http://localhost:8000}
+    # 服务令牌**只走环境变量**(§13.6)。留空时不发送该头,Python 侧也放行 —— 便于本地联调;
+    # 生产必须配置。
+    service-token: ${AGENT_SERVICE_TOKEN:}
+    # 解析含一次模型调用(实测真实解析约 2–5s),给足余量但仍要有限 ——
+    # 没有超时的内部调用会把上游请求线程一起拖住。
+    timeout: 30s
+
   # Outbox 投递(架构 §6.4)
   outbox:
     enabled: true

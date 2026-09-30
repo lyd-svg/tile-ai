@@ -68,6 +68,35 @@ public class LayoutTemplateService {
         return PageData.of(list, result.getTotal(), page, size);
     }
 
+    /**
+     * C 端模板列表(契约 {@code GET /layout/templates})。
+     *
+     * <p>与后台的差别只有一条:**只看得到已上架模板**。后台要能管理下架项,所以不过滤 ——
+     * 与产品库同一口径(§21.3:下架的砖不该出现在浏览里;模板同理)。
+     */
+    @Transactional(readOnly = true)
+    public PageData<UnitTemplateView> pageOnSale(Integer roomCount, String areaRange,
+                                                 String structure, int page, int size) {
+        LambdaQueryWrapper<UnitTemplate> query = Wrappers.lambdaQuery();
+        if (roomCount != null) {
+            query.eq(UnitTemplate::getRoomCount, roomCount);
+        }
+        if (StringUtils.hasText(areaRange)) {
+            query.eq(UnitTemplate::getAreaRange, areaRange.trim());
+        }
+        if (StringUtils.hasText(structure)) {
+            query.eq(UnitTemplate::getStructure, structure.trim());
+        }
+        query.eq(UnitTemplate::getStatus, UnitTemplate.STATUS_ON_SALE);
+        query.orderByDesc(UnitTemplate::getId);
+
+        Page<UnitTemplate> result = templateMapper.selectPage(new Page<>(page, size), query);
+        List<UnitTemplateView> list = result.getRecords().stream()
+                .map(UnitTemplateView::of)
+                .toList();
+        return PageData.of(list, result.getTotal(), page, size);
+    }
+
     /** 详情(契约 {@code GET /admin/templates/{id}};失败码 30001)。 */
     @Transactional(readOnly = true)
     public UnitTemplateView get(long id) {

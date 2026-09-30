@@ -14,17 +14,36 @@ public class BusinessException extends RuntimeException {
 
     private final ErrorCode errorCode;
 
+    /**
+     * 可选的响应体 {@code data}。
+     *
+     * <p>多数业务失败不需要它(null 即可)。需要的是**参数校验失败(10001)** ——
+     * 契约要求明细放 {@code data.errors[]},只说"参数不对"用户不知道补什么。
+     * 内部服务(户型解析)返回的逐项原因也走这条路透传。
+     */
+    private final transient Object data;
+
     public BusinessException(ErrorCode errorCode) {
-        this(errorCode, errorCode.defaultMessage());
+        this(errorCode, errorCode.defaultMessage(), null);
     }
 
     public BusinessException(ErrorCode errorCode, String message) {
+        this(errorCode, message, null);
+    }
+
+    public BusinessException(ErrorCode errorCode, String message, Object data) {
         super(message);
         this.errorCode = errorCode;
+        this.data = data;
     }
 
     public ErrorCode errorCode() {
         return errorCode;
+    }
+
+    /** 随响应体返回的 data;无则为 null。 */
+    public Object data() {
+        return data;
     }
 
     /**
