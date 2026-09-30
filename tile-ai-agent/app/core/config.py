@@ -47,6 +47,13 @@ class Settings(BaseSettings):
     # 服务间鉴权:请求头 X-Service-Token(openapi-common.yaml#/components/securitySchemes)
     service_token: SecretStr = SecretStr("")
 
+    # --- Python → Java 取数与回传(T-1.11)---
+    # 取数:一次索引查询,几秒不回就是出问题了。
+    java_api_timeout_seconds: float = 5.0
+    # 回传:Java 要写任务状态、终局还要顺带保存方案(一次事务),给更宽的余量。
+    # 两者都与 `gateway_image_timeout_seconds`(60s)无关 —— 那是**模型**调用的硬指标。
+    java_callback_timeout_seconds: float = 10.0
+
     # ------------------------------------------------------------------
     # 模型网关(架构 §7.1 / §7.2;选型见 §15.1)
     # ------------------------------------------------------------------
@@ -114,6 +121,18 @@ class Settings(BaseSettings):
 
     # RabbitMQ —— 异步任务(架构 §6.2;P0-3① 已裁决一期采用 RabbitMQ)。
     rabbitmq_url: str = "amqp://tileai:tileai@localhost:5672/"
+
+    # ------------------------------------------------------------------
+    # 生成编排(T-1.11;架构 §6.2、§11.2)
+    # ------------------------------------------------------------------
+    # 生成消费端是否随本进程启动。本地联调要开;测试里关掉,免得后台线程
+    # 抢消息导致断言不确定。
+    generate_consumer_in_process: bool = True
+
+    # 替身图的 URL 前缀(§29 阶段性收缩:本期图像用固定占位图)。
+    # 留空则取 `java_base_url` —— 图必须由 **Java** 提供:前端只连 Java(不变量 3),
+    # 挂在 Python 上本地能跑通,但上线时会被网关拦掉。
+    placeholder_image_base_url: str = ""
 
 
 settings = Settings()

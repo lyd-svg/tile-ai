@@ -159,6 +159,20 @@ def build_image_gateway(
         raise GatewayConfigError(
             "MODEL_IMAGE_PROVIDER 未配置 —— 见 tile-ai-agent/.env.example"
         )
+
+    if provider == "placeholder":
+        # §29 阶段性收缩:本期用替身跑通端到端,不做出图质量评估。
+        # 它**不是预置表里的一项** —— 预置表列的是真实厂商,
+        # 而替身没有 base_url/密钥/模型 ID 的概念,混进去会让那张表失去意义。
+        # 切回真模型只需把 MODEL_IMAGE_PROVIDER 改成 dashscope(见 §29.5)。
+        from app.gateway.placeholder_image import PlaceholderImageGen
+
+        logger.warning(
+            "图像网关使用**替身**(MODEL_IMAGE_PROVIDER=placeholder):"
+            "出图结果是固定占位图,不代表真实效果。上线前必须切回真实模型(架构 §29)"
+        )
+        return PlaceholderImageGen()
+
     preset = _IMAGE_PRESETS.get(provider)
     if preset is None:
         raise GatewayConfigError(

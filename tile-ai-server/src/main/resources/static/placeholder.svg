@@ -1,0 +1,42 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+  替身占位图(§29 阶段性收缩)。
+
+  本期不接真实图像模型:点「生成」之后要能**看到图**,但图长什么样不评。
+  于是 Python 的替身网关(`MODEL_IMAGE_PROVIDER=placeholder`)把每个视角
+  都指到这张固定的 SVG 上,唯一带的是 `?v={view}`(看是哪个机位)。
+
+  **为什么放在 Java 侧**:不变量 3 —— Java 是唯一对外 API,前端只连 Java。
+  这张图若挂在 Python 上(Python 只在内网),存进 t_plan_image 的就是一个
+  前端够不到的地址;本地开发能碰巧跑通,T-2.4 上线时会被网关拦掉。
+
+  位置说明:Spring Boot 把 `classpath:/static/` 映射到**根路径**,
+  所以本文件的对外地址是 `/placeholder.svg`,不是 `/static/placeholder.svg`。
+
+  切回真实模型(§29.5)后本文件不再被引用,但**不要删** —— 真实模型不可用时
+  它还是降级展示的落点。
+-->
+<svg xmlns="http://www.w3.org/2000/svg" width="1024" height="768" viewBox="0 0 1024 768"
+     role="img" aria-label="效果图占位">
+  <defs>
+    <linearGradient id="wall" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0%" stop-color="#eef1f5"/>
+      <stop offset="100%" stop-color="#dde3ea"/>
+    </linearGradient>
+    <pattern id="tile" width="128" height="128" patternUnits="userSpaceOnUse">
+      <rect width="128" height="128" fill="#f5f0e8"/>
+      <rect x="2" y="2" width="124" height="124" fill="none" stroke="#cfc6b6" stroke-width="2"/>
+    </pattern>
+  </defs>
+
+  <!-- 墙面 -->
+  <rect x="0" y="0" width="1024" height="440" fill="url(#wall)"/>
+  <!-- 地面(铺贴纹路:一眼看得出这是瓷砖场景) -->
+  <rect x="0" y="440" width="1024" height="328" fill="url(#tile)"/>
+
+  <g fill="#6b7683" font-family="system-ui, 'Microsoft YaHei', sans-serif" text-anchor="middle">
+    <text x="512" y="352" font-size="44">效果图占位</text>
+    <text x="512" y="404" font-size="22">本期使用替身图,正式出图能力待接入真实模型</text>
+    <text x="512" y="700" font-size="18" fill="#94a0ad">查看地址栏 ?v= 可知这是哪个机位</text>
+  </g>
+</svg>
