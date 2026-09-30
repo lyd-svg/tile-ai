@@ -374,7 +374,7 @@ paths:
                     required: [url, view]
                     properties:
                       url: { type: string, example: "https://oss/.../a1.png" }
-                      view: { type: string, description: default / angle1 …, example: default }
+                      view: { type: string, description: "视图名 —— 命名约定同 common.PlanImage.view(D-5,2026-09-30 修订)", example: default }
                       isCover: { type: boolean, default: false }
                 progress: { type: integer, minimum: 0, maximum: 100, example: 100 }
                 error:

@@ -814,7 +814,14 @@ components:
       properties:
         space: { $ref: './openapi-common.yaml#/components/schemas/SpaceType' }
         style: { $ref: './openapi-common.yaml#/components/schemas/StyleType' }
-        angles: { type: integer, minimum: 1, description: 生成角度数。默认 1(单张);>1 为多角度。§5.4 }
+        angles:
+          type: integer
+          minimum: 1
+          default: 1
+          description: |
+            **生成张数**。默认 1(单张);>1 为多角度,每个角度 1 张 ——
+            **张数 = angles,不是 angles+1**。视角命名见 `common.PlanImage.view`。
+            §5.4;2026-09-30 修订,裁决见 `openapi-verification.md` §32
         planId:
           type: integer
           nullable: true

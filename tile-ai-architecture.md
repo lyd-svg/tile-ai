@@ -452,7 +452,16 @@ EmbeddingGateway
 
 **t_plan_quote(方案报价汇总)**:`id`、`plan_id`、`material_total`、`aux_total`、`aux_unit_price`、`aux_area`、`loss_rate`、`total_amount`、`rules_snapshot`(JSON,记录生成时参数,便于复算与"报价过期"判断)。
 
-**t_plan_image(方案效果图)**:`id`、`plan_id`、`url`、`view`(default/angle1…)、`is_cover`、`created_at`。
+**t_plan_image(方案效果图)**:`id`、`plan_id`、`url`、`view`、`is_cover`、`created_at`。
+
+> **视角命名(D-5 修订,2026-09-30)**:请求 `angles = N` 即出 **N 张图**,每张一个视角。
+> 第 1 张为 `default`;第 k 张(`k ≥ 2`)为 `angle{k-1}` —— 故 N 张的视角为
+> `default` + `angle1`…`angle{N-1}`(N=1 时仅 `default`)。
+>
+> 命名式里出现 `angle{N-1}` 而非 `angleN`,是因为**张数必须等于角度数**:
+> 原契约写法(`default` + `angle1`…`angleN`)会让 `angles=2` 出 3 张,与
+> `angles` 自身"生成角度数"的含义和 PRD §5.4「默认 1 张 / 可选多角度」都对不上。
+> 裁决与追溯见 `openapi-verification.md` §32。
 
 > 报价分两处落地:分项在 `t_plan_part`(材料费按部位),汇总在 `t_plan_quote`(材料合计 + 辅料 + 总价),与 PRD 公式一一对应。
 

@@ -301,7 +301,9 @@ components:
           type: integer
           minimum: 1
           default: 1
-          description: 生成角度数。默认 1(单张);>1 为多角度。PRD §5.4。
+          description: |
+            **生成张数**。默认 1(单张);>1 为多角度,每个角度 1 张 ——
+            **张数 = angles**。视角命名见 `common.PlanImage.view`。PRD §5.4。
         parts:
           type: array
           minItems: 1

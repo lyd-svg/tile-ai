@@ -424,8 +424,11 @@ components:
         view:
           type: string
           description: |
-            视图名。约定(D-5):angles=1 时仅 `default`;angles=N 时 `default` + `angle1`…`angleN`。
-            §10.6①、§8.4
+            视图名。约定(D-5,**2026-09-30 修订**):`angles = N` 即出 **N 张图**,每张一个视角。
+            第 1 张为 `default`;第 k 张(`k ≥ 2`)为 `angle{k-1}`。
+            故 N 张的视角为 `default` + `angle1`…`angle{N-1}`(N=1 时仅 `default`)。
+            命名式以 `angle{N-1}` 收尾而非 `angleN`,是因为**张数必须等于角度数**。
+            §10.6①、§8.4;裁决与追溯见 `openapi-verification.md` §32
           example: default
         isCover: { type: boolean }
 
