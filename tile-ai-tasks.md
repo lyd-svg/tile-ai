@@ -722,6 +722,35 @@
 > 本任务的**编排逻辑(状态机、Outbox、幂等、补偿扫描)与图像真假无关**,照常实现与验收。
 > 决策见 `openapi-verification.md` §29。
 
+> **进度(2026-09-30)**:✅ **已完成**。Java 新增 `generate` / `plan` 两个业务包 +
+> `internal` 取数接口 + `common.crypto` / `common.security`;Python 新增取数客户端、
+> 两个 Source 适配器、编排器、消费端、替身网关。
+> 校验记录 `openapi-verification.md` **§35**(含阈值表与实现期间补记的偏差)。
+>
+> - **判据**:Java 全量 **333 测试 / 0 失败 / 0 跳过**(打开 `-Ddb.verify` /
+>   `-Dredis.verify` / `-Drabbit.verify`);Python **167 passed / 11 skipped**
+>   (跳过的 11 条是真实大模型联调);契约门禁 **G1–G7 全 PASS**。
+> - **五条验收都有对应测试**:状态机(受理后 `pending`、回调后 `running`→`success`)·
+>   幂等(重复回调行数不变 + **并发版**:两线程同时发只产生一份方案)·
+>   Outbox 退避(注入会抛的 `RabbitTemplate`,断言 `next_retry_at ≈ now + backoff(n)`)·
+>   补偿扫描(四种阈值分支) · 故障注入(投递失败不 ACK、到上限先回调 `failed` 再进 DLQ)。
+> - **消息真的投出去了**:集成测试从 `queue.generate` 实际取回消息,断言与
+>   `t_outbox` 存的**逐字节一致**。
+> - **照片确实是出图的输入**:Python 编排测试断言假网关收到的 `ref_images`
+>   = 所选 SKU 的 `coverImage` + `images[]`,去重保序(这正是"AI 照着我放的产品图出图")。
+>
+> **⚠️ 要你知道的三件:**
+>
+> 1. **本地跑通需要 `LAYOUT_ENC_KEY`**(AES-256-GCM 密钥,Base64 的 32 字节,
+>    只走环境变量)。**实测踩到**:没配时出图能跑到最后一步,但方案存不下来 ——
+>    成功回调被 Java 拒成 `90001`,任务停在 `running` 直到补偿扫描接管。
+>    生成方式见 `tile-ai-roadmap.md` §5.5。
+> 2. **Python 消费端已连真实 RabbitMQ 实测**:消费到消息、调通 Java 回调、
+>    任务状态 `pending → running(0) → running(50)` 都真实发生过;
+>    最后一步卡在上面那个密钥缺配上,**故"出图→存方案"这一段只在
+>    Java 集成测试里跑通过,没在本地实例上完整跑通过**。
+> 3. **DLQ 无自动消费方**(一期只告警)、**SSE 未做**(一期 2s 轮询) —— 见 §35.11。
+
 ### T-1.12 方案管理(我的方案)
 
 ```
