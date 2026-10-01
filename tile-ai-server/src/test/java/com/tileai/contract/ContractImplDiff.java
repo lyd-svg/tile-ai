@@ -16,18 +16,19 @@ import java.util.TreeSet;
  * 证明它在什么情况下会红。一个"永远返回无差异"的比较器,在真实代码恰好干净时,
  * 输出与正确比较器完全一致;只有负向输入能把两者分开。
  *
- * <h2>比对范围(用户拍板)</h2>
+ * <h2>比对范围(用户拍板,2026-10-01 由「字段名」扩到三个维度)</h2>
  *
- * <p><b>路径 + HTTP 方法 + 字段名</b>。不比类型 / 必填 / 枚举值。
+ * <p><b>路径 + HTTP 方法 + 字段名 + 类型 + 必填(仅请求体)+ 枚举值</b>。
+ * 仍<b>不比</b>:format / 约束(minLength…)/ 状态码与业务错误码 / query·path·header 参数名 /
+ * 幂等与状态机 / {@code Map} 与 {@code additionalProperties} / 运行期改写 / 深于 5 层。
  *
- * <h2>两处口径</h2>
+ * <h2>三处口径</h2>
  *
  * <ul>
  *   <li><b>顶层判得细、嵌套只往同形态深入</b> —— 端点自身的请求体与响应 data 会区分
- *       "没有""有但不是具名对象""是具名对象"三种情况并显式记账;再往里只递归
- *       OBJECT↔OBJECT、ARRAY↔ARRAY,其余组合(类型不同、Map、超深)只累加计数,
- *       不逐条列 —— 否则一个"契约是 string、实现是 object"就能刷出几十行噪声。</li>
- *   <li><b>跳过 ≠ 通过</b> —— 无法比对的一律进"跳过"区并给出原因,与"字段不一致"平级渲染。</li>
+ *       "没有""有但不是具名对象""是具名对象"三种情况并显式记账。</li>
+ *   <li><b>跳过 ≠ 通过</b> —— 无法比对的一律进"跳过"区并给出原因,与"不一致"平级渲染。</li>
+ *   <li><b>必填只在请求体侧比</b> —— Java 的响应没有"必填"概念,拿注解去猜会造出假分叉。</li>
  * </ul>
  */
 final class ContractImplDiff {
@@ -45,6 +46,32 @@ final class ContractImplDiff {
 
         String label() {
             return label;
+        }
+
+        /** 挂账清单里写的小写名(见 contract-impl-gaps.yaml 的 fieldGaps)。 */
+        String code() {
+            return name().toLowerCase();
+        }
+    }
+
+    /** 结构差异的三个维度(字段名维度是 {@link FieldDiff})。 */
+    enum Dimension {
+        TYPE("类型"),
+        ENUM("枚举取值"),
+        REQUIRED("必填");
+
+        private final String label;
+
+        Dimension(String label) {
+            this.label = label;
+        }
+
+        String label() {
+            return label;
+        }
+
+        String code() {
+            return name().toLowerCase();
         }
     }
 
@@ -72,6 +99,33 @@ final class ContractImplDiff {
     }
 
     /**
+     * 同一个字段在类型 / 枚举取值 / 必填上的不一致。
+     *
+     * <p>这类差异比"少个字段"隐蔽得多 —— 字段名都在,只有取值集合或类型不同,
+     * 肉眼扫契约根本看不出来。§31.2 那次真实分叉就是这个形状。
+     */
+    record FieldMismatch(String method,
+                         String path,
+                         Where where,
+                         String fieldPath,
+                         Dimension dimension,
+                         String contractSide,
+                         String implSide) {
+
+        /** 与 {@link GapRegistry.FieldGap#key()} 同一套归一化 —— 命中判定必须逐字一致。 */
+        String key() {
+            return mismatchKey(method, path, where.code(), fieldPath, dimension.code());
+        }
+
+        String brief() {
+            return String.format("%-6s %s", method, path)
+                    + " · " + where.label() + " · " + fieldPath
+                    + " · " + dimension.label()
+                    + " | 契约 " + contractSide + " ↔ 实现 " + implSide;
+        }
+    }
+
+    /**
      * 一条"无法比对"的记录。
      *
      * @param side  哪一侧(整条 / 请求体 / 响应 data / 实现)
@@ -91,6 +145,16 @@ final class ContractImplDiff {
         static final String SHAPE = "形态无法对位";
         /** 实现侧被豁免(见 contract-impl-gaps.yaml)。 */
         static final String IGNORED = "实现侧被豁免";
+        /** 契约声明了取值集合,实现侧推不出(走后台字典等)—— <b>不是通过,也不是红</b>。 */
+        static final String ENUM_UNKNOWN = "枚举取值推不出(实现侧)";
+
+        /**
+         * 只报数、不逐条列的分组。
+         *
+         * <p>它们要么每次都存在且无法比对(探针),要么是结构性的大面积空白(字典字段)——
+         * 逐条列会把真正要看的信号挤下去。计数仍出现在页眉,没有被藏起来。
+         */
+        static final Set<String> COUNT_ONLY = Set.of(ImplReader.Group.TEST_PROBE, ENUM_UNKNOWN);
 
         private Group() {
         }
@@ -106,11 +170,32 @@ final class ContractImplDiff {
         }
     }
 
+    /** 字段级差异挂账被命中:这条不一致是登记过的,带出处。 */
+    record FieldGapHit(GapRegistry.FieldGap gap, FieldMismatch mismatch) {
+
+        String brief() {
+            return mismatch.brief() + " · 出处 " + gap.source()
+                    + (gap.note().isEmpty() ? "" : " · " + gap.note());
+        }
+    }
+
     /** 挂账过期:登记说"没做",这次却匹配上了。 */
     record StaleGap(GapRegistry.Gap gap) {
 
         String brief() {
             return gap.brief() + " · 出处 " + gap.source() + " —— 已匹配上,挂账该删了";
+        }
+    }
+
+    /**
+     * 字段级挂账过期:登记说"这里不一致",这次却一致了(或维度已经能比却对得上)。
+     *
+     * <p>与 {@link StaleGap} 同样无条件判红 —— 否则豁免表会变成漂移的藏身处。
+     */
+    record StaleFieldGap(GapRegistry.FieldGap gap) {
+
+        String brief() {
+            return gap.brief() + " · 出处 " + gap.source() + " —— 本次已一致,挂账该删了";
         }
     }
 
@@ -129,6 +214,7 @@ final class ContractImplDiff {
                   int skippedImplCount,
                   int ignoredImplCount,
                   int unknownDataCount,
+                  int comparedLeaves,
                   int uncomparedLeaves,
                   List<ContractEndpoint> pythonOwned,
                   List<ContractEndpoint> unexpectedMissing,
@@ -137,6 +223,10 @@ final class ContractImplDiff {
                   List<Skipped> ignoredImpl,
                   List<Skipped> skipped,
                   List<FieldDiff> fieldDiffs,
+                  List<FieldMismatch> fieldMismatches,
+                  List<FieldGapHit> fieldGapHits,
+                  List<StaleFieldGap> staleFieldGaps,
+                  List<GapRegistry.FieldGap> unevaluatedFieldGaps,
                   List<StaleGap> staleGaps,
                   List<String> brokenCanaries) {
 
@@ -145,8 +235,16 @@ final class ContractImplDiff {
             return !unexpectedMissing.isEmpty()
                     || !extraImpl.isEmpty()
                     || !fieldDiffs.isEmpty()
+                    || !fieldMismatches.isEmpty()
                     || !staleGaps.isEmpty()
+                    || !staleFieldGaps.isEmpty()
                     || !brokenCanaries.isEmpty();
+        }
+
+        /** 某一维度的不一致条数(报告页眉用)。 */
+        int mismatchesOf(Dimension dimension) {
+            return (int) fieldMismatches.stream()
+                    .filter(m -> m.dimension() == dimension).count();
         }
 
         /** 契约侧 Java 端点的恒等式:每一条都必须落进恰好一个桶。 */
@@ -175,9 +273,36 @@ final class ContractImplDiff {
         }
     }
 
-    /** 可变计数盒 —— 递归里累加"没比到的叶子"。 */
-    private static final class Counter {
-        private int value;
+    /**
+     * 可变计数盒 —— 递归里给"比到底的叶子"分两类。
+     *
+     * <p>分两类的理由:早先只有一个数,标签写着"未对位",但类型维度落地后它把
+     * <b>所有</b>叶子都算进去了(改前只在"没往下递归"时累加)。于是页眉里一个几百的
+     * 数字顶着"未对位"的名字,既吓人又不说明问题,还把真正没对上的那几个淹掉了 ——
+     * 那正是"跳过 ≠ 通过"最容易被读错的地方。分开记:
+     *
+     * <ul>
+     *   <li>{@code compared}:两侧都说得出自己是什么类型 → 这个叶子真的判过;</li>
+     *   <li>{@code uncompared}:深度截断 / 键不可枚举 / 契约没声明类型 → <b>没判</b>,
+     *       必须显式计数,不许混进"比过的"。</li>
+     * </ul>
+     */
+    private static final class LeafCounts {
+        private int compared;
+        private int uncompared;
+    }
+
+    /** 递归里收集"这一次真的比过哪几个维度" —— 字段级挂账靠它判断过期与未生效。 */
+    private static final class Evaluated {
+        private final Set<String> keys = new LinkedHashSet<>();
+
+        void mark(String key) {
+            keys.add(key);
+        }
+
+        boolean contains(String key) {
+            return keys.contains(key);
+        }
     }
 
     private ContractImplDiff() {
@@ -210,7 +335,9 @@ final class ContractImplDiff {
         List<Skipped> ignoredImpl = new ArrayList<>();
         List<Skipped> skipped = new ArrayList<>();
         List<FieldDiff> fieldDiffs = new ArrayList<>();
-        Counter leaves = new Counter();
+        List<FieldMismatch> rawMismatches = new ArrayList<>();
+        Evaluated evaluated = new Evaluated();
+        LeafCounts leaves = new LeafCounts();
 
         Map<PathKey, List<ImplEndpoint>> implByKey = new LinkedHashMap<>();
         for (ImplEndpoint endpoint : sortedImpl) {
@@ -254,11 +381,11 @@ final class ContractImplDiff {
             unknownDataCount += silentGap(endpoint.responseShape(), twin.responseShape()) ? 1 : 0;
 
             if (!silentGap(endpoint.requestShape(), twin.requestShape())) {
-                compareBody(fieldDiffs, skipped, leaves, endpoint, Where.REQUEST,
+                compareBody(fieldDiffs, rawMismatches, skipped, evaluated, leaves, endpoint, Where.REQUEST,
                         endpoint.requestShape(), twin.requestShape());
             }
             if (!silentGap(endpoint.responseShape(), twin.responseShape())) {
-                compareBody(fieldDiffs, skipped, leaves, endpoint, Where.RESPONSE,
+                compareBody(fieldDiffs, rawMismatches, skipped, evaluated, leaves, endpoint, Where.RESPONSE,
                         endpoint.responseShape(), twin.responseShape());
             }
         }
@@ -303,12 +430,39 @@ final class ContractImplDiff {
             }
         }
 
+        // 字段级挂账:命中 → 折叠(可见、不红);过期 → 红;未生效 → 单列,不红
+        List<FieldMismatch> fieldMismatches = new ArrayList<>();
+        List<FieldGapHit> fieldGapHits = new ArrayList<>();
+        Set<String> hitKeys = new LinkedHashSet<>();
+        for (FieldMismatch mismatch : rawMismatches) {
+            GapRegistry.FieldGap gap = gaps.fieldGapFor(mismatch.method(), mismatch.path(),
+                    mismatch.where().code(), mismatch.fieldPath(), mismatch.dimension().code());
+            if (gap == null) {
+                fieldMismatches.add(mismatch);
+            } else {
+                hitKeys.add(mismatch.key());
+                fieldGapHits.add(new FieldGapHit(gap, mismatch));
+            }
+        }
+        List<StaleFieldGap> staleFieldGaps = new ArrayList<>();
+        List<GapRegistry.FieldGap> unevaluatedFieldGaps = new ArrayList<>();
+        for (GapRegistry.FieldGap gap : gaps.fieldGaps()) {
+            String key = mismatchKey(gap.method(), gap.path(), gap.where(), gap.fieldPath(), gap.dimension());
+            if (!evaluated.contains(key)) {
+                unevaluatedFieldGaps.add(gap);
+            } else if (!hitKeys.contains(key)) {
+                staleFieldGaps.add(new StaleFieldGap(gap));
+            }
+        }
+
         Result result = new Result(
                 sortedContract.size() - pythonOwned.size(), pythonOwned.size(),
                 sortedImpl.size(), matched, matchedImpl, skippedPairCount,
-                skippedImplCount, ignoredImplCount, unknownDataCount, leaves.value,
+                skippedImplCount, ignoredImplCount, unknownDataCount,
+                leaves.compared, leaves.uncompared,
                 pythonOwned, unexpectedMissing, knownMissing, extraImpl, ignoredImpl,
-                skipped, fieldDiffs, staleGaps,
+                skipped, fieldDiffs, fieldMismatches, fieldGapHits, staleFieldGaps,
+                unevaluatedFieldGaps, staleGaps,
                 checkCanaries(gaps, sortedContract, implByKey));
 
         result.assertContractIdentity();
@@ -335,8 +489,10 @@ final class ContractImplDiff {
      * <p>这里判得细:没有 / 有但不是具名对象 / 是具名对象,三种情况分开记账。
      */
     private static void compareBody(List<FieldDiff> diffs,
+                                    List<FieldMismatch> mismatches,
                                     List<Skipped> skipped,
-                                    Counter leaves,
+                                    Evaluated evaluated,
+                                    LeafCounts leaves,
                                     ContractEndpoint endpoint,
                                     Where where,
                                     Shape contractShape,
@@ -348,11 +504,12 @@ final class ContractImplDiff {
             return;   // 两边都没这一块 —— 一致
         }
         if (ck == Shape.Kind.OBJECT && ik == Shape.Kind.OBJECT) {
-            diffFields(diffs, leaves, endpoint, where, "(顶层)", contractShape, implShape);
+            diffFields(diffs, mismatches, skipped, evaluated, leaves, endpoint, where,
+                    "(顶层)", contractShape, implShape);
             return;
         }
         if (ck == Shape.Kind.ARRAY && ik == Shape.Kind.ARRAY) {
-            compareNested(diffs, leaves, endpoint, where, "[]",
+            compareValue(diffs, mismatches, skipped, evaluated, leaves, endpoint, where, "[]",
                     contractShape.item(), implShape.item());
             return;
         }
@@ -371,9 +528,12 @@ final class ContractImplDiff {
                 Group.SHAPE, "契约=" + contractShape.label() + ", 实现=" + implShape.label()));
     }
 
-    /** 同一层上比字段名,再对公共字段往里走一层。 */
+    /** 同一层上比字段名,再对公共字段逐个比"这个值本身"(类型 / 枚举 / 必填)并往里走。 */
     private static void diffFields(List<FieldDiff> diffs,
-                                   Counter leaves,
+                                   List<FieldMismatch> mismatches,
+                                   List<Skipped> skipped,
+                                   Evaluated evaluated,
+                                   LeafCounts leaves,
                                    ContractEndpoint endpoint,
                                    Where where,
                                    String fieldPath,
@@ -395,37 +555,165 @@ final class ContractImplDiff {
             if (!implFields.contains(name)) {
                 continue;
             }
-            compareNested(diffs, leaves, endpoint, where, fieldPath + "." + name,
-                    contractShape.fields().get(name), implShape.fields().get(name));
+            Shape contractChild = contractShape.fields().get(name);
+            Shape implChild = implShape.fields().get(name);
+
+            // 必填只在请求体侧比:Java 的响应没有"必填"概念
+            if (where == Where.REQUEST) {
+                compareRequired(mismatches, evaluated, endpoint, where,
+                        fieldPath + "." + name,
+                        contractShape.requiredFields().contains(name),
+                        implShape.requiredFields().contains(name));
+            }
+            compareValue(diffs, mismatches, skipped, evaluated, leaves, endpoint, where,
+                    fieldPath + "." + name, contractChild, implChild);
         }
     }
 
     /**
-     * 嵌套层:只往<b>同形态</b>里走。
+     * 比"这一个值本身"。
      *
-     * <p>其余组合(类型不同、Map、additionalProperties、超过深度上限)只累加计数 ——
-     * 那些属于"类型层"的差异,不在本次范围内,逐条列出来只会淹没真正要看的字段名差异。
-     * 计数会出现在报告页眉(作"嵌套层未对位的叶子"),所以也没被藏起来。
+     * <p>先比类型与枚举取值(它们在同一层上就能判定),再决定要不要往里递归 ——
+     * 字段名一致但取值集合不一致,是最隐蔽的一类分叉。
      */
-    private static void compareNested(List<FieldDiff> diffs,
-                                      Counter leaves,
-                                      ContractEndpoint endpoint,
-                                      Where where,
-                                      String fieldPath,
-                                      Shape contractShape,
-                                      Shape implShape) {
+    private static void compareValue(List<FieldDiff> diffs,
+                                     List<FieldMismatch> mismatches,
+                                     List<Skipped> skipped,
+                                     Evaluated evaluated,
+                                     LeafCounts leaves,
+                                     ContractEndpoint endpoint,
+                                     Where where,
+                                     String fieldPath,
+                                     Shape contractShape,
+                                     Shape implShape) {
+        compareEnum(mismatches, skipped, evaluated, endpoint, where, fieldPath,
+                contractShape, implShape);
+        compareType(mismatches, evaluated, endpoint, where, fieldPath, contractShape, implShape);
+
         Shape.Kind ck = contractShape.kind();
         Shape.Kind ik = implShape.kind();
         if (ck == Shape.Kind.OBJECT && ik == Shape.Kind.OBJECT) {
-            diffFields(diffs, leaves, endpoint, where, fieldPath, contractShape, implShape);
+            diffFields(diffs, mismatches, skipped, evaluated, leaves, endpoint, where,
+                    fieldPath, contractShape, implShape);
             return;
         }
         if (ck == Shape.Kind.ARRAY && ik == Shape.Kind.ARRAY) {
-            compareNested(diffs, leaves, endpoint, where, fieldPath + "[]",
-                    contractShape.item(), implShape.item());
+            compareValue(diffs, mismatches, skipped, evaluated, leaves, endpoint, where,
+                    fieldPath + "[]", contractShape.item(), implShape.item());
             return;
         }
-        leaves.value++;
+        // 比到底了。**只有两侧都说得出自己是什么类型,这个叶子才真的判过** ——
+        // 否则(深度截断 / 键不可枚举 / 契约没声明)它属"没判过",单独计数。
+        if (contractShape.hasTypeInfo() && implShape.hasTypeInfo()) {
+            leaves.compared++;
+        } else {
+            leaves.uncompared++;
+        }
+    }
+
+    private static void compareRequired(List<FieldMismatch> mismatches,
+                                        Evaluated evaluated,
+                                        ContractEndpoint endpoint,
+                                        Where where,
+                                        String fieldPath,
+                                        boolean contractRequired,
+                                        boolean implRequired) {
+        evaluated.mark(mismatchKey(endpoint.method(), endpoint.path(), where.code(),
+                fieldPath, Dimension.REQUIRED.code()));
+        if (contractRequired == implRequired) {
+            return;
+        }
+        mismatches.add(new FieldMismatch(endpoint.method(), endpoint.path(), where, fieldPath,
+                Dimension.REQUIRED,
+                contractRequired ? "必填" : "可选",
+                implRequired ? "必填" : "可选"));
+    }
+
+    /** 枚举取值:两侧都有才比;只有契约有 → 记跳过(实现推不出,不是通过)。 */
+    private static void compareEnum(List<FieldMismatch> mismatches,
+                                    List<Skipped> skipped,
+                                    Evaluated evaluated,
+                                    ContractEndpoint endpoint,
+                                    Where where,
+                                    String fieldPath,
+                                    Shape contractShape,
+                                    Shape implShape) {
+        boolean contractHas = contractShape.hasEnumValues();
+        boolean implHas = implShape.hasEnumValues();
+        if (!contractHas && !implHas) {
+            return;
+        }
+        if (contractHas && !implHas) {
+            // 推不出 = **这一次根本没判过**,所以刻意不 mark。
+            // 若在这里 mark,登记成「字典字段,取值对不上」的挂账会被算作"已审定且已一致",
+            // 从而误判「挂账过期」天天判红 —— 那是把"没看"当成了"看过且没问题"。
+            skipped.add(new Skipped(endpoint.method(), endpoint.path(), where.label(),
+                    Group.ENUM_UNKNOWN,
+                    "字段 " + fieldPath + ":契约声明了取值 " + contractShape.enumValues()
+                            + ",实现侧推不出(多为走后台字典的字段)"));
+            return;
+        }
+        evaluated.mark(mismatchKey(endpoint.method(), endpoint.path(), where.code(),
+                fieldPath, Dimension.ENUM.code()));
+        Set<String> contractSet = new TreeSet<>(contractShape.enumValues());
+        Set<String> implSet = new TreeSet<>(implShape.enumValues());
+        if (contractSet.equals(implSet)) {
+            return;
+        }
+        mismatches.add(new FieldMismatch(endpoint.method(), endpoint.path(), where, fieldPath,
+                Dimension.ENUM, contractSet.toString(), implSet.toString()));
+    }
+
+    /**
+     * 类型:两侧都说得出自己是什么类型才比。
+     *
+     * <p>JSON Schema 里 {@code integer} ⊂ {@code number},所以"契约 number、实现 integer"
+     * <b>不算差异</b>;反过来才算。
+     */
+    private static void compareType(List<FieldMismatch> mismatches,
+                                    Evaluated evaluated,
+                                    ContractEndpoint endpoint,
+                                    Where where,
+                                    String fieldPath,
+                                    Shape contractShape,
+                                    Shape implShape) {
+        if (!contractShape.hasTypeInfo() || !implShape.hasTypeInfo()) {
+            return;
+        }
+        evaluated.mark(mismatchKey(endpoint.method(), endpoint.path(), where.code(),
+                fieldPath, Dimension.TYPE.code()));
+        Shape.JsonType contractType = contractShape.type();
+        Shape.JsonType implType = implShape.type();
+        if (contractType == implType
+                || (contractType == Shape.JsonType.NUMBER && implType == Shape.JsonType.INTEGER)) {
+            return;
+        }
+        mismatches.add(new FieldMismatch(endpoint.method(), endpoint.path(), where, fieldPath,
+                Dimension.TYPE, contractType.toString(), implType.toString()));
+    }
+
+    // ------------------------------------------------------------ 字段级挂账的键
+
+    /**
+     * 字段级挂账的归一化键。
+     *
+     * <p>路径变量名不算差异({@code {id}} 与 {@code {sku}} 同一条),字段路径去掉
+     * 报告用的 {@code (顶层).} 前缀 —— 配置里写 {@code parts[].area} 更自然。
+     */
+    static String mismatchKey(String method, String path, String where,
+                              String fieldPath, String dimension) {
+        return method.toUpperCase() + " " + PathKey.normalize(path)
+                + " " + where.toLowerCase()
+                + " " + normalizeFieldPath(fieldPath)
+                + " " + dimension.toLowerCase();
+    }
+
+    private static String normalizeFieldPath(String fieldPath) {
+        String text = fieldPath == null ? "" : fieldPath.trim();
+        if (text.startsWith("(顶层).")) {
+            return text.substring("(顶层).".length());
+        }
+        return text;
     }
 
     // ------------------------------------------------------------ 锚点
@@ -463,13 +751,13 @@ final class ContractImplDiff {
 
     static String render(Result r) {
         StringBuilder sb = new StringBuilder();
-        sb.append("# 契约 ↔ 实现比对清单(T-2.1 骨架)\n\n");
+        sb.append("# 契约 ↔ 实现比对清单(T-2.1)\n\n");
         sb.append("> 由 `ContractImplDiffTest` 自动生成,请勿手改。\n")
-                .append("> 比对范围:**路径 + HTTP 方法 + 字段名**;不比类型 / 必填 / 枚举值。\n\n");
+                .append("> 比对范围:**路径 + HTTP 方法 + 字段名 + 类型 + 必填(仅请求体)+ 枚举值**。\n\n");
 
         sb.append("## 页眉计数\n\n| 项 | 数 |\n| --- | ---: |\n");
         row(sb, "契约端点(Java 归属)", r.contractJava());
-        row(sb, "契约端点(Python 归属,本骨架不比)", r.contractPython());
+        row(sb, "契约端点(Python 归属,本比对不比)", r.contractPython());
         row(sb, "实现路由(从路由表读出)", r.implTotal());
         row(sb, "两边匹配上并比过", r.matched());
         row(sb, "匹配上但整条跳过(非 JSON 等)", r.skippedPairCount());
@@ -477,18 +765,25 @@ final class ContractImplDiff {
         row(sb, "契约有实现无 · 已挂账(已知未开工)", r.knownMissing().size());
         row(sb, "实现有契约无 · 多余路由", r.extraImpl().size());
         row(sb, "实现侧被豁免", r.ignoredImplCount());
-        row(sb, "字段不一致", r.fieldDiffs().size());
+        row(sb, "字段不一致(字段名)", r.fieldDiffs().size());
+        row(sb, "取值不一致 · 类型", r.mismatchesOf(Dimension.TYPE));
+        row(sb, "取值不一致 · 枚举值", r.mismatchesOf(Dimension.ENUM));
+        row(sb, "取值不一致 · 必填", r.mismatchesOf(Dimension.REQUIRED));
+        row(sb, "字段级差异 · 已挂账(带出处)", r.fieldGapHits().size());
         row(sb, "契约未声明字段 · 只报数(裸 ApiResponse 等,无从比)", r.unknownDataCount());
-        row(sb, "嵌套层未对位的叶子", r.uncomparedLeaves());
-        row(sb, "挂账已过期", r.staleGaps().size());
+        row(sb, "比到底的叶子(类型两侧都能判定)", r.comparedLeaves());
+        row(sb, "未对位的叶子 · **没判过**(深度截断 / 键不可枚举 / 一侧推不出类型)",
+                r.uncomparedLeaves());
+        row(sb, "挂账已过期(整条)", r.staleGaps().size());
+        row(sb, "挂账已过期(字段级)", r.staleFieldGaps().size());
+        row(sb, "字段级挂账 · 本次未生效", r.unevaluatedFieldGaps().size());
         row(sb, "锚点未命中", r.brokenCanaries().size());
         sb.append('\n');
 
-        sb.append("**本骨架覆盖不到**(不许读成「已绑住」):类型 / 必填 / 格式 / ")
-                .append("**枚举值**(§31.2 那次真实分叉正是枚举值)· 状态码与业务错误码 · ")
-                .append("query / path / header 参数名 · 嵌套深度 > 2 · `Map` 与 ")
-                .append("`additionalProperties` · 运行期改写(序列化 inclusion、")
-                .append("`@ControllerAdvice`)。\n\n");
+        sb.append("**本比对覆盖不到**(不许读成「已绑住」):format 与取值约束(minLength / minimum…)· ")
+                .append("状态码与业务错误码 · query / path / header 参数名 · 幂等与状态机 · ")
+                .append("嵌套深度 > 5 · `Map` 与 `additionalProperties` · 运行期改写(序列化 inclusion、")
+                .append("`@ControllerAdvice`)· SSE 事件集。\n\n");
 
         if (r.hasFindings()) {
             sb.append("## ⚠ 需要人看的\n\n");
@@ -498,8 +793,12 @@ final class ContractImplDiff {
                             .map(e -> e.brief() + " · " + e.origin()).toList());
             block(sb, "实现有、契约无 —— 多余路由", r.extraImpl().stream()
                     .map(e -> e.brief() + " · " + e.where()).toList());
-            block(sb, "字段不一致", r.fieldDiffs().stream().map(FieldDiff::brief).toList());
-            block(sb, "挂账已过期", r.staleGaps().stream().map(StaleGap::brief).toList());
+            block(sb, "字段不一致(字段名)", r.fieldDiffs().stream().map(FieldDiff::brief).toList());
+            block(sb, "取值不一致(类型 / 枚举值 / 必填)", r.fieldMismatches().stream()
+                    .map(FieldMismatch::brief).toList());
+            block(sb, "挂账已过期(整条)", r.staleGaps().stream().map(StaleGap::brief).toList());
+            block(sb, "挂账已过期(字段级)", r.staleFieldGaps().stream()
+                    .map(StaleFieldGap::brief).toList());
         } else {
             sb.append("## ✅ 需要人看的:无\n\n");
         }
@@ -518,7 +817,20 @@ final class ContractImplDiff {
             sb.append('\n');
         }
 
-        block(sb, "Python 归属(本骨架不比,见 openapi-verification.md §36)",
+        if (!r.fieldGapHits().isEmpty()) {
+            sb.append("## 已知字段级差异(挂了账,带出处)\n\n")
+                    .append("> 这些是**真实存在的不一致**,登记在 `contract-impl-gaps.yaml` 的 `fieldGaps`,")
+                    .append("带出处所以不算异常 —— 但它们没有被消除,别忘了还欠着。\n\n");
+            for (FieldGapHit hit : r.fieldGapHits()) {
+                sb.append("- ").append(hit.brief()).append('\n');
+            }
+            sb.append('\n');
+        }
+
+        block(sb, "字段级挂账 · 本次未生效(端点缺失 / 维度推不出,不判红)",
+                r.unevaluatedFieldGaps().stream().map(GapRegistry.FieldGap::brief).toList());
+
+        block(sb, "Python 归属(本比对不比,见 openapi-verification.md §36 / §40)",
                 r.pythonOwned().stream().map(e -> e.brief() + " · " + e.origin()).toList());
 
         skippedBlock(sb, "无法比对(跳过 ≠ 通过)", r.skipped());
@@ -551,6 +863,16 @@ final class ContractImplDiff {
             if (ImplReader.Group.TEST_PROBE.equals(group.getKey())) {
                 sb.append("测试源码里的探针控制器,会被组件扫描注册进路由表。")
                         .append("它们不属于对外契约,也不参与比对 —— 明细见测试源码,此处不逐条列。\n\n");
+                continue;
+            }
+            if (Group.COUNT_ONLY.contains(group.getKey())) {
+                sb.append("这一类**结构性空白**只报数,不逐条列;前 5 条见下(其余同理)。\n\n");
+                group.getValue().stream().limit(5)
+                        .forEach(entry -> sb.append("- ").append(entry.brief()).append('\n'));
+                if (group.getValue().size() > 5) {
+                    sb.append("- …还有 ").append(group.getValue().size() - 5).append(" 条\n");
+                }
+                sb.append('\n');
                 continue;
             }
             for (Skipped entry : group.getValue()) {

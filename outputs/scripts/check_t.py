@@ -505,27 +505,96 @@ t11_ev = [f"用例数 = {len(CASES)}"] + t11_detail
 record('T-11', '§10.6 示例可被对应 schema 校验', t11_pass, t11_ev)
 
 # ============================================================
-# T-12 实现导出的 OpenAPI 与本契约结构 diff
+# T-12 契约 ↔ 实现 双向结构 diff
+#
+# 判据来源被换掉了(2026-10-01,见 openapi-verification.md §40):
+#   旧:扫仓库里有没有实现导出的 OpenAPI 文档 —— 永远扫不到,于是永远 SKIP。
+#   新:读 ContractImplDiffTest 落下的机器可读结论 contract-impl-diff.json。
+#
+# **为什么缺失必须 FAIL 而不是 SKIP(required 模式下):**
+#   SKIP 正是这项挂了整整一期的原因 —— 生产者坏了的时候,SKIP 让门禁静默地自我关闭,
+#   那是最坏的一种绿色。required 模式下刻意不留 SKIP 出口。
 # ============================================================
 print('#' * 72)
-print('# T-12 实现导出的 OpenAPI 与本契约结构 diff(C、internal 双向)')
+print('# T-12 契约 ↔ 实现 双向结构 diff(路径/方法/字段名/类型/必填/枚举值)')
 print('#' * 72)
-impl_found = []
-for pat in ('**/openapi.json', '**/openapi.yaml', '**/openapi.yml', '**/swagger.json'):
-    import glob
-    impl_found += glob.glob(os.path.join(ROOT, pat), recursive=True)
-impl_found = [p for p in impl_found
-              if os.path.basename(p) not in
-              ('openapi-c.yaml','openapi-admin.yaml','openapi-common.yaml','openapi-internal.yaml')]
-t12_pass = False
-t12_ev = [
-    "仓库内未发现任何实现导出的 OpenAPI 文档(Java springdoc / Python FastAPI 产物)",
-    f"扫描结果 = {impl_found if impl_found else '无'}",
-    "仓库内无任何实现代码(仅 .md / .yaml 文档)",
-    "→ 该项**当前不可执行**(不可判 PASS/FAIL),属前置条件未满足,非契约缺陷",
-]
-record('T-12', '实现导出的 OpenAPI 与本契约结构 diff(双向)', t12_pass, t12_ev,
-       detail=['不可执行:缺实现侧产物'], skip=True)
+
+T12_TITLE = '契约 ↔ 实现 双向结构 diff(双向)'
+DIFF_JSON = os.path.join(ROOT, 'outputs', 'reports', 'contract-impl-diff.json')
+DIFF_MD = os.path.join(ROOT, 'outputs', 'reports', 'contract-impl-diff.md')
+T12_REQUIRED = os.environ.get('CONTRACT_DIFF_REQUIRED', '') == '1'
+T12_WANT_RUN_ID = (os.environ.get('CONTRACT_DIFF_RUN_ID') or '').strip()
+T12_WANT_SHA = (os.environ.get('GITHUB_SHA') or '').strip()
+
+
+def t12_unusable(reason, extra=None):
+    """产物不可用 —— required 模式判 FAIL,否则 SKIP 且写明原因(绝不当作通过)。"""
+    ev = [reason] + list(extra or [])
+    ev.append(f"期望产物:outputs/reports/contract-impl-diff.json(由 outputs/scripts/contract-diff.sh 生成)")
+    if T12_REQUIRED:
+        ev.append('CONTRACT_DIFF_REQUIRED=1 → 产物不可用即 FAIL;此模式刻意没有 SKIP 出口')
+        record('T-12', T12_TITLE, False, ev)
+    else:
+        ev.append('本地未要求必执行(CONTRACT_DIFF_REQUIRED≠1)→ SKIP,并写明原因;SKIP ≠ 通过')
+        record('T-12', T12_TITLE, False, ev, detail=['SKIP:' + reason], skip=True)
+
+
+t12_verdict = None   # None = 还没判;否则 (passed, evidence)
+if not os.path.exists(DIFF_JSON):
+    t12_unusable('比对产物不存在 —— 本次没有跑过契约 ↔ 实现比对')
+else:
+    try:
+        with open(DIFF_JSON, 'r', encoding='utf-8') as f:
+            t12 = json.load(f)
+    except Exception as e:
+        t12 = None
+        t12_unusable(f'比对产物无法解析:{type(e).__name__}: {e}')
+
+    if t12 is not None:
+        problems = []
+        if t12.get('schemaVersion') != 1:
+            problems.append(f"schemaVersion={t12.get('schemaVersion')},本脚本只认 1")
+        got_run_id = str(t12.get('runId', ''))
+        got_sha = str(t12.get('gitSha', ''))
+        # 新鲜度锚点:只在与本轮期望值都对得上时才核 —— 本地没有期望值就跳过这一关
+        if T12_WANT_RUN_ID and got_run_id != T12_WANT_RUN_ID:
+            problems.append(f"runId 不是本轮:产物={got_run_id} 期望={T12_WANT_RUN_ID}")
+        if T12_WANT_SHA and got_sha not in ('', 'local') and got_sha != T12_WANT_SHA:
+            problems.append(f"gitSha 不是本轮:产物={got_sha} 期望={T12_WANT_SHA}")
+
+        if problems:
+            t12_unusable('比对产物不可采信(不是本轮跑出来的):', problems)
+        else:
+            c = t12.get('counts') or {}
+            has_findings = bool(t12.get('hasFindings'))
+            ev = [
+                f"产物:outputs/reports/contract-impl-diff.json(runId={got_run_id}, "
+                f"生成于 {t12.get('generatedAt')})",
+                f"清单(给人看):{os.path.relpath(DIFF_MD, ROOT)}",
+                f"契约端点 Java={c.get('contractJava')} Python={c.get('contractPython')}"
+                f" · 实现路由={c.get('implTotal')} · 两边比过={c.get('matched')}",
+                f"意外缺失={c.get('unexpectedMissing')} 多余路由={c.get('extraImpl')}"
+                f" 字段名不一致={c.get('fieldDiffs')}",
+                f"类型不一致={c.get('typeMismatches')} 枚举值不一致={c.get('enumMismatches')}"
+                f" 必填不一致={c.get('requiredMismatches')}",
+                f"字段级挂账命中={c.get('fieldGapHits')} 未生效={c.get('unevaluatedFieldGaps')}",
+                f"锚点未命中={c.get('brokenCanaries')}"
+                f" 挂账过期(整条)={c.get('staleGaps')} 挂账过期(字段级)={c.get('staleFieldGaps')}",
+                f"hasFindings={has_findings}",
+            ]
+            if has_findings:
+                for f_ in (t12.get('fieldMismatches') or [])[:10]:
+                    ev.append('  ✗ ' + str(f_))
+                for f_ in (t12.get('staleFieldGaps') or [])[:10]:
+                    ev.append('  ✗ ' + str(f_))
+                ev.append('明细见 outputs/reports/contract-impl-diff.md')
+            else:
+                ev.append('本次未发现分叉。注意「跳过/未生效」不等于通过,'
+                          '其条数见上,原因见清单。')
+            t12_verdict = (not has_findings, ev)
+
+if t12_verdict is not None:
+    record('T-12', T12_TITLE, t12_verdict[0], t12_verdict[1])
 
 # ============================================================
 # T-13 仅 401/403 用真实 HTTP 状态,其余业务结果 HTTP 200

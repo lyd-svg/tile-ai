@@ -1,7 +1,11 @@
 name: 契约静态校验
 
-# 触发条件:契约 / 文档 / 校验脚本本身发生变更时。
-# 纯文档改动(不涉及 yaml 或 outputs/)不触发,避免无谓消耗。
+# 触发条件:契约 / 文档 / 校验脚本 / **实现代码**发生变更时。
+#
+# 2026-10-01 补 `tile-ai-server/**` 与 `tile-ai-agent/**`:
+#   在此之前白名单只有 yaml / yml / md / outputs —— 只改 .java **根本不触发**本工作流,
+#   于是「契约 ↔ 实现自动对账」在 CI 上等于没接。这是 T-12 能当判据的前提。
+#   `tile-ai-web/**` 刻意不加:本工作流不跑前端测试,加上只是白烧 CI。
 on:
   push:
     paths:
@@ -9,6 +13,8 @@ on:
       - '**.yml'
       - '**.md'
       - 'outputs/**'
+      - 'tile-ai-server/**'
+      - 'tile-ai-agent/**'
       - '.github/workflows/contract-lint.yml'
   pull_request:
     paths:
@@ -16,6 +22,8 @@ on:
       - '**.yml'
       - '**.md'
       - 'outputs/**'
+      - 'tile-ai-server/**'
+      - 'tile-ai-agent/**'
   workflow_dispatch:      # 支持手动触发
 
 # 同一分支的连续推送只保留最新一次,取消排队中的旧运行
@@ -30,7 +38,13 @@ jobs:
   contract-lint:
     name: 契约校验 (swagger-parser / redocly / spectral / 撕裂扫描 / T-1~T-15 / AsyncAPI)
     runs-on: ubuntu-latest
-    timeout-minutes: 10
+    # 30 分钟:Maven 冷下载 + 起一次 Spring 上下文做 Java 侧比对,10 分钟不够。
+    timeout-minutes: 30
+
+    env:
+      # 本轮运行的唯一标识,同时喂给「生成比对产物」与 ci.sh 的 G6 ——
+      # check_t.py 的 T-12 会核对两者一致,免得拿上一轮的产物当本轮结论。
+      CONTRACT_DIFF_RUN_ID: ${{ github.run_id }}-${{ github.run_attempt }}
 
     steps:
       - name: 检出代码
@@ -49,10 +63,33 @@ jobs:
         with:
           python-version: '3.11'
 
+      - name: 安装 JDK 17
+        # 只为 Java 侧契约比对。ci.sh 本身仍然只要 Node + Python。
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
+          cache: maven
+          cache-dependency-path: tile-ai-server/pom.xml
+
+      - name: 生成 Java 侧契约比对产物
+        # 这一步**故意不设成裁判**:裁判是后面的 ci.sh(它的 G6 会读本步产物里的结论)。
+        # 所以这里 continue-on-error —— 比对红不红,由 ci.sh 那边统一判,免得同一个结论两处报。
+        # CONTRACT_DIFF_SIDES=java:runner 上没装 fastapi / pydantic,Python 侧跑不了,
+        #   而 Python 侧的比对产物对 T-12 不是必需的(见 openapi-verification.md §40)。
+        continue-on-error: true
+        env:
+          CONTRACT_DIFF_SIDES: java
+          GATE: '1'
+        run: bash outputs/scripts/contract-diff.sh
+
       - name: 运行契约校验
         # CI=true 会让 ci.sh 执行 `npm ci` 干净安装(严格按 lock 文件)
+        # CONTRACT_DIFF_REQUIRED=1:让 check_t.py 的 T-12 在产物缺失时判 FAIL 而不是 SKIP ——
+        #   否则生产者坏了的时候,门禁会静默地自我关闭(那正是 T-12 挂了一整期的原因)。
         env:
           CI: 'true'
+          CONTRACT_DIFF_REQUIRED: '1'
         run: bash outputs/scripts/ci.sh
 
       - name: 上传校验报告

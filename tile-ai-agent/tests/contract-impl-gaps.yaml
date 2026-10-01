@@ -1,0 +1,44 @@
+# 契约 ↔ 实现比对的「挂账 / 豁免 / 锚点」清单 —— Python 侧
+#
+# 与 Java 侧 `tile-ai-server/src/test/resources/contract-impl-gaps.yaml` **键名逐字一致**,
+# 好让两份清单可以并排评审。为什么要分成两份而不是共用一份:
+# Java 侧读的是类路径资源、Python 侧读的是同目录文件;更要紧的是**两侧的端点集不相交**
+# (Java 那侧管 /api/v1 与 /api/v1/admin,这侧只管 x-direction → Python 的 /internal/*),
+# 硬拼成一份只会多出一堆"这条对另一侧没意义"的噪声。
+#
+# 规则(与 Java 侧同一套):
+#   1. 已知未开工 → 写进 knownGaps,**必须带 source**(出处)。没出处的缺失会被单独高亮成「意外缺失」。
+#   2. 挂账里列了、这次却真的匹配上了 → 判「挂账已过期」并直接红。
+#   3. 豁免(ignoredImplPaths)必须写理由 —— 豁免要看得见,新冒出来的路由才会刺眼。
+#   4. canaries 是「必然存在」的锚点。任一条没在两侧同时匹配上 → 直接判红。
+#      防的是最隐蔽的假绿:路径拼接写错导致一条都没匹配上,报告空空如也,看起来像全对。
+#   5. fieldGaps 本轮为空 —— Python 侧的端点少(params 是 dict、响应是 dict[str,Any]),
+#      加深比对只会新增一堆「跳过」,收益为零。真正要紧的那处见 test_contract_diff.py 里
+#      直接 import OPENING_TYPES / SPACE_TYPES 的常量断言(§31.2 的唯一兜底)。
+
+canaries:
+  - POST /internal/agent/parse-layout
+
+# 实现侧不在契约内、且**有理由**的路由(理由必写)。
+ignoredImplPaths:
+  - path: /health
+    reason: "运维健康检查(架构 §12.1),不在对外契约内"
+
+# 已知未开工。source 一栏是「出处」—— 任务号或决议条目。
+knownGaps:
+  - method: POST
+    path: /internal/agent/chat
+    source: T-1.6
+    note: "AI 咨询(SSE 流式)未开工"
+  - method: POST
+    path: /internal/agent/material-map
+    source: "openapi-verification.md §30.2"
+    note: "已裁决「当前无调用方,端点保留为预留」;材质短语走 Python 内部函数"
+  - method: POST
+    path: /internal/agent/complete-parts
+    source: "T-1.9(实现落在生成消费端内部;端点无调用方,未经评审)"
+    note: "补齐走生成流程内部,Java 不调此端点"
+
+# 字段级挂账:本侧暂无(见文件头第 5 条)。写法与 Java 侧一致:
+#   - method / path / where(request|response) / field / dimension(type|enum|required) / source / note
+fieldGaps: []

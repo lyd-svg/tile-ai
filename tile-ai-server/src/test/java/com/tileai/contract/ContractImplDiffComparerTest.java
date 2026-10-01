@@ -198,6 +198,237 @@ class ContractImplDiffComparerTest {
         assertEquals(List.of("qty"), r.fieldDiffs().get(0).implOnly());
     }
 
+    // ------------------------------------------------------------ 枚举取值层
+
+    @Test
+    @DisplayName("枚举取值漂移 → 判红(§31.2 的真实形态:契约 [door,window],实现多出 bay_window)")
+    void enumValueDriftIsReported() {
+        ContractImplDiff.Result wider = diff(
+                List.of(contract("POST", "/a", objOf("type", enumOf("door", "window")), Shape.NONE)),
+                List.of(impl("POST", "/a",
+                        objOf("type", enumOf("door", "window", "bay_window")), Shape.NONE)),
+                GapRegistry.synthetic(List.of(), List.of()));
+
+        assertEquals(1, wider.mismatchesOf(ContractImplDiff.Dimension.ENUM));
+        ContractImplDiff.FieldMismatch m = wider.fieldMismatches().get(0);
+        assertEquals(ContractImplDiff.Dimension.ENUM, m.dimension());
+        assertEquals(ContractImplDiff.Where.REQUEST, m.where());
+        assertEquals("(顶层).type", m.fieldPath());
+        assertTrue(wider.hasFindings());
+
+        // 反向也算漂移:实现比契约窄 —— 照契约传来的值会被实现拒掉
+        ContractImplDiff.Result narrower = diff(
+                List.of(contract("POST", "/a", objOf("type", enumOf("door", "window")), Shape.NONE)),
+                List.of(impl("POST", "/a", objOf("type", enumOf("door")), Shape.NONE)),
+                GapRegistry.synthetic(List.of(), List.of()));
+        assertEquals(1, narrower.mismatchesOf(ContractImplDiff.Dimension.ENUM));
+        assertTrue(narrower.hasFindings());
+    }
+
+    @Test
+    @DisplayName("枚举取值一致 → 不报(否则新维度会天天假红)")
+    void sameEnumValuesAreNotReported() {
+        ContractImplDiff.Result r = diff(
+                List.of(contract("POST", "/a", objOf("type", enumOf("door", "window")), Shape.NONE)),
+                List.of(impl("POST", "/a", objOf("type", enumOf("window", "door")), Shape.NONE)),
+                GapRegistry.synthetic(List.of(), List.of()));
+
+        assertEquals(0, r.fieldMismatches().size(), "取值集合相同,与顺序无关");
+        assertFalse(r.hasFindings());
+    }
+
+    @Test
+    @DisplayName("契约声明了取值、实现侧推不出(走后台字典)→ 记跳过,既不算通过也不算红")
+    void enumWithoutImplSourceIsSkippedNotPassed() {
+        ContractImplDiff.Result r = diff(
+                List.of(contract("POST", "/a", objOf("spaceType", enumOf("floor", "wall")), Shape.NONE)),
+                List.of(impl("POST", "/a",
+                        objOf("spaceType", scalar(Shape.JsonType.STRING)), Shape.NONE)),
+                GapRegistry.synthetic(List.of(), List.of()));
+
+        assertEquals(0, r.fieldMismatches().size(), "推不出不等于不一致");
+        assertEquals(1, r.skipped().size(), "但也不能算通过 —— 必须出现在跳过区并计数");
+        assertEquals(ContractImplDiff.Group.ENUM_UNKNOWN, r.skipped().get(0).group());
+        assertFalse(r.hasFindings());
+    }
+
+    // ------------------------------------------------------------ 类型层
+
+    @Test
+    @DisplayName("类型:JSON Schema 里 integer ⊂ number,只有反方向才算差异")
+    void integerSatisfiesNumberContract() {
+        ContractImplDiff.Result ok = diff(
+                List.of(contract("GET", "/a", Shape.NONE, objOf("price", scalar(Shape.JsonType.NUMBER)))),
+                List.of(impl("GET", "/a", Shape.NONE, objOf("price", scalar(Shape.JsonType.INTEGER)))),
+                GapRegistry.synthetic(List.of(), List.of()));
+        assertEquals(0, ok.mismatchesOf(ContractImplDiff.Dimension.TYPE),
+                "契约 number 收实现 integer 是合法的,不该报");
+
+        ContractImplDiff.Result bad = diff(
+                List.of(contract("GET", "/a", Shape.NONE, objOf("qty", scalar(Shape.JsonType.INTEGER)))),
+                List.of(impl("GET", "/a", Shape.NONE, objOf("qty", scalar(Shape.JsonType.NUMBER)))),
+                GapRegistry.synthetic(List.of(), List.of()));
+        assertEquals(1, bad.mismatchesOf(ContractImplDiff.Dimension.TYPE),
+                "契约 integer 却给了 number,小数传得进来 —— 必须报");
+        assertTrue(bad.hasFindings());
+    }
+
+    @Test
+    @DisplayName("类型:任一侧说不出类型就不比(不猜,也不假装一致)")
+    void unknownTypeIsNotCompared() {
+        // Shape.SCALAR 是"类型未知的裸标量",实现侧大量使用
+        ContractImplDiff.Result r = diff(
+                List.of(contract("GET", "/a", Shape.NONE, objOf("id", scalar(Shape.JsonType.STRING)))),
+                List.of(impl("GET", "/a", Shape.NONE, objOf("id", Shape.SCALAR))),
+                GapRegistry.synthetic(List.of(), List.of()));
+
+        assertEquals(0, r.mismatchesOf(ContractImplDiff.Dimension.TYPE));
+        assertFalse(r.hasFindings());
+    }
+
+    // ------------------------------------------------------------ 叶子计数(别把"没判过"混进"比过")
+
+    @Test
+    @DisplayName("叶子计数:两侧类型都说得出 → 记「比过」")
+    void typedLeafIsCountedAsCompared() {
+        ContractImplDiff.Result r = diff(
+                List.of(contract("GET", "/a", Shape.NONE, objOf("id", scalar(Shape.JsonType.STRING)))),
+                List.of(impl("GET", "/a", Shape.NONE, objOf("id", scalar(Shape.JsonType.STRING)))),
+                GapRegistry.synthetic(List.of(), List.of()));
+        assertEquals(1, r.comparedLeaves());
+        assertEquals(0, r.uncomparedLeaves(), "判过的叶子不该被算成「没判过」");
+    }
+
+    @Test
+    @DisplayName("叶子计数:一侧类型推不出 / 深度截断 → 记「没判过」,不得算进「比过」")
+    void untypedLeafIsCountedAsUncompared() {
+        // 这两个数拆开的理由:早先只有一个计数器,标签写着"未对位",实际把**所有**叶子
+        // 都算进去了 —— 于是"没判过"被"比过"的几百分淹没,而"跳过 ≠ 通过"就丢在这里。
+        ContractImplDiff.Result untyped = diff(
+                List.of(contract("GET", "/a", Shape.NONE, objOf("id", scalar(Shape.JsonType.STRING)))),
+                List.of(impl("GET", "/a", Shape.NONE, objOf("id", Shape.SCALAR))),
+                GapRegistry.synthetic(List.of(), List.of()));
+        assertEquals(0, untyped.comparedLeaves(), "类型推不出的叶子没有真的判过");
+        assertEquals(1, untyped.uncomparedLeaves());
+
+        ContractImplDiff.Result truncated = diff(
+                List.of(contract("GET", "/a", Shape.NONE, objOf("deep", Shape.TRUNCATED))),
+                List.of(impl("GET", "/a", Shape.NONE, objOf("deep", Shape.TRUNCATED))),
+                GapRegistry.synthetic(List.of(), List.of()));
+        assertEquals(0, truncated.comparedLeaves(), "深度截断的叶子属「没判过」");
+        assertEquals(1, truncated.uncomparedLeaves());
+        assertFalse(truncated.hasFindings(),
+                "「没判过」不是分叉、不判红 —— 但它必须被计数,绝不能当成一致");
+    }
+
+    // ------------------------------------------------------------ 必填层
+
+    @Test
+    @DisplayName("必填只在请求体侧比:响应侧即便写了 required 也不算")
+    void requiredIsOnlyComparedOnRequestSide() {
+        ContractImplDiff.Result response = diff(
+                List.of(contract("GET", "/a", Shape.NONE, requiredObj(Set.of("id"), "id"))),
+                List.of(impl("GET", "/a", Shape.NONE, obj("id"))),
+                GapRegistry.synthetic(List.of(), List.of()));
+        assertEquals(0, response.mismatchesOf(ContractImplDiff.Dimension.REQUIRED),
+                "Java 的响应没有「必填」概念,不该比");
+
+        ContractImplDiff.Result request = diff(
+                List.of(contract("POST", "/a", requiredObj(Set.of("sku"), "sku"), Shape.NONE)),
+                List.of(impl("POST", "/a", obj("sku"), Shape.NONE)),
+                GapRegistry.synthetic(List.of(), List.of()));
+        assertEquals(1, request.mismatchesOf(ContractImplDiff.Dimension.REQUIRED));
+        assertEquals(ContractImplDiff.Where.REQUEST, request.fieldMismatches().get(0).where());
+        assertTrue(request.hasFindings());
+    }
+
+    // ------------------------------------------------------------ 字段级挂账(三段规则)
+
+    @Test
+    @DisplayName("字段级挂账被命中 → 折叠进「已知差异」,可见但不判红")
+    void fieldGapHitIsVisibleButNotRed() {
+        GapRegistry.FieldGap gap = new GapRegistry.FieldGap(
+                "POST", "/a", "request", "type", "enum", "T-9.9", "有意大一圈");
+
+        ContractImplDiff.Result r = diff(
+                List.of(contract("POST", "/a", objOf("type", enumOf("door", "window")), Shape.NONE)),
+                List.of(impl("POST", "/a",
+                        objOf("type", enumOf("door", "window", "bay_window")), Shape.NONE)),
+                GapRegistry.syntheticWithFieldGaps(List.of(), List.of(), List.of(gap)));
+
+        assertEquals(1, r.fieldGapHits().size());
+        assertEquals(0, r.fieldMismatches().size(), "挂了账的不算意外分叉");
+        assertTrue(r.staleFieldGaps().isEmpty());
+        assertTrue(r.unevaluatedFieldGaps().isEmpty());
+        assertFalse(r.hasFindings());
+    }
+
+    @Test
+    @DisplayName("字段级挂账过期(本次已一致)→ 判红,豁免表不许变成漂移的藏身处")
+    void staleFieldGapIsRed() {
+        GapRegistry.FieldGap gap = new GapRegistry.FieldGap(
+                "POST", "/a", "request", "type", "enum", "T-9.9", "曾经不一致");
+
+        ContractImplDiff.Result r = diff(
+                List.of(contract("POST", "/a", objOf("type", enumOf("door", "window")), Shape.NONE)),
+                List.of(impl("POST", "/a", objOf("type", enumOf("door", "window")), Shape.NONE)),
+                GapRegistry.syntheticWithFieldGaps(List.of(), List.of(), List.of(gap)));
+
+        assertEquals(1, r.staleFieldGaps().size());
+        assertTrue(r.hasFindings());
+    }
+
+    @Test
+    @DisplayName("字段级挂账未生效(端点还没开工)→ 单列,不判红")
+    void unevaluatedFieldGapOnMissingEndpointIsNotRed() {
+        GapRegistry.FieldGap gap = new GapRegistry.FieldGap(
+                "POST", "/a", "request", "type", "enum", "T-9.9", "还没开工");
+
+        ContractImplDiff.Result r = diff(
+                List.of(contract("POST", "/a", objOf("type", enumOf("door", "window")), Shape.NONE),
+                        contract("POST", "/keep", Shape.NONE, Shape.NONE)),
+                List.of(impl("POST", "/keep", Shape.NONE, Shape.NONE)),
+                GapRegistry.syntheticWithFieldGaps(
+                        List.of(new GapRegistry.Gap("POST", "/a", "T-9.9", "还没开工")),
+                        List.of(), List.of(gap)));
+
+        assertEquals(1, r.unevaluatedFieldGaps().size());
+        assertTrue(r.staleFieldGaps().isEmpty(),
+                "端点还没做时,挂账不许被误判「过期」—— 否则会天天红");
+        assertFalse(r.hasFindings());
+    }
+
+    @Test
+    @DisplayName("字段级挂账未生效(维度推不出)→ 同样不判红")
+    void unevaluatedFieldGapOnUninferableDimensionIsNotRed() {
+        // 实现侧是走后台字典的字段,枚举取值推不出 —— 这一处本次根本没判过
+        GapRegistry.FieldGap gap = new GapRegistry.FieldGap(
+                "POST", "/a", "request", "spaceType", "enum", "T-9.9", "字典字段");
+
+        ContractImplDiff.Result r = diff(
+                List.of(contract("POST", "/a", objOf("spaceType", enumOf("floor", "wall")), Shape.NONE)),
+                List.of(impl("POST", "/a",
+                        objOf("spaceType", scalar(Shape.JsonType.STRING)), Shape.NONE)),
+                GapRegistry.syntheticWithFieldGaps(List.of(), List.of(), List.of(gap)));
+
+        assertEquals(1, r.unevaluatedFieldGaps().size(),
+                "「没判过」不能被当成「判过且一致」");
+        assertTrue(r.staleFieldGaps().isEmpty());
+        assertFalse(r.hasFindings());
+    }
+
+    @Test
+    @DisplayName("字段级挂账:重复键直接抛(两条挂账抢同一处,谁也说不清哪条算数)")
+    void duplicateFieldGapKeyIsRejected() {
+        GapRegistry.FieldGap a = new GapRegistry.FieldGap(
+                "POST", "/a", "request", "type", "enum", "T-1", "第一条");
+        GapRegistry.FieldGap b = new GapRegistry.FieldGap(
+                "POST", "/a", "request", "type", "enum", "T-2", "第二条");
+
+        assertThrows(IllegalStateException.class,
+                () -> GapRegistry.syntheticWithFieldGaps(List.of(), List.of(), List.of(a, b)));
+    }
+
     // ------------------------------------------------------------ 真契约(不启 Spring)
 
     @Test
@@ -289,6 +520,24 @@ class ContractImplDiffComparerTest {
         Map<String, Shape> fields = new LinkedHashMap<>();
         fields.put(name, value);
         return Shape.object(fields);
+    }
+
+    /** 一个"必填集合非空"的对象 —— 顶上那条 Shape.object(fields) 不带必填。 */
+    private static Shape requiredObj(Set<String> required, String... names) {
+        Map<String, Shape> fields = new LinkedHashMap<>();
+        for (String name : names) {
+            fields.put(name, Shape.SCALAR);
+        }
+        return Shape.object(fields, required);
+    }
+
+    private static Shape scalar(Shape.JsonType type) {
+        return Shape.scalar(type, Set.of());
+    }
+
+    /** 只有这几个取值可填的标量(契约 enum / 实现 @Pattern、Java enum 都归到这里)。 */
+    private static Shape enumOf(String... values) {
+        return Shape.scalar(Shape.JsonType.STRING, Set.of(values));
     }
 
     private static ContractEndpoint byKey(List<ContractEndpoint> all, String method, String path) {

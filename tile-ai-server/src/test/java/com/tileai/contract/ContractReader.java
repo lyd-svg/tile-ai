@@ -6,6 +6,7 @@ import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
+import java.util.TreeSet;
 
 import com.tileai.RepoDocs;
 
@@ -22,8 +23,10 @@ import com.tileai.RepoDocs;
  * <h2>两处刻意的取舍</h2>
  *
  * <ul>
- *   <li><b>深度上限 2</b> —— 比到"顶层字段 + 数组元素字段"为止。再深就报
- *       {@link Shape.Kind#TRUNCATED},不假装比过。</li>
+ *   <li><b>深度上限 5</b>(2026-10-01 由 2 抬高) —— 抬高的唯一理由是
+ *       {@code GenerateRequest.layout.spaces[].openings[].type} 落在第 5 层,而契约的
+ *       {@code OpeningType}(door/window)正是 §31.2 那次真实分叉的形态;深度 2 根本比不到它。
+ *       再深就报 {@link Shape.Kind#TRUNCATED},不假装比过。</li>
  *   <li><b>只认 {@code application/json}</b> —— 其余 media type(SSE、二进制)一律
  *       记「无法比对」,不猜。</li>
  * </ul>
@@ -45,8 +48,13 @@ final class ContractReader {
     private static final Set<String> METHODS =
             Set.of("get", "post", "put", "patch", "delete");
 
-    private static final int MAX_DEPTH = 2;
+    /** 见类注释:深度 5 是为了够到 {@code layout.spaces[].openings[].type}。 */
+    private static final int MAX_DEPTH = 5;
     private static final int MAX_REF_DEPTH = 20;
+
+    /** 契约里算作"标量"的 JSON 类型。 */
+    private static final Set<String> SCALAR_TYPES =
+            Set.of("string", "integer", "number", "boolean");
 
     private final Map<String, Map<String, Object>> docs = new HashMap<>();
 
@@ -160,8 +168,8 @@ final class ContractReader {
     /**
      * 请求体 {@code application/json} 的形态。无请求体 → {@link Shape#NONE}。
      *
-     * <p>只到请求体的直接属性(深度 1)—— 实际用到的请求体都是一层对象,
-     * 再深既无人读也徒增噪声。
+     * <p>深度与响应侧同一口径({@link #MAX_DEPTH})—— 请求体也有嵌套对象
+     * (如 {@code /generate} 的 {@code layout.spaces[].openings[].type})。
      */
     private Shape requestShape(String file, Map<String, Object> op) {
         Object requestBody = op.get("requestBody");
@@ -238,17 +246,16 @@ final class ContractReader {
         Map<String, Object> props = propertiesOf(schema);
         if (props != null && !props.isEmpty()) {
             // 入口那句 `depth > MAX_DEPTH` 已经兜住了超深的情况;这里不能再收一道,
-            // 否则"数组元素对象的字段"(正好落在第 2 层)会被误判成超限。
+            // 否则"数组元素对象的字段"(正好落在边界那一层)会被误判成超限。
             Map<String, Shape> fields = new LinkedHashMap<>();
             for (Map.Entry<String, Object> e : props.entrySet()) {
                 fields.put(e.getKey(), shapeOf(file, e.getValue(), depth + 1));
             }
-            return Shape.object(fields);
+            return Shape.object(fields, requiredOf(schema));
         }
-        if (schema.containsKey("enum")
-                || Set.of("string", "integer", "number", "boolean")
-                        .contains(str(schema.get("type")))) {
-            return Shape.SCALAR;
+        String declared = str(schema.get("type"));
+        if (schema.containsKey("enum") || SCALAR_TYPES.contains(declared)) {
+            return Shape.scalar(jsonType(declared), enumOf(schema));
         }
         // 没有 properties 的 object(如 additionalProperties: true)或 `items: {}` 这类
         // 开放占位:契约没声明字段,不是"字段为空"
@@ -262,6 +269,46 @@ final class ContractReader {
         }
         Object props = schema.get("properties");
         return props instanceof Map ? (Map<String, Object>) props : null;
+    }
+
+    /** 契约声明的 {@code type} → {@link Shape.JsonType}。《b>支持 OpenAPI 3.1 的
+     * {@code type: [string, "null"]} 写法</b>:认不出就回 {@code UNKNOWN},不猜。 */
+    private static Shape.JsonType jsonType(String declared) {
+        return switch (declared) {
+            case "string" -> Shape.JsonType.STRING;
+            case "integer" -> Shape.JsonType.INTEGER;
+            case "number" -> Shape.JsonType.NUMBER;
+            case "boolean" -> Shape.JsonType.BOOLEAN;
+            case "object" -> Shape.JsonType.OBJECT;
+            case "array" -> Shape.JsonType.ARRAY;
+            default -> Shape.JsonType.UNKNOWN;
+        };
+    }
+
+    /** 契约声明的 {@code enum:[...]};没写时为空集。 */
+    private static Set<String> enumOf(Map<String, Object> schema) {
+        Object node = schema.get("enum");
+        if (!(node instanceof List<?> list) || list.isEmpty()) {
+            return Set.of();
+        }
+        Set<String> out = new TreeSet<>();
+        for (Object item : list) {
+            out.add(String.valueOf(item));
+        }
+        return out;
+    }
+
+    /** 契约声明的 {@code required:[...]};没写时为空集。allOf 已在 {@code flattenInto} 里合并去重。 */
+    private static Set<String> requiredOf(Map<String, Object> schema) {
+        Object node = schema.get("required");
+        if (!(node instanceof List<?> list) || list.isEmpty()) {
+            return Set.of();
+        }
+        Set<String> out = new TreeSet<>();
+        for (Object item : list) {
+            out.add(String.valueOf(item));
+        }
+        return out;
     }
 
     // ------------------------------------------------------------ $ref 与 allOf

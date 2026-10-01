@@ -10,6 +10,9 @@
 #   3. 豁免(ignoredImplPaths)必须写理由。豁免要看得见,新冒出来的路由才会刺眼。
 #   4. canaries 是「必然存在」的锚点。任一条没在两侧同时匹配上 → 直接判红。
 #      防的是最隐蔽的假绿:路径拼接写错导致一条都没匹配上,报告空空如也,看起来像全对。
+#   5. fieldGaps 是**字段级**挂账(2026-10-01 新增):路由两侧都在,但某个字段在
+#      类型 / 枚举取值 / 必填上确实对不上,且知道为什么。每条同样必须带 source;
+#      本次已经一致了 → 判「挂账已过期」(无条件红);本次比不到 → 「未生效」,不红。
 
 canaries:
   - POST /api/v1/auth/login
@@ -95,3 +98,57 @@ knownGaps:
     path: /api/v1/admin/logs
     source: PRD §10.3 未展开字段(见 tile-ai-tasks.md:934)
     note: 操作日志列表未开工
+
+# 字段级挂账:端点两侧都在,但这一处字段在某个维度上确实不一致。
+# 每条必须带 source(出处);本次已经一致了会被判「挂账已过期」并直接红。
+# 写法(where ∈ request|response;dimension ∈ type|enum|required;required 只能配 request):
+#
+#   - method: POST
+#     path: /api/v1/quote/calc
+#     where: request
+#     field: parts[].area          # 报告里的字段路径,去掉 (顶层). 前缀
+#     dimension: required
+#     source: "§36.8;openapi-c.yaml QuoteCalcRequest"
+#     note: "契约标可选,实现有意必填"
+#
+# ⚠️ 这些**不是实现 bug,是契约写得松**。契约在这几处的内联 items 对象上没有写 required
+# (对比:`Opening` 自己写了 required:[type,w,h]),而实现要求必填是**有意的** ——
+# 放宽会让用户拿到静默错误的报价单或空图行,那比 400 更糟。
+# 正确的终局是**收紧契约**,但那要改 4 份 YAML,不在本轮范围(本次一个字都不动)。
+# 所以在收口前,此处以「可见、带出处、过期即红」的方式登记,而不是把分叉藏起来。
+fieldGaps:
+
+  # ---- POST /api/v1/quote/calc:该请求体里没有户型,服务端推不出面积 ----
+  - method: POST
+    path: /api/v1/quote/calc
+    where: request
+    field: "parts[].area"
+    dimension: required
+    source: "§36.8;openapi-common.yaml PartSelection.required=[part,sku];QuoteCalcRequest.PartSelection.area"
+    note: "契约标可选(理由写着「可由服务端依户型计算」),但 /quote/calc 请求里没有户型 —— 缺失时当 0 会静默报出偏低价,故实现有意必填"
+
+  - method: POST
+    path: /api/v1/quote/calc
+    where: request
+    field: "openings[].part"
+    dimension: required
+    source: "§36.8;openapi-c.yaml QuoteCalcRequest.openings[].part"
+    note: "开口扣减要按部位归属;part 为空时 QuoteService 会静默跳过扣减(面积偏大、报价偏高),故实现有意必填"
+
+  # ---- 后台 SKU 新增 / 编辑:图片行没有 URL 就没有意义(t_product_image.url) ----
+  - method: POST
+    path: /api/v1/admin/products
+    where: request
+    field: "images[].url"
+    dimension: required
+    source: "§36.8;openapi-admin.yaml ProductUpsert.images[].url;ProductUpsertRequest.ImageItem.url"
+    note: "契约在内联 items 上没写 required;实现要求非空,否则会往 t_product_image 落一行无地址的图"
+
+  - method: PUT
+    path: /api/v1/admin/products/{id}
+    where: request
+    field: "images[].url"
+    dimension: required
+    source: "§36.8;openapi-admin.yaml ProductUpsert.images[].url;ProductUpsertRequest.ImageItem.url"
+    note: "同上,编辑路径共用 ProductUpsert"
+

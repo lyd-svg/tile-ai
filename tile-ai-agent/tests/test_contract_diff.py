@@ -1,15 +1,22 @@
-"""契约 ↔ 实现比对(**Python 侧**,路线图 T-2.1 的骨架)。
+"""契约 ↔ 实现比对(**Python 侧**,路线图 T-2.1)。
 
-Java 侧那半在 `tile-ai-server` 的 `com.tileai.contract.ContractImplDiffTest` 里。
-两边**口径一致**:比**路径 + HTTP 方法 + 字段名**,不比类型 / 必填 / 枚举值;
-「跳过 ≠ 通过」;已知未开工必须带出处,没出处的缺失单独高亮。
+Java 侧那半在 `tile-ai-server` 的 `com.tileai.contract.ContractImplDiffTest` 里 ——
+那侧已经比到**类型 / 必填 / 枚举值**(2026-10-01 收口,见 openapi-verification.md §40)。
+**本侧刻意保持轻**:归属 Python 的端点只有 4 条、仅 1 条实装,请求体是 `text` + `params: dict`、
+响应是 `dict[str, Any]` —— 再往里比对只会产出一堆「跳过」而不是信号。
+两侧**口径一致**的部分:比**路径 + HTTP 方法 + 字段名**;「跳过 ≠ 通过」;
+已知未开工必须带出处,没出处的缺失单独高亮;挂账过期判红。
 
 **实现侧从哪来**:`app.openapi()` —— FastAPI 按真实路由与 pydantic 模型生成,
 是"实现真实长什么样"的第一手材料,不需要起服务。
 
-**本骨架覆盖不到**(不许读成「已绑住」):类型 / 必填 / 枚举值 · 状态码与业务错误码 ·
-状态机与幂等 · SSE 事件集(`/internal/agent/chat` 的 text/event-stream 完全不解析)·
+**本侧覆盖不到**(不许读成「已绑住」):类型 / 必填 / 状态码与业务错误码 · 状态机与幂等 ·
+SSE 事件集(`/internal/agent/chat` 的 text/event-stream 完全不解析)·
 跨文件 `$ref` 里更深的结构。SSE 那条尤其要记住:契约里那个端点的价值几乎全在事件集上。
+
+**唯一在 Python 侧比枚举值的地方**:`test_opening_and_space_types_match_contract` ——
+`app.openapi()` 里根本没有这两个常量,只能直接 import 模块常量比对。
+它是 §31.2 那次真实分叉(实现多出 `bay_window`/`other`)**唯一**的兜底。
 
 **为什么红/不红**:默认只出清单(报告落 `outputs/reports/contract-impl-diff-python.md`),
 真正红的是"工具自己不可信"的两类 —— 锚点未命中、挂账已过期。
@@ -26,35 +33,65 @@ from typing import Any
 
 import yaml
 
+from app.agent import layout_parse
 from app.main import app
 
 REPO_ROOT = Path(__file__).resolve().parents[2]
 CONTRACT_FILE = "openapi-internal.yaml"
 COMMON_FILE = "openapi-common.yaml"
 REPORT = REPO_ROOT / "outputs" / "reports" / "contract-impl-diff-python.md"
+GAPS_FILE = Path(__file__).resolve().parent / "contract-impl-gaps.yaml"
 
 METHODS = {"get", "post", "put", "patch", "delete"}
 
-#: 实现侧不在契约内、且**有理由**的路由(理由必写,豁免要看得见)。
-IGNORED_IMPL_PATHS: dict[str, str] = {
-    "/health": "运维健康检查(架构 §12.1),不在对外契约内",
-}
 
-#: 锚点:必然两侧都在。任一条没匹配上 → 判红(说明比对本身没跑对,别信"没问题")。
-CANARIES = ["POST /internal/agent/parse-layout"]
+# ----------------------------------------------------------------------
+# 挂账 / 豁免 / 锚点:从 contract-impl-gaps.yaml 读(键名与 Java 侧逐字一致)
+# ----------------------------------------------------------------------
 
-#: 已知未开工 → (出处, 说明)。**出处必填** —— 不许裸挂。
-KNOWN_GAPS: dict[tuple[str, str], tuple[str, str]] = {
-    ("POST", "/internal/agent/chat"): ("T-1.6", "AI 咨询(SSE 流式)未开工"),
-    ("POST", "/internal/agent/material-map"): (
-        "openapi-verification.md §30.2",
-        "已裁决「当前无调用方,端点保留为预留」;材质短语走 Python 内部函数",
-    ),
-    ("POST", "/internal/agent/complete-parts"): (
-        "T-1.9(实现落在生成消费端内部;端点无调用方,未经评审)",
-        "补齐走生成流程内部,Java 不调此端点",
-    ),
-}
+def _load_gaps() -> tuple[list[str], dict[str, str], dict[tuple[str, str], tuple[str, str]]]:
+    """读清单并当场校验 —— 挂账不许裸挂、豁免不许没理由、锚点不许为空。
+
+    读不到 / 不合格就抛。**绝不退化成"没有挂账"** —— 那会让全部未开工端点瞬间变成
+    「意外缺失」,或者更糟:清单被清空时缺失会被静默当成正常。
+    """
+    if not GAPS_FILE.exists():
+        raise AssertionError(
+            f"找不到 {GAPS_FILE.name} —— 挂账清单不能缺,否则缺失的端点无从区分"
+            "「未开工」与「出事了」")
+
+    with GAPS_FILE.open(encoding="utf-8") as handle:
+        doc = yaml.safe_load(handle) or {}
+
+    canaries: list[str] = []
+    for item in doc.get("canaries") or []:
+        text = str(item).strip()
+        if not re.match(r"(?i)(GET|POST|PUT|PATCH|DELETE)\s+/.*", text):
+            raise AssertionError(f"锚点格式应为 \"METHOD /path\",实际是:{text}")
+        canaries.append(text)
+    if not canaries:
+        raise AssertionError("canaries 为空 —— 没有锚点,路径拼接写错时会静默全绿")
+
+    ignored: dict[str, str] = {}
+    for item in doc.get("ignoredImplPaths") or []:
+        path, reason = str(item.get("path", "")).strip(), str(item.get("reason", "")).strip()
+        if not path or not reason:
+            raise AssertionError(f"豁免项必须同时写 path 与 reason:{item}")
+        ignored[path] = reason
+
+    gaps: dict[tuple[str, str], tuple[str, str]] = {}
+    for item in doc.get("knownGaps") or []:
+        method = str(item.get("method", "")).strip().upper()
+        path = str(item.get("path", "")).strip()
+        source = str(item.get("source", "")).strip()
+        note = str(item.get("note", "")).strip()
+        if not method or not path.startswith("/"):
+            raise AssertionError(f"挂账项缺 method/path:{item}")
+        if not source:
+            raise AssertionError(f"挂账项缺 source(出处),不许裸挂:{method} {path}")
+        gaps[(method, path)] = (source, note)
+
+    return canaries, ignored, gaps
 
 
 # ----------------------------------------------------------------------
@@ -231,6 +268,17 @@ def _normalize(path: str) -> str:
     return path if path.startswith("/") else "/" + path
 
 
+# 清单里的路径统一走 _normalize,好与比对时构造的键逐字对得上。
+# (定义在这里而不是文件头的 import 处,是因为 _load_gaps 之外还要用 _normalize。)
+_CANARIES, _IGNORED, _GAPS = _load_gaps()
+CANARIES: list[str] = _CANARIES
+IGNORED_IMPL_PATHS: dict[str, str] = {_normalize(p): r for p, r in _IGNORED.items()}
+KNOWN_GAPS: dict[tuple[str, str], tuple[str, str]] = {
+    (m, _normalize(p)): v for (m, p), v in _GAPS.items()
+}
+
+
+
 # ----------------------------------------------------------------------
 # 比对
 # ----------------------------------------------------------------------
@@ -333,10 +381,12 @@ def _diff(contract: dict[tuple[str, str], dict[str, Any]], impl: list[Impl]) -> 
 
 def _render(result: Result) -> str:
     lines = [
-        "# 契约 ↔ 实现比对清单(Python 侧,T-2.1 骨架)",
+        "# 契约 ↔ 实现比对清单(Python 侧,T-2.1)",
         "",
         "> 由 `tests/test_contract_diff.py` 自动生成,请勿手改。",
-        "> 比对范围:**路径 + HTTP 方法 + 字段名**;不比类型 / 必填 / 枚举值。",
+        "> 比对范围:**路径 + HTTP 方法 + 字段名**;不比类型 / 必填 / 状态码 / 幂等。",
+        "> 例外:`OPENING_TYPES` / `SPACE_TYPES` 两个模块常量与契约 enum **严格相等**,"
+        "由 `test_opening_and_space_types_match_contract` 钉住(§31.2 的唯一兜底)。",
         "",
         "## 页眉计数",
         "",
@@ -421,6 +471,32 @@ def test_python_service_exposes_no_public_route():
     offenders = [
         endpoint.brief
         for endpoint in _impl_endpoints()
-        if not endpoint.path.startswith("/internal/") and endpoint.path not in IGNORED_IMPL_PATHS
+        if not endpoint.path.startswith("/internal/")
+        and _normalize(endpoint.path) not in IGNORED_IMPL_PATHS
     ]
     assert not offenders, f"Python 服务出现了契约外的非 /internal 路由:{offenders}"
+
+
+def test_opening_and_space_types_match_contract():
+    """§31.2 的唯一兜底:模块常量必须与契约 enum **严格相等**。
+
+    为什么不能用 OpenAPI 反射做这件事:这两个常量只以模块常量的形式活在
+    `app/agent/layout_parse.py` 里,`app.openapi()` 生成的 schema 里根本没有它们
+    (请求体是 `text` + `params: dict`,响应是 `dict[str, Any]`)。所以只能直接 import 常量比。
+
+    §31.2 记的真实事故:实现侧多出 `bay_window` / `other`,契约只有 `[door, window]`,
+    **当时没有任何门禁会因此变红**。这条断言就是那块补丁 —— 它不比对"包含",
+    只比对**相等**:多了少了都红。
+    """
+    common = _read(COMMON_FILE)
+    contract_opening = common["components"]["schemas"]["OpeningType"]["enum"]
+    contract_space = common["components"]["schemas"]["SpaceType"]["enum"]
+
+    assert list(layout_parse.OPENING_TYPES) == list(contract_opening), (
+        "layout_parse.OPENING_TYPES 与契约 common.OpeningType.enum 不一致:"
+        f"实现={list(layout_parse.OPENING_TYPES)} 契约={list(contract_opening)};"
+        "多出来的值会被 Java 侧 LayoutModel 校验拒收")
+
+    assert list(layout_parse.SPACE_TYPES) == list(contract_space), (
+        "layout_parse.SPACE_TYPES 与契约 common.SpaceType.enum(内置默认值)不一致:"
+        f"实现={list(layout_parse.SPACE_TYPES)} 契约={list(contract_space)}")

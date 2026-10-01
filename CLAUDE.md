@@ -75,7 +75,8 @@ tile-ai-prd.md                需求            ← 冲突时以 PRD 为准
 | 异步消息体与投递语义 | `asyncapi-internal.yaml` | |
 | 某个任务做什么、验收标准 | `tile-ai-tasks.md` | 任务卡片(卡片下方有进度块) |
 | **现在做到哪、还差什么、怎么验** | **`tile-ai-roadmap.md`** | §1 现状 · §2 剩余步骤 · §4 未解决 |
-| 某个决策**为什么**这么定 | `openapi-verification.md` | §7 裁决 · §9 · §22–§29 |
+| 某个决策**为什么**这么定 | `openapi-verification.md` | §7 裁决 · §9 · §22–§29 · **§40**(契约↔实现对账) |
+| **契约与实现到底对不对得上、比了什么** | `openapi-verification.md` | **§36**(骨架) · **§40**(收口:扩维 + CI 必拦) |
 | 门禁脚本、Redocly 配置、诊断工具 | `outputs/scripts/` · `redocly.yaml` | |
 
 > `tile-ai-roadmap.md` 是**派生视图**,不产生新决策;与任务卡片冲突时**以卡片为准**。
@@ -142,6 +143,9 @@ tile-ai-prd.md                需求            ← 冲突时以 PRD 为准
 3. **只有 `ci.sh` 里的 7 个门禁是判据**;`outputs/scripts/` 下其余脚本是诊断工具,
    **不参与成败判定**。(其中 `scan_flow.py` 结论不可信 —— 有假阳也有假阴;
    判断逗号撕裂请用 `detect_corruption.py`。)
+   ⚠️ **一个例外(2026-10-01 起)**:`contract-diff.sh` **不再是纯诊断工具** ——
+   它产出 `outputs/reports/contract-impl-diff.json`,而 **G6 的 T-12 读这份产物判 PASS/FAIL**。
+   所以跑 `ci.sh` **之前要先跑它**(CI 里已接好;本地要自己记得)。**门禁仍是 7 个,没有 G8。**
 
 4. **G6(T-1~T-15)检测不到语法级缺陷**。实测注入一处逗号撕裂后,G6 仍 PASS,
    而 G1–G5 全 FAIL。这 15 条查的是**语义一致性**,不覆盖结构合法性。
@@ -158,7 +162,9 @@ tile-ai-prd.md                需求            ← 冲突时以 PRD 为准
 # 改动契约后必须跑 —— 7 个门禁全过才算完
 bash outputs/scripts/ci.sh          # Windows: D:\软件\Git\bin\bash.exe
 
-# 新增或改动接口后**必须跑一次、并看清单** —— 契约 ↔ 实现比对(比路径 + 方法 + 字段名)
+# 新增或改动接口后**必须先跑它、再看清单** —— 契约 ↔ 实现比对
+# 比:路径 + 方法 + 字段名 + 类型 + 必填(仅请求体)+ 枚举取值
+# 默认 GATE=1 会判红;它产出的 json 是 G6 的 T-12 的判据,所以要在 ci.sh **之前**跑
 bash outputs/scripts/contract-diff.sh   # 清单落 outputs/reports/
 
 # 首次克隆需启用本地钩子(每个克隆一次,core.hooksPath 不入版本库)
@@ -167,9 +173,10 @@ git config core.hooksPath .githooks
 
 **校验报告**落在 `outputs/reports/`(已 gitignore,可随时重新生成)。
 
-比对**只出清单、不阻断构建**(2026-09-30 定:开关保持默认关,不自动判红)——
-所以它是**靠人跑、靠人看**的规矩;**清单里「无法比对」那几行尤其要人看 —— 跳过 ≠ 通过**。
-范围、豁免与**它抓不到什么**见 `openapi-verification.md` §36(枚举值漂移这类分叉它 100% 漏掉)。
+比对**会判红、CI 必拦**(2026-10-01 起,推翻了 2026-09-30 的"默认关";裁决见
+`openapi-verification.md` **§40**)。本地 `mvn test` 仍不被打断 —— 测试内的开关保持默认关。
+**清单里「无法比对」那几行、以及「未对位的叶子 · 没判过」那个数,尤其要人看 —— 跳过 ≠ 通过。**
+范围、豁免与**它抓不到什么**见 §36 与 §40(状态码、SSE 事件集、`Map`、深于 5 层仍覆盖不到)。
 
 **本机环境**(详见 `tile-ai-roadmap.md` §5):
 

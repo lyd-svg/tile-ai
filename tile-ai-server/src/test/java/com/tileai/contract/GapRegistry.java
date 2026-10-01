@@ -5,6 +5,7 @@ import java.util.ArrayList;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.Set;
 
 import org.yaml.snakeyaml.Yaml;
 
@@ -38,21 +39,73 @@ final class GapRegistry {
         }
     }
 
+    /**
+     * 一条<b>字段级</b>挂账:端点两侧都在,但某个字段在某个维度上确实不一致,且知道为什么。
+     *
+     * <p>与 {@link Gap} 的区别:那个管"整条路由还没做",这个管"路由做了,但这一处对不上"。
+     * 两者都<b>必须带出处</b>,且都会因为"过期"(这次已经一致了)判红。
+     *
+     * @param where      {@code request} / {@code response}
+     * @param fieldPath  报告里那种去掉 {@code (顶层).} 前缀的路径,如 {@code parts[].area}
+     * @param dimension  {@code type} / {@code enum} / {@code required}
+     */
+    record FieldGap(String method,
+                    String path,
+                    String where,
+                    String fieldPath,
+                    String dimension,
+                    String source,
+                    String note) {
+
+        /** 与 {@link ContractImplDiff#mismatchKey} 同一套归一化 —— 命中判定必须逐字一致。 */
+        String key() {
+            return ContractImplDiff.mismatchKey(method, path, where, fieldPath, dimension);
+        }
+
+        String brief() {
+            return String.format("%-6s %s", method, path)
+                    + " · " + where + " · " + fieldPath + " · " + dimension
+                    + " · 出处 " + source;
+        }
+    }
+
+    private static final Set<String> WHERE_VALUES = Set.of("request", "response");
+    private static final Set<String> DIMENSION_VALUES = Set.of("type", "enum", "required");
+
     private final List<Gap> knownGaps;
     private final Map<String, String> ignoredImplPaths;
     private final List<String> canaries;
+    private final List<FieldGap> fieldGaps;
+    private final Map<String, FieldGap> fieldGapsByKey;
 
     GapRegistry(List<Gap> knownGaps,
                 Map<String, String> ignoredImplPaths,
-                List<String> canaries) {
+                List<String> canaries,
+                List<FieldGap> fieldGaps) {
         this.knownGaps = List.copyOf(knownGaps);
         this.ignoredImplPaths = Map.copyOf(ignoredImplPaths);
         this.canaries = List.copyOf(canaries);
+        this.fieldGaps = List.copyOf(fieldGaps);
+        Map<String, FieldGap> byKey = new LinkedHashMap<>();
+        for (FieldGap gap : fieldGaps) {
+            FieldGap clash = byKey.put(gap.key(), gap);
+            if (clash != null) {
+                throw new IllegalStateException("字段级挂账有重复键: " + gap.brief());
+            }
+        }
+        this.fieldGapsByKey = Map.copyOf(byKey);
     }
 
     /** 供负向对照测试凭空合成。 */
     static GapRegistry synthetic(List<Gap> knownGaps, List<String> canaries) {
-        return new GapRegistry(knownGaps, Map.of(), canaries);
+        return new GapRegistry(knownGaps, Map.of(), canaries, List.of());
+    }
+
+    /** 供负向对照测试凭空合成(带字段级挂账)。 */
+    static GapRegistry syntheticWithFieldGaps(List<Gap> knownGaps,
+                                              List<String> canaries,
+                                              List<FieldGap> fieldGaps) {
+        return new GapRegistry(knownGaps, Map.of(), canaries, fieldGaps);
     }
 
     /**
@@ -120,7 +173,44 @@ final class GapRegistry {
             throw new IllegalStateException(
                     RESOURCE + " 的 canaries 为空 —— 没有锚点,路径拼接写错时会静默全绿");
         }
-        return new GapRegistry(gaps, ignored, canaries);
+
+        List<FieldGap> fieldGaps = new ArrayList<>();
+        for (Object item : list(doc.get("fieldGaps"))) {
+            Map<String, Object> node = map(item);
+            String method = str(node.get("method")).toUpperCase();
+            String path = str(node.get("path"));
+            String where = str(node.get("where")).toLowerCase();
+            String fieldPath = str(node.get("field"));
+            String dimension = str(node.get("dimension")).toLowerCase();
+            String source = str(node.get("source"));
+            String note = str(node.get("note"));
+            if (method.isEmpty() || !path.startsWith("/")) {
+                throw new IllegalStateException("字段级挂账缺 method/path: " + node);
+            }
+            if (!WHERE_VALUES.contains(where)) {
+                throw new IllegalStateException(
+                        "字段级挂账的 where 只能是 request / response,实际是: " + where);
+            }
+            if (!DIMENSION_VALUES.contains(dimension)) {
+                throw new IllegalStateException(
+                        "字段级挂账的 dimension 只能是 type / enum / required,实际是: " + dimension);
+            }
+            if ("required".equals(dimension) && !"request".equals(where)) {
+                throw new IllegalStateException(
+                        "必填只在请求体侧比,where 不能是 response: " + method + " " + path);
+            }
+            if (fieldPath.isEmpty()) {
+                throw new IllegalStateException("字段级挂账缺 field(字段路径): " + node);
+            }
+            if (source.isEmpty()) {
+                throw new IllegalStateException(
+                        "字段级挂账缺 source(出处),不许裸挂: " + method + " " + path
+                                + " " + fieldPath + " " + dimension);
+            }
+            fieldGaps.add(new FieldGap(method, path, where, fieldPath, dimension, source, note));
+        }
+
+        return new GapRegistry(gaps, ignored, canaries, fieldGaps);
     }
 
     // ------------------------------------------------------------ 查询
@@ -151,6 +241,17 @@ final class GapRegistry {
             }
         }
         return null;
+    }
+
+    /** 这一处字段差异是否已挂账;没挂时返回 null。 */
+    FieldGap fieldGapFor(String method, String path, String where,
+                         String fieldPath, String dimension) {
+        return fieldGapsByKey.get(
+                ContractImplDiff.mismatchKey(method, path, where, fieldPath, dimension));
+    }
+
+    List<FieldGap> fieldGaps() {
+        return fieldGaps;
     }
 
     List<Gap> knownGaps() {

@@ -21,35 +21,73 @@ import org.springframework.web.servlet.mvc.method.annotation.RequestMappingHandl
 import org.springframework.web.servlet.mvc.method.annotation.SseEmitter;
 import org.springframework.web.servlet.mvc.method.annotation.StreamingResponseBody;
 
+import com.fasterxml.jackson.annotation.JsonProperty;
 import com.fasterxml.jackson.databind.BeanDescription;
 import com.fasterxml.jackson.databind.JavaType;
 import com.fasterxml.jackson.databind.ObjectMapper;
+import com.fasterxml.jackson.databind.introspect.AnnotatedMember;
 import com.fasterxml.jackson.databind.introspect.BeanPropertyDefinition;
 import com.tileai.common.api.ApiResponse;
+
+import jakarta.validation.constraints.NotBlank;
+import jakarta.validation.constraints.NotEmpty;
+import jakarta.validation.constraints.NotNull;
+import jakarta.validation.constraints.Pattern;
 
 /**
  * 从 <b>Spring 自己的路由表</b>读出实现侧真实注册的每一条路由。
  *
  * <h2>为什么不用 springdoc 导出一份 OpenAPI</h2>
  *
- * <p>那是路线图里 T-2.1 的正规做法,但放在"每做完一组接口就量一次"这个场景里不划算:
+ * <p>那是路线图里 T-2.1 的正规写法,但放在"每做完一组接口就量一次"这个场景里不划算:
  * springdoc 按 Java 类名生成 schema 键({@code SkuView} vs 契约的 {@code Sku}),要么维护
- * 一张随 DTO 增长、<b>且不会因为分叉而变红</b>的名字映射表,要么放弃"按名比";而它多给的
- * 类型/必填/枚举,恰恰是本次明确排除的三项。它还是自动配置 —— 只要在 classpath 上就会被
- * 每个 {@code @SpringBootTest} 拉进上下文,改变上下文缓存键,并在启动期遍历全部 handler
- * 建 schema(任一处抛异常,所有测试一起挂)。
+ * 一张随 DTO 增长、<b>且不会因为分叉而变红</b>的名字映射表,要么放弃"按名比"。它还是自动配置
+ * —— 只要在 classpath 上就会被每个 {@code @SpringBootTest} 拉进上下文,改变上下文缓存键,
+ * 并在启动期遍历全部 handler 建 schema(任一处抛异常,所有测试一起挂),而且会让
+ * {@code /v3/api-docs} 落在 {@code SecurityConfig} 那个 {@code permitAll} 兜底之下,变成公网可拉。
  *
- * <p><b>路由表 + Jackson 内省</b>给出的正是"路径 + 方法 + 字段名",且生产产物零改动。
+ * <p><b>路由表 + Jackson 内省</b>给出的是"路径 + 方法 + 字段名 + 类型 + 必填 + 枚举值",
+ * 且<b>生产产物零改动</b>(2026-10-01 用户裁决,见 openapi-verification.md §40)。
+ *
+ * <h2>枚举值从哪来(2026-10-01 新增)</h2>
+ *
+ * <p>两条来源,缺一不可:
+ * <ol>
+ *   <li>Java {@code enum} 常量 —— 用 ObjectMapper 序列化取名,自动尊重
+ *       {@code @JsonValue} / 命名策略 / {@code @JsonProperty};</li>
+ *   <li>{@code String} + {@code @Pattern(regexp="a|b|c")} —— <b>本仓库的主力形态</b>。
+ *       实测全仓 16 处 {@code @Pattern} 全是这种简单交替(如 {@code door|window}、
+ *       {@code floor|wall|local})。只认 {@code Class.isEnum()} 会把它们全部漏掉,
+ *       而 §31.2 那次真实分叉恰恰长这个样子。</li>
+ * </ol>
+ *
+ * <p>走后台字典的字段(空间 / 风格)推不出取值集合 —— 留空,由比较器记「无法比对」,
+ * <b>绝不猜</b>。
  */
 final class ImplReader {
 
     /** 方法条件为空时(理论上只有 `@RequestMapping` 不限定方法)记为通配。 */
     static final String WILDCARD = "*";
 
-    private static final int MAX_DEPTH = 2;
+    /**
+     * 深度上限,与契约侧同一口径。
+     *
+     * <p>2026-10-01 由 2 抬到 5:契约的 {@code OpeningType} 落在
+     * {@code GenerateRequest.layout.spaces[].openings[].type},深度 5 —— 深度 2 够不到它。
+     */
+    private static final int MAX_DEPTH = 5;
 
     /** 测试源码里的探针控制器——不该被当成"实现"。 */
     private static final String TEST_CLASSES_MARKER = "test-classes";
+
+    /**
+     * 认得出来的"枚举式"正则:<b>全是字面量、用 {@code |} 交替</b>。
+     *
+     * <p>刻意只认这种 —— 格式校验类正则(如 {@code ^\d{4}$})被切成"枚举"会造出假分叉,
+     * 而那种误判比漏掉更难查。
+     */
+    private static final java.util.regex.Pattern SIMPLE_ALTERNATION =
+            java.util.regex.Pattern.compile("[A-Za-z0-9_.\\-]+(\\|[A-Za-z0-9_.\\-]+)+");
 
     private final ObjectMapper mapper;
 
@@ -146,6 +184,17 @@ final class ImplReader {
 
     // ------------------------------------------------------------ 类型 → 形态
 
+    /**
+     * 仅供负向对照测试:不启 Spring,直接按 Java 类型算形态(见 {@code ImplReaderShapeTest})。
+     *
+     * <p>存在的理由:枚举取值与必填这两个维度的读取逻辑(注解多来源兜底、{@code @Pattern}
+     * 的切分)是最容易<b>静默失灵</b>的地方 —— 失灵时报告照样全绿,只是再也不会报错。
+     * 只有拿合成 DTO 直接喂进来,才能证明"确实读到了",而不是"没报错"。
+     */
+    Shape describe(JavaType type) {
+        return shapeOf(type, 1);
+    }
+
     private Shape shapeOf(JavaType type, int depth) {
         if (type == null) {
             return Shape.UNKNOWN;
@@ -167,8 +216,11 @@ final class ImplReader {
         if (Map.class.isAssignableFrom(raw)) {
             return Shape.MAP;
         }
-        if (raw.isEnum() || isScalar(raw)) {
-            return Shape.SCALAR;
+        if (raw.isEnum()) {
+            return Shape.scalar(Shape.JsonType.STRING, enumConstants(raw));
+        }
+        if (isScalar(raw)) {
+            return Shape.scalar(scalarType(raw), Set.of());
         }
         if (type.isArrayType() || Collection.class.isAssignableFrom(raw)
                 || Iterable.class.isAssignableFrom(raw)) {
@@ -182,11 +234,46 @@ final class ImplReader {
             return Shape.UNKNOWN;
         }
         Map<String, Shape> fields = new LinkedHashMap<>();
+        Set<String> required = new TreeSet<>();
         for (BeanPropertyDefinition property : properties) {
             // getPrimaryType() 是**已代入泛型实参**后的类型,不必自己剥壳
-            fields.put(property.getName(), shapeOf(property.getPrimaryType(), depth + 1));
+            fields.put(property.getName(), valueShape(property, depth + 1));
+            if (isRequired(property)) {
+                required.add(property.getName());
+            }
         }
-        return Shape.object(fields);
+        return Shape.object(fields, required);
+    }
+
+    /**
+     * 一个属性的形态 —— 先按类型算,再补上 {@code @Pattern} 里的取值集合。
+     *
+     * <p>只有"本来就算标量、且没有别的枚举来源"时才补,免得到数组/对象上乱套。
+     */
+    private Shape valueShape(BeanPropertyDefinition property, int depth) {
+        Shape base = shapeOf(property.getPrimaryType(), depth);
+        if (base.kind() != Shape.Kind.SCALAR || base.hasEnumValues()) {
+            return base;
+        }
+        Set<String> fromPattern = enumFromPattern(property);
+        return fromPattern.isEmpty() ? base : Shape.scalar(base.type(), fromPattern);
+    }
+
+    private static Shape.JsonType scalarType(Class<?> raw) {
+        if (raw == boolean.class || raw == Boolean.class) {
+            return Shape.JsonType.BOOLEAN;
+        }
+        if (raw == byte.class || raw == short.class || raw == int.class || raw == long.class
+                || raw == Byte.class || raw == Short.class || raw == Integer.class
+                || raw == Long.class || raw == java.math.BigInteger.class) {
+            return Shape.JsonType.INTEGER;
+        }
+        if (raw == float.class || raw == double.class
+                || raw == Float.class || raw == Double.class
+                || raw == java.math.BigDecimal.class) {
+            return Shape.JsonType.NUMBER;
+        }
+        return Shape.JsonType.STRING;
     }
 
     private static boolean isScalar(Class<?> raw) {
@@ -198,6 +285,95 @@ final class ImplReader {
                 || java.util.Date.class.isAssignableFrom(raw)
                 || Temporal.class.isAssignableFrom(raw)
                 || raw.getName().startsWith("java.time.");
+    }
+
+    // ------------------------------------------------------------ 枚举值
+
+    /** Java {@code enum} 的常量 → 它们的 <b>JSON 序列化名</b>(尊重 @JsonValue / 命名策略)。 */
+    private Set<String> enumConstants(Class<?> raw) {
+        Object[] constants = raw.getEnumConstants();
+        Set<String> out = new TreeSet<>();
+        if (constants == null) {
+            return out;
+        }
+        for (Object constant : constants) {
+            out.add(jsonName(constant));
+        }
+        return out;
+    }
+
+    private String jsonName(Object constant) {
+        try {
+            var node = mapper.valueToTree(constant);
+            if (node != null && node.isValueNode()) {
+                return node.asText();
+            }
+        } catch (RuntimeException ignored) {
+            // 序列化不出来就退回枚举常量名 —— 宁可名字对不上,也不要漏掉这个枚举
+        }
+        return constant instanceof Enum<?> e ? e.name() : String.valueOf(constant);
+    }
+
+    /** {@code @Pattern(regexp="a|b|c")} 里的取值集合;不是"简单交替"时返回空集。 */
+    private static Set<String> enumFromPattern(BeanPropertyDefinition property) {
+        for (AnnotatedMember member : members(property)) {
+            Pattern annotation = member.getAnnotation(Pattern.class);
+            if (annotation == null) {
+                continue;
+            }
+            String regexp = annotation.regexp();
+            if (SIMPLE_ALTERNATION.matcher(regexp).matches()) {
+                return new TreeSet<>(List.of(regexp.split("\\|")));
+            }
+        }
+        return Set.of();
+    }
+
+    // ------------------------------------------------------------ 必填
+
+    /**
+     * 该属性是否必填。
+     *
+     * <p>只认会"拒绝 null/空"的注解:{@code @NotNull} / {@code @NotBlank} / {@code @NotEmpty} /
+     * {@code @JsonProperty(required=true)}。
+     * <b>{@code @Valid} / {@code @Size} / {@code @DecimalMin} / {@code @Pattern} 一律不算</b> ——
+     * 它们不拒绝 null。
+     */
+    private static boolean isRequired(BeanPropertyDefinition property) {
+        for (AnnotatedMember member : members(property)) {
+            if (member.getAnnotation(NotNull.class) != null
+                    || member.getAnnotation(NotBlank.class) != null
+                    || member.getAnnotation(NotEmpty.class) != null) {
+                return true;
+            }
+            JsonProperty jsonProperty = member.getAnnotation(JsonProperty.class);
+            if (jsonProperty != null && jsonProperty.required()) {
+                return true;
+            }
+        }
+        return false;
+    }
+
+    /**
+     * 一个属性上所有可能挂注解的地方。
+     *
+     * <p>逐个来源都看,是因为 record 组件的注解落在哪一处依注解的 {@code @Target} 而定 ——
+     * 只看 {@code getPrimaryMember()} 会让必填维度<b>静默失灵</b>(最典型的假绿)。
+     */
+    private static List<AnnotatedMember> members(BeanPropertyDefinition property) {
+        List<AnnotatedMember> out = new ArrayList<>(4);
+        add(out, property.getPrimaryMember());
+        add(out, property.getField());
+        add(out, property.getGetter());
+        add(out, property.getSetter());
+        add(out, property.getConstructorParameter());
+        return out;
+    }
+
+    private static void add(List<AnnotatedMember> out, AnnotatedMember member) {
+        if (member != null && !out.contains(member)) {
+            out.add(member);
+        }
     }
 
     // ------------------------------------------------------------ 剥壳
