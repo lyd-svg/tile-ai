@@ -96,7 +96,7 @@ class SchemaMigrationTest {
      * (见 {@link #migrationsReachLatestAndAreRepeatable})。
      */
     private static final List<String> EXPECTED_MIGRATIONS =
-            List.of("1", "2", "3", "4", "5", "6", "7", "8", "9", "10");
+            List.of("1", "2", "3", "4", "5", "6", "7", "8", "9", "10", "11");
 
     private static Connection conn;
     private static String schema;

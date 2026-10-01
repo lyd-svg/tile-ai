@@ -21,17 +21,14 @@ import com.tileai.layout.model.LayoutAreas;
 import com.tileai.layout.model.LayoutModel;
 import com.tileai.layout.model.LayoutSpace;
 import com.tileai.plan.PlanQuoteSnapshotService.MergedPart;
-import com.tileai.plan.PlanQuoteSnapshotService.PartFee;
 import com.tileai.plan.PlanQuoteSnapshotService.PartSku;
 import com.tileai.plan.PlanQuoteSnapshotService.Snapshot;
 import com.tileai.plan.dto.PlanImageRef;
 import com.tileai.plan.dto.PlanPartRef;
 import com.tileai.plan.entity.Plan;
 import com.tileai.plan.entity.PlanImage;
-import com.tileai.plan.entity.PlanPart;
 import com.tileai.plan.mapper.PlanImageMapper;
 import com.tileai.plan.mapper.PlanMapper;
-import com.tileai.plan.mapper.PlanPartMapper;
 
 /**
  * 出图完成后的<b>方案自动保存</b>(契约 {@code openapi-c.yaml} 的
@@ -74,27 +71,27 @@ public class PlanAutoSaveService {
     private static final String SOURCE_USER = "user";
 
     private final PlanMapper planMapper;
-    private final PlanPartMapper planPartMapper;
     private final PlanImageMapper planImageMapper;
     private final AesGcmCipher cipher;
     private final DictService dictService;
     private final ObjectMapper objectMapper;
     private final PlanOwnership ownership;
     private final PlanQuoteSnapshotService quoteSnapshotService;
+    private final PlanPartsWriter partsWriter;
 
-    public PlanAutoSaveService(PlanMapper planMapper, PlanPartMapper planPartMapper,
-                              PlanImageMapper planImageMapper, AesGcmCipher cipher,
-                              DictService dictService, ObjectMapper objectMapper,
-                              PlanOwnership ownership,
-                              PlanQuoteSnapshotService quoteSnapshotService) {
+    public PlanAutoSaveService(PlanMapper planMapper, PlanImageMapper planImageMapper,
+                              AesGcmCipher cipher, DictService dictService,
+                              ObjectMapper objectMapper, PlanOwnership ownership,
+                              PlanQuoteSnapshotService quoteSnapshotService,
+                              PlanPartsWriter partsWriter) {
         this.planMapper = planMapper;
-        this.planPartMapper = planPartMapper;
         this.planImageMapper = planImageMapper;
         this.cipher = cipher;
         this.dictService = dictService;
         this.objectMapper = objectMapper;
         this.ownership = ownership;
         this.quoteSnapshotService = quoteSnapshotService;
+        this.partsWriter = partsWriter;
     }
 
     /**
@@ -132,7 +129,7 @@ public class PlanAutoSaveService {
         byte[] layoutEnc = cipher.encryptString(toJson(layout));
 
         // 面积快照先定下来:部位合并与报价都要用它。
-        LayoutSpace resolved = resolveSpace(layout, space);
+        LayoutSpace resolved = PlanSpaces.resolve(layout, space);
         List<MergedPart> merged = mergeParts(resolved, parts);
 
         // 算不出就整单不落(Optional.empty)。**这一步在任何写库之前** ——
@@ -156,7 +153,7 @@ public class PlanAutoSaveService {
             targetId = overwritePlan(existing, space, style, layoutEnc, snapshot);
         }
 
-        replaceParts(targetId, merged, snapshot.orElse(null));
+        partsWriter.replaceParts(targetId, merged, snapshot.orElse(null));
         replaceImages(targetId, images);
         snapshot.ifPresent(fresh -> quoteSnapshotService.persist(targetId, fresh));
         return targetId;
@@ -265,7 +262,7 @@ public class PlanAutoSaveService {
      * 按用户算 —— 标成 {@code ai} 会让用户在详情页看到"这块是 AI 帮你选的",
      * 而实际上是他自己选的。
      */
-    private static List<MergedPart> mergeParts(LayoutSpace resolved, List<PlanPartRef> parts) {
+    static List<MergedPart> mergeParts(LayoutSpace resolved, List<PlanPartRef> parts) {
         Map<PartSku, MergedPart> merged = new LinkedHashMap<>();
         for (PlanPartRef part : parts) {
             BigDecimal area = grossAreaOf(resolved, part);
@@ -310,40 +307,6 @@ public class PlanAutoSaveService {
     }
 
     /**
-     * 按 plan 删干净再插。
-     *
-     * <p>不做逐条 upsert:部位组合会变(这次铺地面+墙面、下次只铺地面),
-     * 增量更新就得处理"多出来的那条删不删",而删干净重插天然没有这个问题。
-     * 同一事务内,中途失败一起回滚。
-     *
-     * <p>费用列从报价快照里按 {@code (部位, SKU)} 取。快照为空时整片留空
-     * (不写 0);快照非空时每一行都取得到 —— 报价分项就是按这同一份合并结果算的。
-     */
-    private void replaceParts(long planId, List<MergedPart> merged, Snapshot snapshot) {
-        planPartMapper.delete(Wrappers.<PlanPart>lambdaQuery().eq(PlanPart::getPlanId, planId));
-
-        for (MergedPart part : merged) {
-            PartFee fee = snapshot == null ? null : snapshot.fees().get(part.key());
-
-            PlanPart row = new PlanPart();
-            row.setPlanId(planId);
-            row.setPart(part.part());
-            row.setSkuCode(part.sku());
-            row.setGrossArea(part.grossArea());
-            row.setSource(part.source());
-            if (fee != null) {
-                row.setProductId(fee.productId());
-                row.setProductName(fee.productName());
-                row.setPricePerSqm(fee.pricePerSqm());
-                row.setArea(fee.area());
-                row.setLossRate(fee.lossRate());
-                row.setMaterialFee(fee.materialFee());
-            }
-            planPartMapper.insert(row);
-        }
-    }
-
-    /**
      * 该部位的毛面积。
      *
      * <p>优先级:请求里显式给了就用它(用户录户型时可能已人工核过),否则用派生值。
@@ -366,36 +329,6 @@ public class PlanAutoSaveService {
             case "wall" -> areas.wall();
             default -> null;
         };
-    }
-
-    /**
-     * 定出"这次生成的是哪个空间"(面积快照取它的)。
-     *
-     * <p>规则上游没写,由本任务定,记在 {@code openapi-verification.md} §35.8:
-     * <ol>
-     *   <li>取户型里 {@code type} 与请求 {@code space} 相同的第一个空间;</li>
-     *   <li>没有匹配的、且户型只有一个空间时就用它 —— 用户录了个卫生间却把空间
-     *       选成"其他",这种不一致不值得让整个方案保存失败;</li>
-     *   <li>都没有则取第一个并记 WARN。<b>不报错</b>:面积定不准是报价问题,
-     *       而出图已经成功了 —— 不该因为定不出面积就把方案整个丢掉。</li>
-     * </ol>
-     */
-    private static LayoutSpace resolveSpace(LayoutModel layout, String spaceKey) {
-        if (layout == null || layout.spaces() == null || layout.spaces().isEmpty()) {
-            return null;
-        }
-        if (layout.spaces().size() == 1) {
-            return layout.spaces().get(0);
-        }
-        for (LayoutSpace space : layout.spaces()) {
-            if (space.type() != null && space.type().equals(spaceKey)) {
-                return space;
-            }
-        }
-        log.warn("户型含 {} 个空间,其中没有 type={} 的,无法唯一确定生成空间"
-                        + "(一期为单空间出图),已取第一个空间用于面积快照",
-                layout.spaces().size(), spaceKey);
-        return layout.spaces().get(0);
     }
 
     // ------------------------------------------------------------------

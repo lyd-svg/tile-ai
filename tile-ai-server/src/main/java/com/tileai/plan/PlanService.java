@@ -175,11 +175,18 @@ public class PlanService {
      *
      * <p>对外 API 只传明文:密文是**静态存储**的形态,不越过 service 边界往外渗
      * (契约校验表 T-8、CLAUDE.md 约定)。
+     *
+     * <p><b>包级可见</b>(T-1.15):重算({@link PlanRecalcService})也要读同一份户型快照。
+     * 解密逻辑**只留这一份** —— 复制一份到重算里,两条路迟早会在"密文损坏该怎么办"
+     * 这种边界上分叉。两边给的错误码是同一个 90001(见 {@link ErrorCode#INTERNAL_ERROR}),
+     * 因为"方案在,坏的是系统"。
+     *
+     * @throws BusinessException 90001 —— 没有户型快照、密文损坏、或密钥不匹配
      */
-    private LayoutModel readLayout(Plan plan) {
+    LayoutModel readLayout(Plan plan) {
         byte[] layoutEnc = plan.getLayoutEnc();
         if (layoutEnc == null || layoutEnc.length == 0) {
-            log.error("方案 {} 没有户型快照(layout_enc 为空),详情无法返回 layout", plan.getId());
+            log.error("方案 {} 没有户型快照(layout_enc 为空),读不出布局", plan.getId());
             throw new BusinessException(ErrorCode.INTERNAL_ERROR);
         }
         try {

@@ -59,6 +59,21 @@ public enum QuoteParamKey {
         return unitPrice;
     }
 
+    /**
+     * 本参数是否<b>乘进报价金额</b> —— 改了它,全店所有已生成的报价立刻失真(T-1.15)。
+     *
+     * <p>白名单是**刻意逐项列举**的:{@code loss_rate_min/max} 与 {@code loss_rate} 一样
+     * 都不是单价量纲,若按 {@link #isUnitPrice()} 反推会把它俩也算进来,
+     * 于是「把允许范围从 5%~8% 调成 4%~9%」会错误地把全表方案标成过期 ——
+     * 而这两个键根本不参与计算(见本枚举 {@code LOSS_RATE} 的注释)。
+     * 将来新增参数键时,这个方法是唯一需要重新判断的地方。
+     *
+     * @return 指派价计算要用的那两个键({@code aux_unit_price} / {@code loss_rate})
+     */
+    public boolean affectsQuote() {
+        return this == AUX_UNIT_PRICE || this == LOSS_RATE;
+    }
+
     public static QuoteParamKey of(String code) {
         return code == null ? null
                 : Arrays.stream(values()).filter(k -> k.code.equals(code)).findFirst().orElse(null);

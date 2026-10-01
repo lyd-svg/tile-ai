@@ -165,11 +165,13 @@ public class ProductImportService {
                 .filter(Objects::nonNull)
                 .collect(Collectors.toCollection(LinkedHashSet::new));
 
-        Map<String, Long> existingIds = skusInFile.isEmpty() ? Map.of()
+        // 保留整个 Product 而不只是 id:改价判定要拿**变更前**的单价(T-1.15)。
+        // 价在这一步本来就查出来了,丢掉再查一次是白跑一趟数据库。
+        Map<String, Product> existingBySku = skusInFile.isEmpty() ? Map.of()
                 : productMapper.selectList(Wrappers.<Product>lambdaQuery()
                                 .in(Product::getSkuCode, skusInFile))
                         .stream()
-                        .collect(Collectors.toMap(Product::getSkuCode, Product::getId, (a, b) -> a));
+                        .collect(Collectors.toMap(Product::getSkuCode, p -> p, (a, b) -> a));
 
         Set<String> seenInFile = new HashSet<>();
         List<ImportRowError> errors = new ArrayList<>();
@@ -183,12 +185,15 @@ public class ProductImportService {
                     throw new ImportRowException("文件内产品编号重复:" + data.sku());
                 }
 
-                Long existingId = existingIds.get(data.sku());
-                if (mode == ImportMode.INSERT_ONLY && existingId != null) {
+                Product existing = existingBySku.get(data.sku());
+                if (mode == ImportMode.INSERT_ONLY && existing != null) {
                     throw new ImportRowException("产品编号已存在,仅新增模式不覆盖");
                 }
 
-                rowWriter.apply(data, existingId);
+                // 旧价只在"这一行是覆盖已有 SKU"时有意义;新增时传 null。
+                // 判定与标记都在 rowWriter 的 REQUIRES_NEW 事务内完成 —— 见那边的注释。
+                BigDecimal previousPrice = existing == null ? null : existing.getPricePerSqm();
+                rowWriter.apply(data, existing == null ? null : existing.getId(), previousPrice);
                 successCount++;
             } catch (ImportRowException e) {
                 // 预期内的行级失败:记入报告,继续处理下一行

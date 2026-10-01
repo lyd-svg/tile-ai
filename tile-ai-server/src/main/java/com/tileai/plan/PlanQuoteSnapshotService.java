@@ -108,10 +108,29 @@ public class PlanQuoteSnapshotService {
                            String rulesSnapshotJson, Map<PartSku, PartFee> fees) {
     }
 
+    /**
+     * 「算出来的那一份报价」+「据此整理的落库快照」—— 同一次计算的两种表述(T-1.15)。
+     *
+     * <p>重算({@code POST /plans/{id}/recalc})要**把报价原样返回给前端**,而
+     * {@link #build} 只给得出整理过的快照。若重算自己再调一次 {@code QuoteService}
+     * 拿返回值、同时又调 {@code build} 落库,就是**算了两次** —— 两次之间价格变了,
+     * 用户看到的数与他点「重算」后存下来的数就会不一致。绑在一个 record 里,
+     * 结构上就不允许出现这种分叉。
+     *
+     * @param snapshot 落库用的整理结果
+     * @param quote    {@code QuoteService} 算出来的<b>原始</b>返回值,与
+     *                 {@code /quote/calc} 的响应同源
+     */
+    public record SnapshotBundle(Snapshot snapshot, QuoteResultView quote) {
+    }
+
     // ------------------------------------------------------------------
 
     /**
      * 算一份快照。**绝不抛异常**,算不出就返回空。
+     *
+     * <p>生成路径用这个;要同时拿到「报价原始返回值」的路径(重算)用
+     * {@link #buildDetailed} —— 本方法就是它取 {@code snapshot} 那一半。
      *
      * @param space  plan 的生成空间。只作上下文 —— {@code QuoteService} 的公式里
      *               没有空间这一项(§8.8),面积一律由部位逐条给出
@@ -119,6 +138,18 @@ public class PlanQuoteSnapshotService {
      * @param merged 已合并的部位行
      */
     public Optional<Snapshot> build(String space, LayoutSpace layout, List<MergedPart> merged) {
+        return buildDetailed(space, layout, merged).map(SnapshotBundle::snapshot);
+    }
+
+    /**
+     * 算一份快照,并把 {@code QuoteService} 的原始返回值一并带回(T-1.15 重算用)。
+     *
+     * <p>判定口径与 {@link #build} **完全同一份**(就是它本来的实现):
+     * 部位行为空 / 某行面积为 null / SKU 查不到 / 参数缺失 / 序列化失败 →
+     * {@code Optional.empty()},调用方据此决定"什么都不改"。
+     */
+    public Optional<SnapshotBundle> buildDetailed(String space, LayoutSpace layout,
+                                                  List<MergedPart> merged) {
         if (merged == null || merged.isEmpty()) {
             log.warn("方案没有任何部位行,不落报价快照(空清单会算出 0 元,那是最坏的一种答案)");
             return Optional.empty();
@@ -168,7 +199,7 @@ public class PlanQuoteSnapshotService {
             return Optional.empty();
         }
 
-        return Optional.of(new Snapshot(
+        return Optional.of(new SnapshotBundle(new Snapshot(
                 quote.total(),
                 quote.materialTotal(),
                 quote.auxTotal(),
@@ -176,7 +207,7 @@ public class PlanQuoteSnapshotService {
                 auxArea,
                 quote.rulesSnapshot().lossRate(),
                 rulesJson,
-                fees));
+                fees), quote));
     }
 
     /**

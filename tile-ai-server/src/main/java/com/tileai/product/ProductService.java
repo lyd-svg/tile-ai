@@ -1,5 +1,6 @@
 package com.tileai.product;
 
+import java.math.BigDecimal;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
@@ -18,6 +19,7 @@ import com.tileai.common.api.PageData;
 import com.tileai.common.error.BusinessException;
 import com.tileai.common.error.ErrorCode;
 import com.tileai.index.IndexSyncService;
+import com.tileai.plan.PlanQuoteExpiryMarker;
 import com.tileai.product.dto.ProductQuery;
 import com.tileai.product.dto.ProductUpsertRequest;
 import com.tileai.product.dto.ProductUpsertRequest.ImageItem;
@@ -57,15 +59,17 @@ public class ProductService {
     private final ComboService comboService;
     private final IndexSyncService indexSyncService;
     private final ObjectMapper objectMapper;
+    private final PlanQuoteExpiryMarker quoteExpiryMarker;
 
     public ProductService(ProductMapper productMapper, ProductImageMapper productImageMapper,
                           ComboService comboService, IndexSyncService indexSyncService,
-                          ObjectMapper objectMapper) {
+                          ObjectMapper objectMapper, PlanQuoteExpiryMarker quoteExpiryMarker) {
         this.productMapper = productMapper;
         this.productImageMapper = productImageMapper;
         this.comboService = comboService;
         this.indexSyncService = indexSyncService;
         this.objectMapper = objectMapper;
+        this.quoteExpiryMarker = quoteExpiryMarker;
     }
 
     // ------------------------------------------------------------------
@@ -240,11 +244,23 @@ public class ProductService {
                     "产品编号已被其它 SKU 占用: " + request.sku());
         }
 
+        // 改价前先留底:applyUpsert 会把请求里的值写进 existing,晚一行就拿不到旧值。
+        // SKU 也用**旧值** —— t_plan_part.sku_code 是生成那一刻的快照,用新值反查一条都匹配不上。
+        BigDecimal oldPrice = existing.getPricePerSqm();
+        String oldSkuCode = existing.getSkuCode();
+
         applyUpsert(existing, request);
         if (StringUtils.hasText(request.status())) {
             existing.setStatus(request.status());
         }
         productMapper.updateById(existing);
+
+        // 单价变了 → 引用了这块砖的在用方案,报价就不再准了(T-1.15)。
+        // 只改名字 / 图片 / 状态的编辑不标过期 —— 那些改动不影响金额。
+        // 与价格写入同在 @Transactional 内:要么价和标记都生效,要么都不生效。
+        if (PlanQuoteExpiryMarker.priceChanged(oldPrice, request.pricePerSqm())) {
+            quoteExpiryMarker.bySkuCode(oldSkuCode);
+        }
 
         // PUT 语义是整体替换:传了 images 就以传入的为准(传 null 表示不动,
         // 传空数组表示清空)。这一点对前端很重要,不能含糊。

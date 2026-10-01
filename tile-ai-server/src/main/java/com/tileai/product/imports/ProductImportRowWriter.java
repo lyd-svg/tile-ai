@@ -1,5 +1,6 @@
 package com.tileai.product.imports;
 
+import java.math.BigDecimal;
 import java.util.List;
 
 import org.springframework.stereotype.Component;
@@ -8,6 +9,7 @@ import org.springframework.transaction.annotation.Transactional;
 
 import com.baomidou.mybatisplus.core.toolkit.Wrappers;
 import com.tileai.index.IndexSyncService;
+import com.tileai.plan.PlanQuoteExpiryMarker;
 import com.tileai.product.entity.Product;
 import com.tileai.product.entity.ProductImage;
 import com.tileai.product.mapper.ProductImageMapper;
@@ -30,22 +32,27 @@ public class ProductImportRowWriter {
     private final ProductMapper productMapper;
     private final ProductImageMapper productImageMapper;
     private final IndexSyncService indexSyncService;
+    private final PlanQuoteExpiryMarker quoteExpiryMarker;
 
     public ProductImportRowWriter(ProductMapper productMapper,
                                   ProductImageMapper productImageMapper,
-                                  IndexSyncService indexSyncService) {
+                                  IndexSyncService indexSyncService,
+                                  PlanQuoteExpiryMarker quoteExpiryMarker) {
         this.productMapper = productMapper;
         this.productImageMapper = productImageMapper;
         this.indexSyncService = indexSyncService;
+        this.quoteExpiryMarker = quoteExpiryMarker;
     }
 
     /**
      * 写入一行(新增或更新)。
      *
      * @param existingProductId 已存在的 SKU 主键;{@code null} 表示新增
+     * @param previousPrice     该 SKU 变更前的单价;新增时为 {@code null}。
+     *                          导入也会改价,所以这里是第三个「调价触发点」(T-1.15)
      */
     @Transactional(propagation = Propagation.REQUIRES_NEW)
-    public long apply(ProductImportData data, Long existingProductId) {
+    public long apply(ProductImportData data, Long existingProductId, BigDecimal previousPrice) {
         Product product = new Product();
         product.setSkuCode(data.sku());
         product.setName(data.name());
@@ -70,6 +77,19 @@ public class ProductImportRowWriter {
             // 若在这里写死状态,重新导入一次就会把所有已上架的 SKU 打回下架 ——
             // 那是一次静默的线上事故。
             productMapper.updateById(product);
+        }
+
+        // 覆盖导入把单价改了 → 引用了这个 SKU 的在用方案,报价就不再准了(T-1.15)。
+        //
+        // 必须留在本方法内(即 REQUIRES_NEW 事务内):若挪到调用方的循环之后批量标一次,
+        // 进程在中间挂掉就会留下一批「价已改、方案却显示未过期」的记录 ——
+        // 那正是这个功能要消灭的状态。代价是每改价一行多一条 UPDATE,接受。
+        //
+        // 按**变更前**的 skuCode 反查:方案里存的是生成那一刻的 SKU 快照。
+        // 新增行(previousPrice == null 且 existingProductId == null)不可能有方案引用它,跳过。
+        if (existingProductId != null
+                && PlanQuoteExpiryMarker.priceChanged(previousPrice, data.pricePerSqm())) {
+            quoteExpiryMarker.bySkuCode(data.sku());
         }
 
         replaceImages(product.getId(), data.imageUrls());

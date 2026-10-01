@@ -41,10 +41,10 @@ import jakarta.validation.constraints.Min;
  * {@code /api/v1/plans/**},本类<b>不加安全注解</b> —— 加了会变成两处判定,
  * 迟早有一处改漏。
  *
- * <p>{@code /plans/{id}/share}(T-1.13)与 {@code /plans/{id}/recalc}(T-1.15)
- * 刻意不在本类里:前者归分享,后者是"按当前价重算"。尤其 <b>{@code recalc} 没有
- * 请求体</b> —— 部位与面积一律取自方案快照,一旦让它收前端传参,
- * {@code /quote/calc} 的参数校验就可以被绕过(CLAUDE.md 架构不变量 6)。
+ * <p>{@code /plans/{id}/share}(T-1.13)刻意不在本类里 —— 它归分享。
+ * {@code /plans/{id}/recalc}(T-1.15)也单独立了控制器
+ * ({@link CPlanRecalcController}):<b>它没有请求体</b>,部位与面积一律取自方案快照,
+ * 一旦让它收前端传参,{@code /quote/calc} 的参数校验就可以被绕过(架构不变量 6)。
  */
 @RestController
 @RequestMapping("/api/v1/plans")

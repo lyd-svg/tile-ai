@@ -1,11 +1,13 @@
 package com.tileai.quote;
 
+import java.math.BigDecimal;
 import java.util.List;
 
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
 import com.baomidou.mybatisplus.core.toolkit.Wrappers;
+import com.tileai.plan.PlanQuoteExpiryMarker;
 import com.tileai.quote.dto.QuoteParamUpsertRequest;
 import com.tileai.quote.dto.QuoteParamView;
 import com.tileai.quote.entity.QuoteParam;
@@ -25,9 +27,12 @@ import com.tileai.quote.mapper.QuoteParamMapper;
 public class QuoteParamService {
 
     private final QuoteParamMapper quoteParamMapper;
+    private final PlanQuoteExpiryMarker quoteExpiryMarker;
 
-    public QuoteParamService(QuoteParamMapper quoteParamMapper) {
+    public QuoteParamService(QuoteParamMapper quoteParamMapper,
+                             PlanQuoteExpiryMarker quoteExpiryMarker) {
         this.quoteParamMapper = quoteParamMapper;
+        this.quoteExpiryMarker = quoteExpiryMarker;
     }
 
     /**
@@ -60,6 +65,7 @@ public class QuoteParamService {
                 .eq(QuoteParam::getParamKey, request.paramKey()));
 
         if (existing == null) {
+            // 新建键不标过期:此前这个键根本不存在,也就没有哪个报价是"按旧值算的"。
             QuoteParam created = new QuoteParam();
             created.setParamKey(request.paramKey());
             created.setParamValue(request.paramValue());
@@ -68,8 +74,22 @@ public class QuoteParamService {
             return;
         }
 
+        // 改值前先留底。理由与 ProductService.update 同一套:下面两行会把旧值覆盖掉。
+        BigDecimal oldValue = existing.getParamValue();
+
         existing.setParamValue(request.paramValue());
         existing.setRemark(request.remark());
         quoteParamMapper.updateById(existing);
+
+        // 辅料单价 / 损耗率乘在**每一个**报价金额上,所以变一次就是全店方案一起过期(T-1.15)。
+        // 这不是过度反应 —— 用户看到「已过期」时的依据是准的。
+        //
+        // 三道闸门,少一个都会误标:
+        //   ① affectsQuote() —— 改 loss_rate_min/max(允许范围)不参与计算,不该标;
+        //   ② 值真变了 —— 只改 remark、或把同一个值再存一遍,不该标;
+        //   ③ 与参数写入同事务 —— 要么都生效,要么都不生效。
+        if (key.affectsQuote() && PlanQuoteExpiryMarker.priceChanged(oldValue, request.paramValue())) {
+            quoteExpiryMarker.all();
+        }
     }
 }

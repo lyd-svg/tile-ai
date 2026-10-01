@@ -54,10 +54,6 @@ knownGaps:
     path: /api/v1/share/{token}
     source: T-1.13
     note: 公开只读分享页未开工
-  - method: POST
-    path: /api/v1/plans/{id}/recalc
-    source: T-1.15
-    note: 按当前价格重算报价未开工
   - method: GET
     path: /api/v1/admin/accounts
     source: PRD §10.3 未展开字段(见 tile-ai-tasks.md:934)

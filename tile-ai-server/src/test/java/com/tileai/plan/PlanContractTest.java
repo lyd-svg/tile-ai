@@ -32,6 +32,7 @@ import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertNotEquals;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
+import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 /**
@@ -121,7 +122,38 @@ class PlanContractTest {
     @DisplayName("PlanCopyResult 的字段集合 == 契约 POST /plans/{id}/copy 响应 data 的属性集合")
     void copyResultMatchesContract() {
         assertSameFields(jsonFields(PlanCopyResult.class),
-                propertyNames(copyResponseDataSchema()));
+                propertyNames(responseDataSchema("/plans/{id}/copy", "post")));
+    }
+
+    // ------------------------------------------------------------------
+    // 重算(T-1.15):契约侧证明"没有请求体"
+    // ------------------------------------------------------------------
+
+    /**
+     * 架构不变量 6 的契约侧一半。
+     *
+     * <p>实现侧那半在 {@code PlanRecalcContractTest}(反射断言方法上不存在
+     * {@code @RequestBody})。两条都要:<b>契约文件里没有 {@code requestBody}</b>
+     * 只说明契约是这么写的,证明不了实现没多收参数 —— 契约比对工具也看不到
+     * "契约没声明、实现却收了"这种多余参数。
+     */
+    @Test
+    @DisplayName("POST /plans/{id}/recalc 没有 requestBody —— 不变量 6")
+    void recalcHasNoRequestBody() {
+        assertNull(operation("/plans/{id}/recalc", "post").get("requestBody"),
+                "重算不接受任何请求体:部位/面积/开口一律取自方案快照。"
+                        + "收了参数,前端就能把面积填成 1 ㎡ 绕过 /quote/calc 的参数校验");
+    }
+
+    /** 返回的是 {@code /quote/calc} 的那个形状,不是另造一个。 */
+    @Test
+    @DisplayName("POST /plans/{id}/recalc 的响应 data 就是契约 QuoteResult")
+    void recalcResponseIsQuoteResult() {
+        Object data = responseDataSchema("/plans/{id}/recalc", "post");
+        // 内联写一整个 QuoteResult 也行,但那会有两份形状可以各自漂移
+        assertEquals("./openapi-common.yaml#/components/schemas/QuoteResult",
+                map(data, "recalc.data").get("$ref"),
+                "重算响应的 data 必须 $ref 到 QuoteResult —— 与 /quote/calc 同源");
     }
 
     // ------------------------------------------------------------------
@@ -236,15 +268,15 @@ class PlanContractTest {
         return map(firstContent(requestBody).get("schema"), "schema");
     }
 
-    /** {@code .../copy} 的响应体:{@code allOf[1].properties.data} 那个 schema。 */
-    private static Map<String, Object> copyResponseDataSchema() {
-        Map<String, Object> responses = map(operation("/plans/{id}/copy", "post").get("responses"),
-                "responses");
+    /** 某条操作 200 响应里 {@code allOf[ApiResponse, {data: X}]} 那个 {@code X} 的 schema。 */
+    private static Map<String, Object> responseDataSchema(String path, String method) {
+        Map<String, Object> responses = map(operation(path, method).get("responses"), "responses");
         Map<String, Object> schema = map(firstContent(map(responses.get("200"), "200")).get("schema"),
                 "schema");
 
         List<?> allOf = (List<?>) schema.get("allOf");
-        assertNotNull(allOf, "响应应是 allOf[ApiResponse, {data:{planId}}],契约结构变了");
+        assertNotNull(allOf,
+                path + " 的 " + method + " 响应应是 allOf[ApiResponse, {data:…}],契约结构变了");
         @SuppressWarnings("unchecked")
         Map<String, Object> second = (Map<String, Object>) allOf.get(1);
         // 返回的是 data 的 schema 本身(不是它的 properties)—— 调用方用 propertyNames 取键
