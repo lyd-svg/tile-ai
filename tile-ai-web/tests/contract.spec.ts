@@ -67,6 +67,21 @@ function cOperation(path: string, method: string): Operation {
   return op
 }
 
+/**
+ * C 端契约**自己**的 schema(不是 common 里的)。
+ *
+ * 大部分共用结构都在 openapi-common.yaml,但 `ShareResult` 直接写在
+ * openapi-c.yaml 的 `components.schemas` 里 —— 所以要多一个读它的口子。
+ */
+function cSchema(name: string): JsonSchema {
+  const document = load(readFileSync(C_CONTRACT, 'utf8')) as {
+    components?: { schemas?: Record<string, JsonSchema> }
+  }
+  const schema = document.components?.schemas?.[name]
+  if (!schema) throw new Error(`C 端契约里找不到 schema:${name}`)
+  return schema
+}
+
 describe('ErrorCode 与前端文案表', () => {
   it('码集必须与契约 enum **完全一致**(不多不少)', () => {
     const contractCodes = commonSchema('ErrorCode').enum as number[]
@@ -194,5 +209,55 @@ describe('C 端方案接口(F-1.9 / F-1.8)', () => {
       (name as { maxLength?: number } | undefined)?.maxLength,
       '契约补上了 maxLength —— 请把 PlanDetailView 的客户端校验改成读契约后再改这条',
     ).toBeUndefined()
+  })
+})
+
+describe('C 端分享接口(F-1.10)', () => {
+  it('生成 / 废除两条写接口**必须登录** —— 它们是「谁的方案」的入口', async () => {
+    // 掉一条 = 任何人凭 id 就能把别人的方案分享出去 / 把别人的分享链接废掉
+    for (const method of ['post', 'delete']) {
+      expect(cOperation('/plans/{id}/share', method).security, method.toUpperCase()).toEqual([
+        { cookieAuth: [] },
+      ])
+    }
+  })
+
+  it('⚠️ 公开分享页 `security` 是**空数组** —— 这是全项目唯一匿名可达的读接口', () => {
+    // 契约写的是 `security: []`(不是没写 security)。写成 undefined 的话
+    // 在 OpenAPI 里会**继承全局 security**,语义完全不同。
+    //
+    // 这条一变红,先想清楚:分享页一旦变成要登录,「拿到链接的家人打不开」
+    // 就是必然结果(T-1.13 的整个卖点)。
+    expect(cOperation('/share/{token}', 'get').security).toEqual([])
+    expect(cOperation('/share/{token}', 'get').responses).toHaveProperty('200')
+  })
+
+  it('公开分享页的路径是 `/share/{token}` —— 前端路由与后端拼的链接都要对着它', () => {
+    // 后端拼链接用的是 `baseUrl + "/share/" + token`(PlanShareService.SHARE_PATH),
+    // 前端那条路由是 `/share/:token`。三处形状必须一致 —— 不一致的后果是
+    // **后端发出去的链接落到前端的兜底重定向、静默回首页**,没有任何报错。
+    // 契约是这三者里唯一能被测试读到的那个,所以钉在这里。
+    const op = cOperation('/share/{token}', 'get')
+    expect(op).toBeTruthy()
+    expect((op as { parameters?: { name: string }[] }).parameters?.[0]?.name).toBe('token')
+  })
+
+  it('⚠️ 登记:`ShareResult` 三个字段**一个都没有 required**,`qrCodeUrl` 恒不出现', () => {
+    // 契约这个 schema 上带着 `x-todo`(上游从没定义过 qrCodeUrl 该是什么形状)。
+    // 2026-10-01 拍板「二维码由前端画」,后端 `ShareResultView` 恒返回 null,
+    // 靠 `@JsonInclude(NON_NULL)` 让整个键消失 —— **不违约**(没写必填),
+    // 但属于**已知的不一致面**,与 §41.6 的 materialFee 同类,
+    // 登记在 openapi-verification.md §43.2。
+    //
+    // 哪天契约删掉 qrCodeUrl 或给它加上 required,这条会红 ——
+    // 那时该做的是回头看 ShareResultView 与 docs 里的登记,而不是删掉这条断言。
+    //
+    // 前端据此把三个字段**都写成可选**,渲染前逐个判(见 c/plans.ts 的 ShareResult)。
+    expect(cSchema('ShareResult').required).toBeUndefined()
+    expect(Object.keys(cSchema('ShareResult').properties ?? {}).sort()).toEqual([
+      'qrCodeUrl',
+      'shareToken',
+      'shareUrl',
+    ])
   })
 })

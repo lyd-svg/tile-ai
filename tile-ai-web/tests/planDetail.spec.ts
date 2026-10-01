@@ -29,6 +29,8 @@ const renamePlan = vi.fn()
 const deletePlan = vi.fn()
 const copyPlan = vi.fn()
 const recalcPlan = vi.fn()
+const sharePlan = vi.fn()
+const revokeShare = vi.fn()
 
 vi.mock('@/api/c/plans', () => ({
   getPlan: (...args: unknown[]) => getPlan(...args),
@@ -36,7 +38,10 @@ vi.mock('@/api/c/plans', () => ({
   deletePlan: (...args: unknown[]) => deletePlan(...args),
   copyPlan: (...args: unknown[]) => copyPlan(...args),
   recalcPlan: (...args: unknown[]) => recalcPlan(...args),
+  sharePlan: (...args: unknown[]) => sharePlan(...args),
+  revokeShare: (...args: unknown[]) => revokeShare(...args),
   listPlans: vi.fn(async () => ({ list: [], total: 0, page: 1, size: 9 })),
+  getSharedPlan: vi.fn(),
 }))
 
 const listDictsOfType = vi.fn()
@@ -129,10 +134,34 @@ async function submitRename(
   await flushPromises()
 }
 
+/**
+ * 剪贴板。happy-dom 里**不保证有** `navigator.clipboard` ——
+ * 显式装一个,否则测到的会是"环境没有这个 API"而不是"页面逻辑对不对"。
+ */
+const writeText = vi.fn<(text: string) => Promise<void>>(async () => {})
+
+/**
+ * 读分享链接框里的值。
+ *
+ * ⚠️ 必须读 **DOM 属性**而不是 HTML attribute:Vue 对 `<input>` 上的 `value`
+ * 绑定走的是 `el.value = …`(设属性,不设属性节点),所以
+ * `attributes('value')` 拿到的是 `undefined` —— 那样断言会**假绿**
+ * (对着 undefined 写 `toContain` 又会红,总之测的不是网页上那串)。
+ */
+function shareLinkValue(wrapper: Awaited<ReturnType<typeof mountView>>['wrapper']): string {
+  const input = wrapper.find('.share-link')
+  return input.exists() ? (input.element as HTMLInputElement).value : ''
+}
+
 beforeEach(() => {
   vi.clearAllMocks()
   // happy-dom 里没有 `window.confirm`,直接赋值(与 adminProducts.spec.ts 同一写法)
   window.confirm = vi.fn(() => true)
+  Object.defineProperty(window.navigator, 'clipboard', {
+    value: { writeText },
+    configurable: true,
+    writable: true,
+  })
   getPlan.mockImplementation(async (id: number) => ({ ...DETAIL, id }))
   listDictsOfType.mockImplementation(async (type: string) =>
     type === 'space'
@@ -376,5 +405,118 @@ describe('入参防护', () => {
 
     expect(wrapper.find('[role="alert"]').text()).toContain('方案不存在')
     expect(wrapper.find('.rename').exists()).toBe(false)
+  })
+})
+
+describe('分享(F-1.10)', () => {
+  it('没分享过 ⇒ 给「生成分享链接」按钮,不显示链接框', async () => {
+    const { wrapper } = await mountView()
+
+    expect(wrapper.find('.share-link').exists()).toBe(false)
+    expect(buttonByText(wrapper, '生成分享链接')).toBeTruthy()
+  })
+
+  it('生成:调 `sharePlan(id)`,并把**服务端给的**那条链接显示出来', async () => {
+    // 显示服务端拼的那条,而不是前端自己拼的 —— 后端那个 base-url 才是
+    // 「发给别人」的地址(§43.12-7 登记过它上线前必须改)
+    sharePlan.mockResolvedValue({
+      shareToken: 'AbC-_123',
+      shareUrl: 'https://tile.example.com/share/AbC-_123',
+    })
+    const { wrapper } = await mountView()
+
+    await buttonByText(wrapper, '生成分享链接').trigger('click')
+    await flushPromises()
+
+    expect(sharePlan).toHaveBeenCalledWith(7)
+    expect(shareLinkValue(wrapper)).toBe('https://tile.example.com/share/AbC-_123')
+    // 生成完按钮换成「复制链接 / 废除链接」,不能再给一个「生成」入口
+    expect(wrapper.findAll('button').some((item) => item.text().includes('生成分享链接'))).toBe(
+      false,
+    )
+  })
+
+  it('已经分享过(刷新页面后只有令牌)⇒ 仍显示链接框,链接里带令牌', async () => {
+    // 刷新后 `PlanDetail` 里只有 shareToken,没有 shareUrl —— 链接得现拼
+    getPlan.mockResolvedValue({ ...DETAIL, shareToken: 'Tok-42' })
+    const { wrapper } = await mountView()
+
+    expect(shareLinkValue(wrapper)).toContain('/share/Tok-42')
+  })
+
+  it('复制:写进剪贴板的是框里那条链接', async () => {
+    getPlan.mockResolvedValue({ ...DETAIL, shareToken: 'Tok-42' })
+    const { wrapper } = await mountView()
+
+    await buttonByText(wrapper, '复制链接').trigger('click')
+    await flushPromises()
+
+    expect(writeText).toHaveBeenCalledTimes(1)
+    expect(writeText.mock.calls[0][0]).toContain('/share/Tok-42')
+    expect(wrapper.find('.notice').text()).toBe('链接已复制')
+  })
+
+  it('剪贴板不可用 ⇒ 退化成提示手动复制,**不把异常甩给用户**', async () => {
+    writeText.mockRejectedValueOnce(new Error('NotAllowedError'))
+    getPlan.mockResolvedValue({ ...DETAIL, shareToken: 'Tok-42' })
+    const { wrapper } = await mountView()
+
+    await buttonByText(wrapper, '复制链接').trigger('click')
+    await flushPromises()
+
+    expect(wrapper.find('[role="alert"]').text()).toContain('手动')
+  })
+
+  it('废除的二次确认返回否 ⇒ 一个请求都不发,链接还在', async () => {
+    const confirmSpy = vi.fn(() => false)
+    window.confirm = confirmSpy
+    getPlan.mockResolvedValue({ ...DETAIL, shareToken: 'Tok-42' })
+    const { wrapper } = await mountView()
+
+    await buttonByText(wrapper, '废除链接').trigger('click')
+    await flushPromises()
+
+    expect(confirmSpy).toHaveBeenCalled()
+    expect(revokeShare).not.toHaveBeenCalled()
+    expect(wrapper.find('.share-link').exists()).toBe(true)
+  })
+
+  it('确认废除 ⇒ 调 `revokeShare(id)`,链接框消失(否则页面还留着一条已作废的链接)', async () => {
+    revokeShare.mockResolvedValue(undefined)
+    getPlan.mockResolvedValue({ ...DETAIL, shareToken: 'Tok-42' })
+    const { wrapper } = await mountView()
+
+    await buttonByText(wrapper, '废除链接').trigger('click')
+    await flushPromises()
+
+    expect(revokeShare).toHaveBeenCalledWith(7)
+    expect(wrapper.find('.share-link').exists()).toBe(false)
+    expect(wrapper.find('.notice').text()).toBe('分享链接已废除')
+  })
+
+  it('生成失败原样透出后端文案', async () => {
+    sharePlan.mockRejectedValue(
+      new BusinessError({ code: ErrorCode.NOT_FOUND, message: '方案不存在' }),
+    )
+    const { wrapper } = await mountView()
+
+    await buttonByText(wrapper, '生成分享链接').trigger('click')
+    await flushPromises()
+
+    expect(wrapper.find('[role="alert"]').text()).toContain('方案不存在')
+  })
+
+  it('⚠️ 契约里 `ShareResult` 三个字段一个都不 required ⇒ 缺 shareUrl 时不能拼出 undefined', async () => {
+    // 实现里 qrCodeUrl 恒不出现是已知的;**但 shareUrl 也可能不给** ——
+    // 这段代码不能假设它在,缺了就退化成用令牌现拼,而不是显示 "undefined"
+    sharePlan.mockResolvedValue({ shareToken: 'Tok-42' })
+    const { wrapper } = await mountView()
+
+    await buttonByText(wrapper, '生成分享链接').trigger('click')
+    await flushPromises()
+
+    const value = shareLinkValue(wrapper)
+    expect(value).toContain('/share/Tok-42')
+    expect(value).not.toContain('undefined')
   })
 })

@@ -84,6 +84,24 @@ const router = createRouter({
       ],
     },
     {
+      // 公开只读分享页(F-1.10)。
+      //
+      // ⚠️ **刻意不挂在 SiteLayout 下**,理由有两条:
+      //   1. 拿到链接的家人 / 设计师 / 门店店员**没有账号**,不该看到
+      //      「我的方案」「生成」这些只对登录用户有意义的导航(点进去只会被守卫
+      //      弹去登录页,而他们根本没有登录页可去);
+      //   2. `meta.public` 让守卫直接放行 —— 与 `/admin/login` 同一口径,
+      //      是**显式声明**而不是"恰好没写 requiresAuth"。
+      //
+      // ⚠️ 路径**必须与后端拼出来的链接逐字一致**:`PlanShareService.SHARE_PATH`
+      // 是 `/share/`,最终链接 = `tile.share.base-url + "/share/" + token`。
+      // 这里改成别的形状,后端发出去的链接就会落到下面的兜底重定向、回首页。
+      path: '/share/:token',
+      name: 'share',
+      component: () => import('@/views/site/ShareView.vue'),
+      meta: { public: true },
+    },
+    {
       path: '/admin/login',
       name: 'admin-login',
       component: () => import('@/views/admin/AdminLoginView.vue'),

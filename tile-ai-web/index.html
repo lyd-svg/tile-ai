@@ -3,6 +3,24 @@
   <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <!--
+      不向外发 Referer。
+
+      起因是分享页(F-1.10):它的 URL 里**带着分享令牌**(`/share/{token}`),
+      而令牌是"不登录就能看到别人一整份方案"的全部凭据。页面又要加载效果图
+      (存在对象存储上,跨域),浏览器默认会在图片请求上带 `Referer`。
+
+      现代浏览器的默认策略 `strict-origin-when-cross-origin` 已经只发源、
+      不发路径,所以**今天跨域图片那条路上令牌其实没漏**。但这条依赖太隐晦:
+      哪天图片改成同源代理、或有人把策略调宽,令牌就会**静默**出现在第三方的
+      访问日志里 —— 没有任何测试会红。显式写死 `no-referrer` 把这个依赖去掉。
+
+      放在 index.html(全局,而不是只在分享页动态插)是刻意的:
+      SPA 里动态插 meta 要赶在子资源请求之前,还得在离开路由时清掉,
+      一旦漏了就是"某个页面的策略悄悄不对";而本站没有任何依赖 Referer 的东西
+      (API 同源,图片是公开读地址),全站关掉没有代价。
+    -->
+    <meta name="referrer" content="no-referrer" />
     <title>瓷砖选购 AI — 效果图与报价</title>
   </head>
   <body>

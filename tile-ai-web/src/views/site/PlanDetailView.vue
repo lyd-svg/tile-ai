@@ -2,7 +2,15 @@
 import { computed, onMounted, ref, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 
-import { copyPlan, deletePlan, getPlan, recalcPlan, renamePlan } from '@/api/c/plans'
+import {
+  copyPlan,
+  deletePlan,
+  getPlan,
+  recalcPlan,
+  renamePlan,
+  revokeShare,
+  sharePlan,
+} from '@/api/c/plans'
 import { listDictsOfType } from '@/api/dicts'
 import { validationErrorsOf } from '@/api/errors'
 import type { ErrorItem } from '@/api/errors'
@@ -50,6 +58,15 @@ const errorText = ref('')
 const notice = ref('')
 const fieldErrors = ref<ErrorItem[]>([])
 
+/**
+ * 服务端刚回的**完整分享链接**(权威值)。
+ *
+ * 只有「刚点过生成分享」时才拿得到 —— 刷新页面后 `PlanDetail` 里**只有令牌**,
+ * 没有链接(链接是 `POST /plans/{id}/share` 现拼的)。所以它是个独立状态,
+ * 不是从 `plan` 派生的,用法见下面的 `shareLink`。
+ */
+const shareUrl = ref('')
+
 const spaceLabels = ref<Map<string, string>>(new Map())
 const styleLabels = ref<Map<string, string>>(new Map())
 
@@ -82,6 +99,8 @@ async function load() {
   try {
     plan.value = await getPlan(planId.value)
     nameDraft.value = plan.value?.name ?? ''
+    // 换了一份方案 —— 上一条服务端拼的链接不能再留着(见 shareLink)
+    shareUrl.value = ''
   } catch (error) {
     errorText.value = error instanceof Error ? error.message : '加载失败'
     plan.value = null
@@ -268,6 +287,89 @@ async function remove() {
     busy.value = false
   }
 }
+
+// ---------------------------------------------------------------- 分享(F-1.10)
+
+const sharing = ref(false)
+const revoking = ref(false)
+
+/** 当前方案已有的分享令牌;没分享过就是空串。**它就是这个方案的全部凭据**。 */
+const shareToken = computed(() => plan.value?.shareToken ?? '')
+
+/**
+ * 给用户复制的那条链接。
+ *
+ * 服务端给过 `shareUrl` 就用它;只有令牌时(刷新页面后、或之前就分享过)
+ * 按 `当前站点源 + /share/ + 令牌` 现拼 —— 同源部署下这与后端配的
+ * `tile.share.base-url` 是同一个地址。
+ *
+ * ⚠️ **能用服务端那条就用服务端的。** 后端那个配置默认是
+ * `http://localhost:5173`,**上线前必须改**(§43.12-7):它是个**发给别人**的
+ * 地址,配错了分享者自己在浏览器里还试不出来,只会收到一句"你这链接打不开"。
+ */
+const shareLink = computed(() => {
+  if (!shareToken.value) return ''
+  if (shareUrl.value) return shareUrl.value
+  return `${window.location.origin}/share/${shareToken.value}`
+})
+
+/** 生成分享链接。**幂等** —— 已经分享过,后端回的是同一条链接。 */
+async function createShare() {
+  if (planId.value === null) return
+  clearMessages()
+
+  sharing.value = true
+  try {
+    const result = await sharePlan(planId.value)
+    // 契约里 ShareResult 三个字段**一个都不 required**,实现里 qrCodeUrl 恒不出现
+    // —— 所以逐个判,不假设它们在(§43.2 登记的那处不一致面)。
+    if (plan.value && result.shareToken) {
+      plan.value = { ...plan.value, shareToken: result.shareToken }
+    }
+    shareUrl.value = result.shareUrl ?? ''
+    notice.value = '分享链接已生成 —— 拿到链接的人不用登录就能看'
+  } catch (error) {
+    errorText.value = error instanceof Error ? error.message : '生成分享链接失败'
+  } finally {
+    sharing.value = false
+  }
+}
+
+async function copyShareLink() {
+  clearMessages()
+  const text = shareLink.value
+  if (!text) return
+
+  try {
+    // 剪贴板在非 https / 权限被拒 / 老浏览器里会直接不可用 —— 不抛给用户,
+    // 退化成"链接就在上面的框里,自己选中复制"。
+    await navigator.clipboard.writeText(text)
+    notice.value = '链接已复制'
+  } catch {
+    errorText.value = '复制失败,请手动选中上面的链接复制'
+  }
+}
+
+/** 废除分享链接 —— 旧链接**立刻**打不开(这是唯一的失效手段,§43.9)。 */
+async function revokeShareLink() {
+  if (planId.value === null) return
+  // 二次确认在前端:这个动作影响的是**已经在别人手里**的那条链接,不可撤销
+  if (!window.confirm('确认废除分享链接?已经在别人手里的那条链接会立刻打不开。')) return
+
+  clearMessages()
+  revoking.value = true
+  try {
+    await revokeShare(planId.value)
+    // 后端把 share_token 置空了,本地跟着清 —— 否则页面还显示一条已经作废的链接
+    if (plan.value) plan.value = { ...plan.value, shareToken: undefined }
+    shareUrl.value = ''
+    notice.value = '分享链接已废除'
+  } catch (error) {
+    errorText.value = error instanceof Error ? error.message : '废除失败'
+  } finally {
+    revoking.value = false
+  }
+}
 </script>
 
 <template>
@@ -395,6 +497,34 @@ async function remove() {
           这份方案没有报价 —— 生成时没能算出价格(面积未定、产品下架或报价参数未配)。
           可以点上面的「按当前价重算」再试一次。
         </p>
+      </section>
+
+      <!-- ---------------------------- 分享(F-1.10) ---------------------------- -->
+      <section class="block">
+        <h2>分享</h2>
+
+        <template v-if="shareToken">
+          <p class="hint">
+            拿到这条链接的人<strong>不需要登录</strong>就能看到这份方案(只读,不能改)。
+            链接一直有效,除非你点「废除链接」。
+          </p>
+          <div class="share-row">
+            <!-- readonly 而不是 disabled:disabled 的输入框选不中文本,
+                 用户想手动复制时就抓瞎了 -->
+            <input class="share-link" type="text" readonly :value="shareLink" />
+            <button type="button" @click="copyShareLink">复制链接</button>
+            <button type="button" class="danger" :disabled="revoking" @click="revokeShareLink">
+              {{ revoking ? '废除中…' : '废除链接' }}
+            </button>
+          </div>
+        </template>
+
+        <template v-else>
+          <p class="hint">把这份方案发给家人或设计师 —— 他们不用注册就能打开看。</p>
+          <button type="button" class="primary" :disabled="sharing" @click="createShare">
+            {{ sharing ? '生成中…' : '生成分享链接' }}
+          </button>
+        </template>
       </section>
 
       <!-- ---------------------------- 管理 ---------------------------- -->
@@ -579,6 +709,23 @@ td {
 .actions {
   display: flex;
   gap: 0.5rem;
+}
+
+.share-row {
+  display: flex;
+  gap: 0.5rem;
+  align-items: center;
+  margin-top: 0.6rem;
+}
+
+.share-link {
+  flex: 1;
+  min-width: 12rem;
+  padding: 0.35rem 0.5rem;
+  border: 1px solid #d1d5db;
+  border-radius: 0.25rem;
+  background: #f9fafb;
+  font-size: 0.85rem;
 }
 
 button {
