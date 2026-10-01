@@ -13,10 +13,12 @@ import com.baomidou.mybatisplus.annotation.TableName;
  * 不随产品库改动而变 —— 否则历史方案的金额会跟着今天的价格自己变。
  *
  * <p><b>T-1.11 只写前三列</b>({@code part} / {@code sku_code} / {@code gross_area})。
- * 其余列属报价(T-1.15):{@code product_name} 与 {@code price_per_sqm} 要在报价时
- * 连价一起取,{@code material_fee} 是乘法结果。刻意<b>不</b>在这条路径上去查产品
- * 快照 —— 那会给"回调成功"引入一个新的失败点:产品刚好下架就会抛 30001,
- * 把一次已经成功的生成回滚成失败,用户看到的是"图出来了但保存失败"。
+ * 报价各列在 T-1.12 补上(见 {@code PlanQuoteSnapshotService})。</p>
+ *
+ * <p><b>报价列算不出就整片留空,不写 0。</b>查产品快照会给"回调成功"引入一个新的
+ * 失败点(产品刚好下架就查不到价);而把查不到的价当 0 会静默报出一个偏低价 ——
+ * 两者都不可接受,所以口径是「要么整单有报价,要么整单没有」,见
+ * {@code PlanAutoSaveService.upsert} 的说明。</p>
  */
 @TableName("t_plan_part")
 public class PlanPart {
@@ -50,6 +52,9 @@ public class PlanPart {
 
     /** 材料费,元。 */
     private BigDecimal materialFee;
+
+    /** 部位瓷砖来源(契约 {@code PartSource}):{@code user} 用户选择 / {@code ai} AI 补齐。 */
+    private String source;
 
     public Long getId() {
         return id;
@@ -137,5 +142,13 @@ public class PlanPart {
 
     public void setMaterialFee(BigDecimal materialFee) {
         this.materialFee = materialFee;
+    }
+
+    public String getSource() {
+        return source;
+    }
+
+    public void setSource(String source) {
+        this.source = source;
     }
 }

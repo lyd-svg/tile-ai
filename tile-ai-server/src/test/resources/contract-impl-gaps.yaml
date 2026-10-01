@@ -42,26 +42,6 @@ knownGaps:
     path: /api/v1/agent/chat/sessions/{id}
     source: T-1.6
     note: 对话记录详情未开工
-  - method: GET
-    path: /api/v1/plans
-    source: T-1.12
-    note: 我的方案列表未开工
-  - method: GET
-    path: /api/v1/plans/{id}
-    source: T-1.12
-    note: 方案详情未开工
-  - method: PATCH
-    path: /api/v1/plans/{id}
-    source: T-1.12
-    note: 重命名方案未开工
-  - method: DELETE
-    path: /api/v1/plans/{id}
-    source: T-1.12
-    note: 删除方案未开工
-  - method: POST
-    path: /api/v1/plans/{id}/copy
-    source: T-1.12
-    note: 另存为未开工
   - method: POST
     path: /api/v1/plans/{id}/share
     source: T-1.13

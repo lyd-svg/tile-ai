@@ -7,9 +7,12 @@ import java.util.LinkedHashMap;
 import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Map;
+import java.util.Optional;
 import java.util.Set;
 import java.util.stream.Collectors;
 
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -51,6 +54,8 @@ import com.tileai.quote.mapper.QuoteParamMapper;
 @Service
 public class QuoteService {
 
+    private static final Logger log = LoggerFactory.getLogger(QuoteService.class);
+
     /** 面积小数位,与 §8.4 的 {@code DECIMAL(10,4)} 一致。 */
     private static final int AREA_SCALE = 4;
 
@@ -78,6 +83,44 @@ public class QuoteService {
      */
     @Transactional(readOnly = true)
     public QuoteResultView calculate(QuoteCalcRequest request) {
+        return calculateCore(request);
+    }
+
+    /**
+     * 「算得出来就算,算不出来就算了」—— 给<b>落方案快照</b>用,绝不把异常抛给调用方。
+     *
+     * <p>用于 T-1.12 的出图回调:方案必须存下来,而报价只是它的一个附加物。
+     * 产品刚好下架、报价参数没配、某个部位的面积推不出来 —— 这些都不该让一次
+     * 已经成功的生成回滚成失败(用户看到的是"图出来了但保存失败")。
+     *
+     * <p><b>本方法刻意不标任何事务注解。</b>这不是省事,是必须:
+     * {@link #calculate} 标着 {@code @Transactional(readOnly = true)},从外层事务里
+     * 调它、再用 {@code try/catch} 吞掉异常,Spring 会把**共享事务标成 rollback-only**
+     * —— 外层正常返回后在提交时抛 {@code UnexpectedRollbackException},症状是
+     * "方法明明没报错,数据却没写进去",现场极难查。让异常在**没有事务代理**的
+     * {@link #calculateCore} 上抛出并就地吞掉,这个问题根本不会出现。
+     *
+     * <p>失败只记 WARN(带原因),调用方拿到的 {@code Optional.empty()} 就是
+     * 「这次不落报价」的唯一信号。
+     */
+    public Optional<QuoteResultView> tryCalculate(QuoteCalcRequest request) {
+        try {
+            return Optional.of(calculateCore(request));
+        } catch (RuntimeException e) {
+            log.warn("报价快照计算失败,本次不落报价(方案照常保存): {}", e.getMessage());
+            return Optional.empty();
+        }
+    }
+
+    /**
+     * 真正的计算主体。
+     *
+     * <p>刻意<b>不</b>标事务注解,也不做任何 I/O 之外的事 —— 除了读参数与读单价、
+     * 它只做乘法与加法。所以它既能被 {@link #calculate}(C 端预览,只读事务)复用,
+     * 也能被 {@link #tryCalculate}(落方案快照,加入调用方事务)复用,两条路径
+     * 算出<b>同一份</b>结果。
+     */
+    private QuoteResultView calculateCore(QuoteCalcRequest request) {
         QuoteParams params = loadParams();
         Map<String, Product> products = resolveProducts(request.parts());
         Map<String, BigDecimal> deductions = openingDeductions(request.openings());

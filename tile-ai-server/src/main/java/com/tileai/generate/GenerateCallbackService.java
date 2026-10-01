@@ -245,13 +245,25 @@ public class GenerateCallbackService {
         return url.length() > RESULT_REF_MAX ? url.substring(0, RESULT_REF_MAX) : url;
     }
 
-    /** 部位列表 → 方案部位(去掉 {@code source}:那是生成口径,不是方案口径)。 */
+    /**
+     * 部位列表 → 方案部位。
+     *
+     * <p><b>{@code source} 是保留的,不是丢掉的</b> —— 这条注释原先写的是
+     * 「去掉 source:那是生成口径,不是方案口径」,那个判断被 T-2.1 的契约↔实现
+     * 比对推翻了:契约 {@code PlanPart.source} 是**方案**详情要返回的字段,
+     * 而 PRD §5.2.4 明确「补齐结果随方案自动保存」。丢了它,详情接口就永远说不出
+     * 哪块砖是 AI 补的。
+     *
+     * <p>归一用 {@link PartSelection#withDefaultSource()}(契约:请求里可省略,
+     * 默认 {@code user})—— 不在这里写第二次判空。
+     */
     private static List<PlanPartRef> toPlanParts(List<PartSelection> parts) {
         if (parts == null) {
             return List.of();
         }
         return parts.stream()
-                .map(part -> new PlanPartRef(part.part(), part.sku(), part.area()))
+                .map(PartSelection::withDefaultSource)
+                .map(part -> new PlanPartRef(part.part(), part.sku(), part.area(), part.source()))
                 .toList();
     }
 

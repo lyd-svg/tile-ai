@@ -68,7 +68,7 @@ class SchemaMigrationTest {
             t_unit_template        | id bigint unsigned ; name varchar(200) ; room_count int ; area_range varchar(50) ; structure varchar(50) ; layout_json json ; status varchar(20) ; created_at datetime ; updated_at datetime
             t_layout               | id bigint unsigned ; plan_id bigint unsigned ; layout_enc varbinary(16384)
             t_plan                 | id bigint unsigned ; user_id bigint unsigned ; name varchar(200) ; space varchar(50) ; style varchar(50) ; layout_enc varbinary(16384) ; total_amount decimal(12,2) ; share_token varchar(64) ; quote_expired tinyint(1) ; is_deleted tinyint(1) ; created_at datetime ; updated_at datetime
-            t_plan_part            | id bigint unsigned ; plan_id bigint unsigned ; part varchar(10) ; product_id bigint unsigned ; sku_code varchar(64) ; product_name varchar(200) ; price_per_sqm decimal(10,2) ; gross_area decimal(10,4) ; area decimal(10,4) ; loss_rate decimal(5,4) ; material_fee decimal(12,2)
+            t_plan_part            | id bigint unsigned ; plan_id bigint unsigned ; part varchar(10) ; product_id bigint unsigned ; sku_code varchar(64) ; product_name varchar(200) ; price_per_sqm decimal(10,2) ; gross_area decimal(10,4) ; area decimal(10,4) ; loss_rate decimal(5,4) ; material_fee decimal(12,2) ; source varchar(10)
             t_plan_quote           | id bigint unsigned ; plan_id bigint unsigned ; material_total decimal(12,2) ; aux_total decimal(12,2) ; aux_unit_price decimal(10,2) ; aux_area decimal(10,4) ; loss_rate decimal(5,4) ; total_amount decimal(12,2) ; rules_snapshot json
             t_plan_image           | id bigint unsigned ; plan_id bigint unsigned ; url varchar(500) ; view varchar(30) ; is_cover tinyint(1) ; created_at datetime
             t_furnish_style        | id bigint unsigned ; space varchar(50) ; style varchar(50) ; prompt text ; cover_image varchar(500) ; status varchar(20) ; updated_at datetime
@@ -89,8 +89,14 @@ class SchemaMigrationTest {
             "t_product.sku_code",
             "t_generation_task.task_id");
 
+    /**
+     * 期望的迁移版本集合({@code flyway_schema_history} 里应<b>完全相等</b>)。
+     *
+     * <p>新增迁移必须同步加在这里 —— 它同时是「空库首次迁移应执行 N 个版本」的基数
+     * (见 {@link #migrationsReachLatestAndAreRepeatable})。
+     */
     private static final List<String> EXPECTED_MIGRATIONS =
-            List.of("1", "2", "3", "4", "5", "6", "7", "8", "9");
+            List.of("1", "2", "3", "4", "5", "6", "7", "8", "9", "10");
 
     private static Connection conn;
     private static String schema;
@@ -140,7 +146,7 @@ class SchemaMigrationTest {
     }
 
     @Test
-    @DisplayName("flyway_schema_history 记录了 V1..V6 且全部成功")
+    @DisplayName("flyway_schema_history 记录了 EXPECTED_MIGRATIONS 里的全部版本且都成功")
     void historyHasAllVersions() throws SQLException {
         Set<String> versions = new LinkedHashSet<>();
         try (PreparedStatement ps = conn.prepareStatement(

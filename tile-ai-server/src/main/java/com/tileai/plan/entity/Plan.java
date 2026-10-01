@@ -39,7 +39,13 @@ public class Plan {
     /** 户型快照,{@code AES-256-GCM} 密文。 */
     private byte[] layoutEnc;
 
-    /** 生成时总价。本期不报价(T-1.15),留空。 */
+    /**
+     * 生成时的总价快照(T-1.12 起落库;与 {@code t_plan_quote.total_amount} 同值)。
+     *
+     * <p><b>可空,且 null 不是 0。</b>null 表示"这一次没能算出价"(面积未定 / 参数没配 /
+     * 产品下架),方案照样保存;把它写成 0 会让列表卡片显示"¥0",用户会当成真实报价。
+     * 详见 {@code PlanQuoteSnapshotService}。
+     */
     private BigDecimal totalAmount;
 
     /** 分享令牌,≥128bit;废除后置空(T-1.13)。 */

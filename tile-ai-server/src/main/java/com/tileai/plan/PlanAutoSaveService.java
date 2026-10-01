@@ -1,7 +1,10 @@
 package com.tileai.plan;
 
 import java.math.BigDecimal;
+import java.util.LinkedHashMap;
 import java.util.List;
+import java.util.Map;
+import java.util.Optional;
 
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -14,11 +17,13 @@ import com.fasterxml.jackson.core.JsonProcessingException;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.tileai.admin.DictService;
 import com.tileai.common.crypto.AesGcmCipher;
-import com.tileai.common.error.BusinessException;
-import com.tileai.common.error.ErrorCode;
 import com.tileai.layout.model.LayoutAreas;
 import com.tileai.layout.model.LayoutModel;
 import com.tileai.layout.model.LayoutSpace;
+import com.tileai.plan.PlanQuoteSnapshotService.MergedPart;
+import com.tileai.plan.PlanQuoteSnapshotService.PartFee;
+import com.tileai.plan.PlanQuoteSnapshotService.PartSku;
+import com.tileai.plan.PlanQuoteSnapshotService.Snapshot;
 import com.tileai.plan.dto.PlanImageRef;
 import com.tileai.plan.dto.PlanPartRef;
 import com.tileai.plan.entity.Plan;
@@ -50,17 +55,23 @@ import com.tileai.plan.mapper.PlanPartMapper;
  *       T-1.15 报价时就不必再推一遍、也不会推出不一样的结果。</li>
  * </ol>
  *
- * <p><b>本服务不报价</b>:{@code t_plan.total_amount} / {@code t_plan_quote} /
- * {@code t_plan_part.material_fee} 全部留空,归 T-1.15(它卡片的验收标准就是
- * "生成时存 rulesSnapshot")。这里只落"这个方案铺了哪些砖、户型是什么、图在哪"。
+ * <h2>报价快照(T-1.12 起)</h2>
+ *
+ * <p>本服务现在还会落一份<b>生成时</b>的报价:总价进 {@code t_plan.total_amount},
+ * 明细进 {@code t_plan_quote},分项金额回填 {@code t_plan_part} 的五个费用列。
+ * 口径见 {@link PlanQuoteSnapshotService} —— <b>算不出就整单不落</b>,绝不把
+ * "推不出的面积"当 0 算出个偏低价。"按当前价重算"与"报价已过期"标记仍归 T-1.15。
+ *
+ * <p>整份快照与方案行在<b>同一个事务</b>里落 —— 中途失败一起回滚,不会留下
+ * "方案有总额、明细却没写"的半截状态。
  */
 @Service
 public class PlanAutoSaveService {
 
     private static final Logger log = LoggerFactory.getLogger(PlanAutoSaveService.class);
 
-    /** {@code t_plan.name} 长度上限。 */
-    private static final int NAME_MAX = 200;
+    /** 契约 {@code PartSource} 的默认值(请求里可省略)。 */
+    private static final String SOURCE_USER = "user";
 
     private final PlanMapper planMapper;
     private final PlanPartMapper planPartMapper;
@@ -68,16 +79,22 @@ public class PlanAutoSaveService {
     private final AesGcmCipher cipher;
     private final DictService dictService;
     private final ObjectMapper objectMapper;
+    private final PlanOwnership ownership;
+    private final PlanQuoteSnapshotService quoteSnapshotService;
 
     public PlanAutoSaveService(PlanMapper planMapper, PlanPartMapper planPartMapper,
                               PlanImageMapper planImageMapper, AesGcmCipher cipher,
-                              DictService dictService, ObjectMapper objectMapper) {
+                              DictService dictService, ObjectMapper objectMapper,
+                              PlanOwnership ownership,
+                              PlanQuoteSnapshotService quoteSnapshotService) {
         this.planMapper = planMapper;
         this.planPartMapper = planPartMapper;
         this.planImageMapper = planImageMapper;
         this.cipher = cipher;
         this.dictService = dictService;
         this.objectMapper = objectMapper;
+        this.ownership = ownership;
+        this.quoteSnapshotService = quoteSnapshotService;
     }
 
     /**
@@ -99,7 +116,8 @@ public class PlanAutoSaveService {
      * 本方法标了 {@code @Transactional},从<b>方法内部</b>抛出的异常一旦穿过
      * Spring 的事务代理,整条共享事务就会被标成 rollback-only —— 外层再想
      * 捕获它继续提交,只会拿到 {@code UnexpectedRollbackException}。
-     * 让失败以返回值表达,这个问题根本不会出现。
+     * 让失败以返回值表达,这个问题根本不会出现。报价快照那条路走的也是同一套
+     * 思路({@code QuoteService.tryCalculate} 返回 {@code Optional} 而不是抛)。
      *
      * <p>面向用户的 30001 由受理阶段的 {@link #assertOverwritable} 负责:
      * 那时还没花掉模型调用,拒绝得越早越好。
@@ -112,7 +130,20 @@ public class PlanAutoSaveService {
                        LayoutModel layout, List<PlanPartRef> parts,
                        List<PlanImageRef> images) {
         byte[] layoutEnc = cipher.encryptString(toJson(layout));
-        Plan existing = planId == null ? null : findOwned(userId, planId);
+
+        // 面积快照先定下来:部位合并与报价都要用它。
+        LayoutSpace resolved = resolveSpace(layout, space);
+        List<MergedPart> merged = mergeParts(resolved, parts);
+
+        // 算不出就整单不落(Optional.empty)。**这一步在任何写库之前** ——
+        // 报价永远不该成为"方案存不下来"的原因。
+        Optional<Snapshot> snapshot = quoteSnapshotService.build(space, resolved, merged);
+        if (snapshot.isEmpty()) {
+            log.warn("方案(用户 {}、覆盖 {} )本次不落报价快照,费用列与总价留空",
+                    userId, planId == null ? "否" : planId);
+        }
+
+        Plan existing = planId == null ? null : ownership.findOwned(userId, planId);
 
         long targetId;
         if (existing == null) {
@@ -120,13 +151,14 @@ public class PlanAutoSaveService {
                 log.warn("目标方案 {} 在出图期间已不存在或不再属于用户 {},改为新建方案",
                         planId, userId);
             }
-            targetId = createPlan(userId, space, style, layoutEnc);
+            targetId = createPlan(userId, space, style, layoutEnc, snapshot);
         } else {
-            targetId = overwritePlan(existing, space, style, layoutEnc);
+            targetId = overwritePlan(existing, space, style, layoutEnc, snapshot);
         }
 
-        replaceParts(targetId, space, layout, parts);
+        replaceParts(targetId, merged, snapshot.orElse(null));
         replaceImages(targetId, images);
+        snapshot.ifPresent(fresh -> quoteSnapshotService.persist(targetId, fresh));
         return targetId;
     }
 
@@ -134,26 +166,57 @@ public class PlanAutoSaveService {
     // 方案主体
     // ------------------------------------------------------------------
 
-    private long createPlan(long userId, String space, String style, byte[] layoutEnc) {
+    private long createPlan(long userId, String space, String style, byte[] layoutEnc,
+                            Optional<Snapshot> snapshot) {
         Plan plan = new Plan();
         plan.setUserId(userId);
         plan.setName(defaultName(space, style));
         plan.setSpace(space);
         plan.setStyle(style);
         plan.setLayoutEnc(layoutEnc);
+        plan.setTotalAmount(snapshot.map(Snapshot::totalAmount).orElse(null));
         plan.setQuoteExpired(false);
         plan.setIsDeleted(false);
         planMapper.insert(plan);
         return plan.getId();
     }
 
-    private long overwritePlan(Plan existing, String space, String style, byte[] layoutEnc) {
-        existing.setSpace(space);
-        existing.setStyle(style);
-        existing.setLayoutEnc(layoutEnc);
-        // **不动 name**:那是用户自己起的名字,重新生成不该把它冲回默认值。
-        // 同理不动 created_at 与 share_token —— 覆盖要保住方案的对外身份(T-1.13)。
-        planMapper.updateById(existing);
+    /**
+     * 覆盖原方案。
+     *
+     * <p><b>不动 {@code name}、{@code created_at}、{@code share_token}</b> ——
+     * 用户自己起的名字不该被重新生成冲回默认值,方案的对外身份(T-1.13 的分享链接)
+     * 也不该因为重出一张图就换掉。
+     *
+     * <p><b>用定向 UPDATE 而不是 {@code updateById}</b>,有两个原因:
+     *
+     * <ol>
+     *   <li>{@code updateById} 会把实体里所有非空字段整行写回,把并发写入的其它列
+     *       一起覆盖掉(比如用户刚好在这两分钟里改了名)。</li>
+     *   <li>{@code total_amount} 要能<b>被清成 null</b>:上一次算得出价、这一次算不出,
+     *       留着旧总额就是在报一个已经不对的数。{@code set(...)} 是无条件写,
+     *       正好要这个语义。</li>
+     * </ol>
+     *
+     * <p><b>{@code updated_at} 显式写 {@code NOW()}。</b>不能指望 V4 的
+     * {@code ON UPDATE CURRENT_TIMESTAMP}:它只在至少一列的值真的变了时才触发,
+     * 而 {@code updateById} 在"值没变"时不会抬时间戳 —— 方案列表按
+     * {@code updated_at desc} 排序,时间戳不前进就等于用户刚重出的图排到了列表最下面。
+     * 写 {@code NOW()}(数据库时钟)而不是 Java 的 {@code now()},是为了和
+     * {@code created_at} 用同一个时钟,不引入两台机器的时区偏差。
+     *
+     * <p>{@code quote_expired} 一并清 0:总额刚刚按当前价算过,定义上就不可能是过期的。
+     */
+    private long overwritePlan(Plan existing, String space, String style, byte[] layoutEnc,
+                               Optional<Snapshot> snapshot) {
+        planMapper.update(null, Wrappers.<Plan>lambdaUpdate()
+                .eq(Plan::getId, existing.getId())
+                .set(Plan::getSpace, space)
+                .set(Plan::getStyle, style)
+                .set(Plan::getLayoutEnc, layoutEnc)
+                .set(Plan::getTotalAmount, snapshot.map(Snapshot::totalAmount).orElse(null))
+                .set(Plan::getQuoteExpired, false)
+                .setSql("updated_at = NOW()"));
         return existing.getId();
     }
 
@@ -165,32 +228,16 @@ public class PlanAutoSaveService {
      * 更糟的是任务会卡在 {@code running} 直到补偿扫描重投,再烧一次。
      * 这类"注定失败"的请求应当<b>在受理时就拒掉</b>,而不是让它跑完全程。
      *
+     * <p>判定委托给 {@link PlanOwnership} —— 和详情/改名/删除/另存为用的是
+     * 同一个出口,30001 的语义只可能有一份。
+     *
      * @param planId 为 null 表示新建,无需校验
-     * @throws BusinessException 30001 —— 不存在、已删除或不属于本人
+     * @throws com.tileai.common.error.BusinessException 30001 —— 不存在、已删除或不属于本人
      */
     public void assertOverwritable(long userId, Long planId) {
-        if (planId != null && findOwned(userId, planId) == null) {
-            throw new BusinessException(ErrorCode.NOT_FOUND, "方案不存在或不可覆盖: " + planId);
+        if (planId != null) {
+            ownership.requireOwned(userId, planId);
         }
-    }
-
-    /**
-     * 取本人在用的方案,取不到返回 {@code null}。
-     *
-     * <p>三个条件缺一不可,且合并成同一个结果:不存在、已逻辑删除、不是本人的。
-     * 刻意不区分 —— 区分等于告诉调用方"这个 id 存在、只是不属于你",
-     * 那就成了一个可以拿来枚举别人方案 id 的接口。
-     *
-     * <p><b>返回 null 而不是抛异常</b>:调用方有两处,一处要把"取不到"变成
-     * 面向用户的 30001({@link #assertOverwritable}),一处要把"取不到"变成
-     * 退回新建({@link #upsert})。抛异常的那版会让后者踩到 Spring 的
-     * rollback-only 陷阱(见 {@link #upsert} 的说明)。
-     */
-    private Plan findOwned(long userId, Long planId) {
-        return planMapper.selectOne(Wrappers.<Plan>lambdaQuery()
-                .eq(Plan::getId, planId)
-                .eq(Plan::getUserId, userId)
-                .eq(Plan::getIsDeleted, false));
     }
 
     // ------------------------------------------------------------------
@@ -198,23 +245,100 @@ public class PlanAutoSaveService {
     // ------------------------------------------------------------------
 
     /**
+     * 请求里的部位行 → 落库行:**同部位同砖先合并**。
+     *
+     * <p>V4 的 DDL 注释本来就写着 {@code gross_area} 是"同部位同砖合并后"的值,
+     * 而 T-1.11 没有合并。不合并会有两个后果:同一块砖在同一个部位出现两行,
+     * 而 {@code Σ material_fee} 与 {@code material_total} 对不上 —— 报价引擎内部
+     * 是先合并再算的。
+     *
+     * <p>合并不改变<b>顺序</b>(LinkedHashMap 保留首次出现的位置),所以"插入序即
+     * 期望展示序"这条对效果图成立的规则,对部位行同样成立。
+     *
+     * <p><b>面积合并的红线:任一行是 null,合并结果就是 null。</b>null 的含义是
+     * "这块砖铺多少还没定"({@code grossAreaOf} 对 {@code local} 部位和匹配不到空间
+     * 都返回 null),`null + 3㎡` 推不出任何值 —— 把 null 当 0 加出来的是个偏小的数,
+     * 然后会被当成真实面积算进报价。宁可整条留在"未定"。
+     *
+     * <p><b>来源合并取"用户优先"</b>:只要有一行是用户显式选的,这一行就记
+     * {@code user}。AI 只在用户没给的地方补齐(PRD §5.2.4),用户给了的地方就该
+     * 按用户算 —— 标成 {@code ai} 会让用户在详情页看到"这块是 AI 帮你选的",
+     * 而实际上是他自己选的。
+     */
+    private static List<MergedPart> mergeParts(LayoutSpace resolved, List<PlanPartRef> parts) {
+        Map<PartSku, MergedPart> merged = new LinkedHashMap<>();
+        for (PlanPartRef part : parts) {
+            BigDecimal area = grossAreaOf(resolved, part);
+            PartSku key = new PartSku(part.part(), part.sku());
+            String source = sourceOf(part.source());
+
+            MergedPart previous = merged.get(key);
+            if (previous == null) {
+                merged.put(key, new MergedPart(part.part(), part.sku(), area, source));
+            } else {
+                merged.put(key, new MergedPart(
+                        previous.part(),
+                        previous.sku(),
+                        addNullable(previous.grossArea(), area),
+                        SOURCE_USER.equals(previous.source()) || SOURCE_USER.equals(source)
+                                ? SOURCE_USER
+                                : source));
+            }
+        }
+        return List.copyOf(merged.values());
+    }
+
+    /** 两段面积相加;**只要有一段是 null,结果就是 null**(null = 未定,不是 0)。 */
+    private static BigDecimal addNullable(BigDecimal left, BigDecimal right) {
+        return (left == null || right == null) ? null : left.add(right);
+    }
+
+    /**
+     * 归一来源。
+     *
+     * <p>边界已经归一过({@code PartSelection.withDefaultSource()}),这里是
+     * "绝不能把 null/空写进库"的兜底:{@code t_plan_part.source} 一旦写空,
+     * 详情接口就会返回一个违约的值,而契约里 {@code PartSource} 是必填枚举。
+     * 真的走到这里说明调用方漏了归一,所以要出声。
+     */
+    private static String sourceOf(String source) {
+        if (source == null || source.isBlank()) {
+            log.warn("部位来源为空,按契约默认值 {} 落库(调用方应已归一)", SOURCE_USER);
+            return SOURCE_USER;
+        }
+        return source;
+    }
+
+    /**
      * 按 plan 删干净再插。
      *
      * <p>不做逐条 upsert:部位组合会变(这次铺地面+墙面、下次只铺地面),
      * 增量更新就得处理"多出来的那条删不删",而删干净重插天然没有这个问题。
      * 同一事务内,中途失败一起回滚。
+     *
+     * <p>费用列从报价快照里按 {@code (部位, SKU)} 取。快照为空时整片留空
+     * (不写 0);快照非空时每一行都取得到 —— 报价分项就是按这同一份合并结果算的。
      */
-    private void replaceParts(long planId, String spaceKey, LayoutModel layout,
-                              List<PlanPartRef> parts) {
+    private void replaceParts(long planId, List<MergedPart> merged, Snapshot snapshot) {
         planPartMapper.delete(Wrappers.<PlanPart>lambdaQuery().eq(PlanPart::getPlanId, planId));
 
-        LayoutSpace space = resolveSpace(layout, spaceKey);
-        for (PlanPartRef part : parts) {
+        for (MergedPart part : merged) {
+            PartFee fee = snapshot == null ? null : snapshot.fees().get(part.key());
+
             PlanPart row = new PlanPart();
             row.setPlanId(planId);
             row.setPart(part.part());
             row.setSkuCode(part.sku());
-            row.setGrossArea(grossAreaOf(space, part));
+            row.setGrossArea(part.grossArea());
+            row.setSource(part.source());
+            if (fee != null) {
+                row.setProductId(fee.productId());
+                row.setProductName(fee.productName());
+                row.setPricePerSqm(fee.pricePerSqm());
+                row.setArea(fee.area());
+                row.setLossRate(fee.lossRate());
+                row.setMaterialFee(fee.materialFee());
+            }
             planPartMapper.insert(row);
         }
     }
@@ -302,10 +426,13 @@ public class PlanAutoSaveService {
      *
      * <p>为什么不留空:{@code PlanSummary.name} 在契约里是 <b>required</b>,
      * 方案列表(T-1.12)直接渲染它,留空就是一张没有标题的卡片。
+     *
+     * <p>截断走 {@link PlanNames#fit}(按<b>码点</b>),不自己写
+     * {@code substring} —— 后者会把 emoji 的代理对劈成两半。
      */
     private String defaultName(String space, String style) {
-        String name = label("space", space) + " · " + label("style", style);
-        return name.length() > NAME_MAX ? name.substring(0, NAME_MAX) : name;
+        return PlanNames.fit(label("space", space) + " · " + label("style", style),
+                PlanNames.NAME_MAX);
     }
 
     private String label(String dictType, String key) {

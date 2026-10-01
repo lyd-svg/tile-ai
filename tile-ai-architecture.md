@@ -455,7 +455,7 @@ EmbeddingGateway
 
 **t_plan(方案)**:`id`、`user_id`、`name`、`space`(生成空间)、`style`、`layout_enc`(户型快照,**AES-256-GCM 密文**)、`total_amount`、`share_token`(可空,分享)、`quote_expired`(调价后置 1)、`is_deleted`、`created_at`、`updated_at`。
 
-**t_plan_part(方案部位—瓷砖映射 + 报价分项)**:`id`、`plan_id`、`part`(floor/wall/local)、`product_id`、`sku_code`、`product_name`(快照)、`price_per_sqm`(快照)、`gross_area`(毛面积,同部位同砖合并后)、`area`(有效面积)、`loss_rate`、`material_fee`。
+**t_plan_part(方案部位—瓷砖映射 + 报价分项)**:`id`、`plan_id`、`part`(floor/wall/local)、`product_id`、`sku_code`、`product_name`(快照)、`price_per_sqm`(快照)、`gross_area`(毛面积,同部位同砖合并后)、`area`(有效面积)、`loss_rate`、`material_fee`、`source`(部位瓷砖来源 user/ai,契约 `PartSource`;PRD §5.2.4「补齐结果随方案自动保存」)。
 
 **t_plan_quote(方案报价汇总)**:`id`、`plan_id`、`material_total`、`aux_total`、`aux_unit_price`、`aux_area`、`loss_rate`、`total_amount`、`rules_snapshot`(JSON,记录生成时参数,便于复算与"报价过期"判断)。
 
