@@ -373,8 +373,16 @@ onBeforeUnmount(cancelPolling)
           </figure>
         </div>
 
+        <!-- 方案已经存到服务端了 —— 给一条能走回去的路,而不是只丢一个编号让用户去猜。
+             用字符串路径而不是 `{ name: 'plan-detail' }`:命名路由要求目标路由已注册,
+             否则 RouterLink 在解析时就会抛;字符串路径只是渲染一个普通的 href,
+             对"这条路由存不存在"不敏感。 -->
         <dl v-if="planId !== null" class="meta">
-          <dt>方案编号</dt><dd>{{ planId }}</dd>
+          <dt>方案编号</dt>
+          <dd>
+            {{ planId }}
+            <RouterLink class="plan-link" :to="`/plans/${planId}`">查看方案</RouterLink>
+          </dd>
         </dl>
 
         <div v-if="resultParts.length" class="meta">
@@ -557,6 +565,15 @@ button.primary:disabled {
 
 .meta dt {
   color: #6b7280;
+}
+
+.meta dd {
+  margin: 0;
+}
+
+.plan-link {
+  margin-left: 0.5rem;
+  color: #1d4ed8;
 }
 
 .meta dd {

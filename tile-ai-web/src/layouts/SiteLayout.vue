@@ -27,6 +27,7 @@ async function handleLogout() {
       <RouterLink to="/products">选砖</RouterLink>
       <RouterLink to="/combos">推荐搭配</RouterLink>
       <RouterLink to="/layout">录户型</RouterLink>
+      <RouterLink to="/plans">我的方案</RouterLink>
       <RouterLink to="/store">门店</RouterLink>
     </nav>
 

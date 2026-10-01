@@ -62,6 +62,21 @@ const router = createRouter({
           meta: { requiresAuth: true },
         },
         {
+          // 方案是"谁的",服务端按 Cookie 判定 —— 契约 /plans 四条全都 cookieAuth。
+          // 用 `/plans` 而不是 `/my-plans`:与后端 `/api/v1/plans` 同形,一眼能对上;
+          // 也给将来的公开分享页 `/share/:token` 让开了前缀。
+          path: 'plans',
+          name: 'plans',
+          component: () => import('@/views/site/MyPlansView.vue'),
+          meta: { requiresAuth: true },
+        },
+        {
+          path: 'plans/:id',
+          name: 'plan-detail',
+          component: () => import('@/views/site/PlanDetailView.vue'),
+          meta: { requiresAuth: true },
+        },
+        {
           path: 'login',
           name: 'login',
           component: () => import('@/views/site/LoginView.vue'),

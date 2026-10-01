@@ -22,6 +22,9 @@ import {
   API_RESPONSE_REQUIRED_FIELDS,
   PAGE_DATA_REQUIRED_FIELDS,
   PART_VALUES,
+  PLAN_PART_REQUIRED_FIELDS,
+  PLAN_SUMMARY_REQUIRED_FIELDS,
+  QUOTE_RESULT_REQUIRED_FIELDS,
 } from '../src/api/types'
 
 // 用 fileURLToPath + path.resolve 而不是把 URL 直接交给 readFileSync:
@@ -49,6 +52,10 @@ function commonSchema(name: string): JsonSchema {
 interface Operation {
   security?: unknown[]
   responses?: Record<string, unknown>
+  requestBody?: {
+    required?: boolean
+    content?: Record<string, { schema?: JsonSchema }>
+  }
 }
 
 function cOperation(path: string, method: string): Operation {
@@ -121,5 +128,71 @@ describe('部位枚举', () => {
     // 若有人在契约里加了第四个值(比如美缝),这里会先红 ——
     // 前端到处都在按三值渲染部位。
     expect(new Set(commonSchema('Part').enum as string[])).toEqual(new Set(PART_VALUES))
+  })
+})
+
+describe('C 端方案接口(F-1.9 / F-1.8)', () => {
+  const OPERATIONS: [string, string][] = [
+    ['/plans', 'get'],
+    ['/plans/{id}', 'get'],
+    ['/plans/{id}', 'patch'],
+    ['/plans/{id}', 'delete'],
+    ['/plans/{id}/copy', 'post'],
+    ['/plans/{id}/recalc', 'post'],
+  ]
+
+  it('六条接口全都要登录 —— 少一条就等于多一个匿名入口', () => {
+    // 方案是"谁的",服务端按 Cookie 里的用户判定。任何一条掉成匿名,
+    // 别人就能凭 id 猜到你的方案(30001 的三合一防的就是这个)。
+    for (const [path, method] of OPERATIONS) {
+      expect(cOperation(path, method).security, `${method.toUpperCase()} ${path}`).toEqual([
+        { cookieAuth: [] },
+      ])
+    }
+  })
+
+  it('POST /plans/{id}/recalc **没有 requestBody** —— 架构不变量 6', () => {
+    // 部位 / 面积 / 开口一律取自方案快照。让它收前端传参,就等于开了一条
+    // 绕过 /quote/calc 参数校验的后门(可以直接把面积填成 1 ㎡ 去探价)。
+    // 前端 `recalcPlan` 不带 body 是这条的另一半,两边都要钉住。
+    expect(cOperation('/plans/{id}/recalc', 'post').requestBody).toBeUndefined()
+  })
+
+  it('PlanSummary 的必填字段与前端假设一致', () => {
+    // ⚠️ 只有三个。前端把 totalAmount / coverImage / parts 都当**可选**渲染,
+    // 这条红了说明契约改了必填口径,那几处兜底要跟着重看。
+    const required = commonSchema('PlanSummary').required ?? []
+    expect(new Set(required)).toEqual(new Set(PLAN_SUMMARY_REQUIRED_FIELDS))
+  })
+
+  it('PlanPart / QuoteResult 的必填字段与前端假设一致', () => {
+    expect(new Set(commonSchema('PlanPart').required ?? [])).toEqual(
+      new Set(PLAN_PART_REQUIRED_FIELDS),
+    )
+    expect(new Set(commonSchema('QuoteResult').required ?? [])).toEqual(
+      new Set(QUOTE_RESULT_REQUIRED_FIELDS),
+    )
+  })
+
+  it('⚠️ 登记一处已知分歧:PATCH /plans/{id} 的 name **没有声明长度上限**', () => {
+    // 实现按**码点**卡 200(`PlanNames.NAME_MAX`),超了报 10001 —— 但契约只写了
+    // `type: string`。`contract-diff.sh` 比的是路径/方法/字段名/类型/必填/枚举,
+    // **约束维度它看不到**,所以这条分歧不会被任何门禁拦下。
+    //
+    // 这是**登记,不是修复**:补 `maxLength` 得走上游文档链(PRD → 架构 → 契约),
+    // 不在本轮范围。前端因此自己按码点挡了一道(见 PlanDetailView.saveName)。
+    //
+    // 哪天有人给契约补上 `maxLength`,这条会红 —— 那时该做的是把前端的客户端
+    // 校验改成读契约,而不是删掉这条断言。
+    const schema = cOperation('/plans/{id}', 'patch').requestBody?.content?.['application/json']
+      ?.schema
+    const name = schema?.properties?.name
+
+    expect(name, '契约里找不到 PATCH /plans/{id} 的 name 字段').toBeTruthy()
+    expect(name?.type).toBe('string')
+    expect(
+      (name as { maxLength?: number } | undefined)?.maxLength,
+      '契约补上了 maxLength —— 请把 PlanDetailView 的客户端校验改成读契约后再改这条',
+    ).toBeUndefined()
   })
 })

@@ -4400,4 +4400,188 @@ Tests run: 481, Failures: 0, Errors: 0, Skipped: 0
    那是一次**独立的产品决策 + 契约改动**,不是实现能自己定的。
 9. **`materialFee` 的必填不一致**(§41.6 / §42.7)—— 仍在,**面没扩大**。
 
+---
+
+## 44. F-1.9 我的方案 + F-1.8 报价展示与重算:前端落地与三处诚实边界(2026-10-01)
+
+**本轮不写一行 Java、不动一个字契约** —— 后端六条接口(T-1.12 五条 + T-1.15 的
+`recalc`)早已落地且已验收,缺的只是**界面**。做完之后 C 端第一次形成闭环:
+**选砖 → 录户型 → 生成 → 我的方案 → 打开方案 → 改名 / 另存为 / 按当前价重算**。
+
+### 44.1 范围由用户拍板(2026-10-01)
+
+| 问题 | 用户选择 | 后果 |
+| --- | --- | --- |
+| 这一轮做到哪一步 | **列表 + 详情 + 管理 + 报价重算** | F-1.9 主体 + F-1.8 全部 |
+| PRD 里的「重新编辑」这次做吗 | **这次不做** | 生成页**不回填草稿**;F-1.9 只做到"看与管理",没做到"改一改再出图" |
+| 分享按钮 / 公开分享页 | **本轮不接**(F-1.10) | §43.12-1 那条"用户点不到分享"**依然成立** |
+
+### 44.2 结构:列表只读,管理动作全部只在详情页
+
+- `/plans`(`MyPlansView.vue`)—— **只读导航**:卡片 + 分页,整张卡片是链接。
+- `/plans/:id`(`PlanDetailView.vue`)—— 效果图 / 户型 / 部位 / 报价 +
+  **改名 / 另存为 / 删除 / 重算四个动作全在这里**。
+
+**为什么不也往列表页放一份:** 同一个动作有两处实现,就要有两处测试,而且**迟早各自漂**
+(§42.6 已经为"口径必须同源"付过一次学费)。详情页是"我打开了一份方案,现在想对它做点什么"
+的自然位置。
+
+列表页的骨架**照抄 `ProductListView.vue`**(卡片网格 + 分页器 + 四分支模板),
+不另立一套取值/加载/错误态写法 —— C 端已经有一套了。
+
+### 44.3 三处"改错了不报错,只悄悄出错"的边界(本轮的核心)
+
+这三条都不是新问题,但**都是第一次被前端消费** —— 消费方式决定了它们是"显示成 0"
+还是"显示成 —",而**两者都不会让任何测试变红**。
+
+#### 44.3.1 `PlanPart.materialFee`:契约标必填,实现会**整个省略**
+
+`PlanPartView` 带 `@JsonInclude(NON_NULL)`(`plan/dto/PlanPartView.java:28`)。
+报价算不出来时该值为 null ⇒ **JSON 里根本没有这个键**。契约把 `materialFee` 标
+`required` 是照"报价一定算得出来"的理想情况写的(§41.6 / §42.7 已登记)。
+
+⇒ 前端 `materialFee?: number`,渲染一律 `?? '—'`。**不是 `?? 0`** ——
+那是把"没算出来"伪装成一个真实的数字,而 ¥0 看起来像一张真报价单。
+
+⚠️ **测试里必须用 `delete` 把字段从 mock 上拿掉,不能塞 `null`** ——
+实现永远不发 `null`,塞 `null` 测的是不存在的情形。
+
+#### 44.3.2 `totalAmount` / `quote` 可能整个没有 = **"这一次没算出价",不是 0**
+
+`PlanSummaryView.totalAmount` 的注释原文:「**null 表示"这一次没算出价",不是 0**」。
+
+⇒ 列表卡片显示「**未出报价**」,详情页显示「这份方案没有报价(生成时没能算出价格)」,
+并且**重算按钮仍然可点** —— 那正是它存在的意义:把"当时算不出"变成"现在能算"。
+
+**一条专门的断言钉死它**:
+
+```ts
+expect(wrapper.text()).not.toContain('NaN')   // 整页文本,不只是价格那一格
+```
+
+只要有人在任何一处写了 `totalAmount ?? 0` 或直接插值,这条就会红。
+用"整页不含 NaN"而不是"这一格等于什么"是有意的:前者抓的是**这一类错**,
+后者只抓你想到的那一处。
+
+#### 44.3.3 改名的 200 上限:**契约没声明,门禁也看不见**(登记,不是修复)
+
+上限只在后端 `PlanNames.NAME_MAX = 200` 里,由 `PlanService.rename` 按
+**码点**(`codePointCount`)判,超了报 **10001**。
+而契约 `PATCH /plans/{id}` 的 `name` **只有 `type: string`,没有 `maxLength`**。
+
+⚠️ `contract-diff.sh` 比的是**路径 / 方法 / 字段名 / 类型 / 必填 / 枚举取值** ——
+**约束维度它看不到**(§40 已列边界)。所以这道分歧**没有任何门禁会拦**。
+
+前端的处置:
+
+1. 客户端**按码点**先挡一道:`[...name].length > 200`(不是 `name.length`)。
+   `'😀'` 在 UTF-16 里是 2 个单元、在 MySQL/后端眼里是 1 个码点 ——
+   **150 个 emoji 是完全合法的名字**,而 `name.length` 会数成 300 并**错拒**它。
+   有一条用例把这件事钉住(150 个 emoji 必须**发得出去**)。
+2. **故意不加 HTML 的 `maxlength`** —— 它数的也是 UTF-16 单元,
+   和后端用的是**两把尺子**。加了就会出现"浏览器拦住 100 个 emoji、后端认为完全合法"。
+3. 服务端仍会回 10001 ⇒ 用既有的 `validationErrorsOf(error)` 把 `data.errors[]`
+   逐条渲染出来,**不吞**。
+4. 在 `tests/contract.spec.ts` 里**登记**这条分歧:
+
+   ```ts
+   expect(name?.maxLength, '契约补上了 maxLength —— 请把客户端校验改成读契约后再改这条')
+     .toBeUndefined()
+   ```
+
+   哪天有人给契约补上 `maxLength`,这条会红。
+
+**这是登记,不是修复** —— 补 `maxLength` 要走上游文档链(PRD → 架构 → 契约),
+不在本轮范围(CLAUDE.md:改动必须自上而下)。
+
+### 44.4 重算后**就地刷新**,不重新拉详情
+
+契约写明 `POST /plans/{id}/recalc` 的 `data` **就是**重算后的完整 `QuoteResult`
+(`CPlanRecalcController.recalc` 返回 `ApiResponse<QuoteResultView>`)。
+
+⇒ 拿到就 `plan = { ...plan, quote: result, totalAmount: result.total, quoteExpired: false }`。
+**不再 `getPlan` 一轮** —— 那是白打的请求,而且中间那一拍会闪一下旧金额。
+有一条用例断言 `getPlan` **只被调用过一次**。
+
+`totalAmount` 一并改掉,是因为后端同一次 `UPDATE` 里也把它覆盖成了新总额
+(`PlanRecalcService:121`)、`quote_expired` 置回 false —— 前端照做,
+免得页面上"总额"与"明细合计"两个数打架。
+
+### 44.5 新增的契约断言(`tests/contract.spec.ts`,**+73/−0 纯追加**)
+
+| 断言 | 为什么 |
+| --- | --- |
+| 六条接口的 `security` 都是 `[{ cookieAuth: [] }]` | 掉一条 = 多一个匿名入口;30001 的三合一防的就是"凭 id 猜别人的方案" |
+| `POST /plans/{id}/recalc` **没有 `requestBody`** | 架构不变量 6。前端 `recalcPlan` 不带 body 是这条的另一半,两边都要钉 |
+| `PlanSummary.required` == `[id, name, createdAt]` | 前端把 `totalAmount` / `coverImage` / `parts` 都当**可选**渲染 |
+| `PlanPart` / `QuoteResult` 的 required 集 | 同 `types.ts` 里的可选/必填划分一致 |
+| `PATCH /plans/{id}` 的 `name` **没有 `maxLength`** | §44.3.3 的登记 |
+
+### 44.6 一个前端侧的发现:命名路由未注册时 `RouterLink` 会抛
+
+生成页成功态原本只打了一行 `方案编号 {{ planId }}` 纯文本,本轮加了一个
+`RouterLink` 指向方案详情。
+
+**`to="{ name: 'plan-detail' }"` 会炸** —— `RouterLink` 解析命名路由时要求目标路由
+**已注册**;而既有 `tests/generate.spec.ts` 的 memory router 只注册了
+`/generate` / `/products` / `/layout`(既有测试**不许改**)。实测:6 条用例全红,
+报 `instance.update is not a function`。
+
+⇒ 改用**字符串路径** `:to="`/plans/${planId}`"` —— 它只渲染一个普通 `href`,
+对"这条路由存不存在"不敏感。既有 `tests/generate.spec.ts` **零改动**、12 条全绿。
+
+(其余新增的 `<RouterLink :to="{ name: 'plan-detail' }">` 在 `MyPlansView` 里,
+而新增的 `tests/plans.spec.ts` **注册了**这条路由 —— 两处口径不同是有意的,
+差别就在"目标路由在不在测试的 router 里"。)
+
+### 44.7 回归安全:改动面
+
+`git status` / `git diff --numstat`(2026-10-01):
+
+```
+ M tile-ai-web/src/api/types.ts                     +125 /  −0   纯追加
+ M tile-ai-web/src/layouts/SiteLayout.vue             +1 /  −0   导航加一条
+ M tile-ai-web/src/router/index.ts                   +15 /  −0   两条路由
+ M tile-ai-web/src/views/site/GenerateView.vue       +18 /  −1   只改了那一行编号文本
+ M tile-ai-web/tests/contract.spec.ts                +73 /  −0   纯追加
+?? tile-ai-web/src/api/c/plans.ts                (新)
+?? tile-ai-web/src/views/site/MyPlansView.vue    (新)
+?? tile-ai-web/src/views/site/PlanDetailView.vue (新)
+?? tile-ai-web/tests/plans.spec.ts               (新)
+?? tile-ai-web/tests/planDetail.spec.ts          (新)
+```
+
+- **`tile-ai-server/` 与四份契约 YAML、PRD:`git status` 里一个字没有**;
+- 既有 13 个 spec、142 条用例**零改动** —— 唯一被动到的既有 spec 是
+  `contract.spec.ts`,且为 **+73 / −0 纯追加**;
+- `GenerateView.vue` 的 **−1** 就是被替换掉的那一行 `<dt>方案编号</dt><dd>{{ planId }}</dd>`。
+
+### 44.8 校验结果(2026-10-01)
+
+| 项 | 结果 |
+| --- | --- |
+| 前端全量 | **180 passed / 15 文件**(基线 **142 / 13**,`87d1e62` 实测) |
+| 新增 | `tests/plans.spec.ts` 13 条、`tests/planDetail.spec.ts` 20 条、`contract.spec.ts` +5 条 |
+| 类型与构建 | `npm run build`(= `vue-tsc --noEmit && vite build`)**通过** |
+| 后端 | 未跑(未改动;本轮不涉及 `ci.sh`) |
+
+⚠️ **没有做人工浏览器验证** —— 与 M1 收口时不同,本轮的页面行为全部由组件测试钉住,
+**没有在真实浏览器里点过一遍**(尤其没有连着真后端跑)。
+这与 §29 的阶段性收缩**无关**,是本轮自己的欠账,记在 §44.9-1。
+
+### 44.9 仍未做(不许读成「已绑住」)
+
+1. **没有真人在浏览器里点过这两个页面**(§44.8)——
+   组件测试证明的是"逻辑对",不证明"连着真后端跑得通"(Vite 代理 / Cookie / 真实数据)。
+2. **F-1.10 分享页仍然没有** —— §43.12-1 那条"用户点不到分享"**依然成立**,
+   本轮**明确不接**(用户拍板)。方案详情页里**没有**分享按钮。
+3. **「重新编辑」未做** —— 生成页不回填草稿;用户想改一改再出图,只能重新走一遍。
+4. **改名上限的契约缺口未修**(§44.3.3)—— 已登记(一条会红的断言),**未修**。
+5. **`materialFee` 的必填不一致仍在**(§41.6 / §42.7 / §44.3.1)——
+   前端按**可选**消费,分歧**未被消除**,只是被诚实地显示成了 `—`。
+6. **列表页没有搜索 / 筛选 / 排序** —— 契约 `/plans` 只有 `page` / `size` 两个参数,
+   前端不多传(CLAUDE.md:契约优先),所以这不是遗漏,是契约如此。
+   方案多了之后要筛选,得**先改契约**。
+7. **`SHARE_BASE_URL` 那一类"上线前必须改"的配置**(§43.12-7)与本轮无关,仍未处理。
+
 
