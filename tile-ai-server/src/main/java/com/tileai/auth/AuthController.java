@@ -3,6 +3,7 @@ package com.tileai.auth;
 import org.springframework.http.HttpHeaders;
 import org.springframework.http.ResponseEntity;
 import org.springframework.util.StringUtils;
+import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestMapping;
@@ -32,6 +33,7 @@ import jakarta.validation.Valid;
  *   POST /api/v1/auth/password   修改密码(需登录)
  *   POST /api/v1/auth/logout     退出登录(需登录)
  *   POST /api/v1/auth/refresh    刷新访问令牌(公开,凭 refresh Cookie)
+ *   GET  /api/v1/auth/me         取当前登录账号(需登录)
  * </pre>
  *
  * <p>登录态一律经 {@code Set-Cookie} 下发,**令牌不进响应体**
@@ -97,6 +99,28 @@ public class AuthController {
                 .header(HttpHeaders.SET_COOKIE,
                         cleared.access().toString(), cleared.refresh().toString())
                 .body(ApiResponse.ok());
+    }
+
+    /**
+     * 取当前登录账号 —— 供前端在页面刷新后恢复会话(契约 {@code GET /auth/me})。
+     *
+     * <p><b>为什么必须有它</b>:令牌在 HttpOnly Cookie 里,前端读不到(§10.1 的 D1 方案),
+     * 刷新后无法自行得知"当前是谁"。没有本接口,前端只能把账号信息缓存在本地,
+     * 那是把<b>展示状态</b>当成了凭证来源 —— 账号被停用后,界面会继续按旧状态渲染。
+     * 有它之后,每次加载都以服务端当下的事实为准。
+     *
+     * <p>账号已停用或不存在时抛 <b>10002</b> 而不是 30001:对调用方而言这是
+     * "会话已失效,需要重新登录",与"资源不存在"是两回事 —— 前者前端要清态并跳登录页,
+     * 后者只需提示。与后台 {@code GET /admin/auth/me} 同口径。
+     *
+     * <p><b>不需要权限点</b> —— 它是"我是谁"的接口,不是"我能做什么"。
+     */
+    @GetMapping("/me")
+    public ApiResponse<UserView> me() {
+        AuthPrincipal principal = CurrentPrincipal.requireUser();
+        User user = authService.findEnabledById(principal.id())
+                .orElseThrow(() -> new BusinessException(ErrorCode.UNAUTHENTICATED));
+        return ApiResponse.ok(UserView.of(user));
     }
 
     /**

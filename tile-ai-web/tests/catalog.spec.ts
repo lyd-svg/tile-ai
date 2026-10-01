@@ -130,11 +130,14 @@ vi.mock('@/api/c/catalog', async () => {
 })
 
 const login = vi.fn()
+// ⚠️ 这个工厂**替换整个模块** —— 给 @/api/c/auth 加了新导出就必须在这里补上,
+// 否则任何走到那个导出的地方都会报 "not a function"(不是编译错误,是运行时才炸)。
 vi.mock('@/api/c/auth', () => ({
   login: (...args: unknown[]) => login(...args),
   register: vi.fn(),
   logout: vi.fn(),
   changePassword: vi.fn(),
+  fetchMe: vi.fn(),
 }))
 
 // ⚠️ 字典也要打桩:组件在 onMounted 里**先取字典再加载列表**,

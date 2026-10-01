@@ -4,11 +4,9 @@
  * 登录方式:**用户名 + 密码**(v0.7 起)。**不要再引入手机号 / 短信 / 验证码** ——
  * 短信通道已取消(架构 §15.6 记录了原因)。
  *
- * ⚠️ **契约里没有 C 端的"取当前账号"接口**(只有注册/登录/改密/登出/刷新)。
- * 所以刷新页面后前端无法回查"当前是谁",只能显示未登录。
- * 后台那边补了 `GET /admin/auth/me`(§24),**C 端尚未补** ——
- * 等做生成/方案这类"必须登录"的页面时再一并处理。
- * 在那之前**不要**把账号信息缓存到 localStorage/sessionStorage:
+ * **C 端也有"取当前账号"接口**了:`GET /auth/me`(架构 §10.2,与后台
+ * `GET /admin/auth/me` 同口径)。刷新页面后前端靠它回查"当前是谁"。
+ * **仍然不要**把账号信息缓存到 localStorage/sessionStorage:
  * 缓存身份等于把展示状态当凭证,账号被停用后界面仍会按旧状态渲染。
  */
 
@@ -57,4 +55,14 @@ export function changePassword(payload: ChangePasswordRequest): Promise<void> {
 /** 退出登录。服务端拉黑 refresh 并清 Cookie。 */
 export function logout(): Promise<void> {
   return request<void>({ method: 'POST', path: `${API_BASE}/auth/logout` })
+}
+
+/**
+ * 取当前登录账号 —— 供**页面刷新后恢复会话**。
+ *
+ * 令牌在 HttpOnly Cookie 里,JS 读不到,所以刷新后只能靠这个接口回查身份。
+ * 会话失效或账号已停用一律 401 / 10002,调用方应清态并跳登录页。
+ */
+export function fetchMe(): Promise<UserInfo> {
+  return request<UserInfo>({ method: 'GET', path: `${API_BASE}/auth/me` })
 }

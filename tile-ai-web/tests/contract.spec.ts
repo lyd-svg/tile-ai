@@ -28,6 +28,7 @@ import {
 // 组件测试引入 happy-dom 后全局 URL 换成了它自己的实现,fs 不认。
 // 先降级成普通路径字符串就与运行环境无关了。
 const CONTRACT = resolve(dirname(fileURLToPath(import.meta.url)), '../../openapi-common.yaml')
+const C_CONTRACT = resolve(dirname(fileURLToPath(import.meta.url)), '../../openapi-c.yaml')
 
 interface JsonSchema {
   required?: string[]
@@ -43,6 +44,20 @@ function commonSchema(name: string): JsonSchema {
   const schema = document.components.schemas[name]
   if (!schema) throw new Error(`契约里找不到 schema:${name}`)
   return schema
+}
+
+interface Operation {
+  security?: unknown[]
+  responses?: Record<string, unknown>
+}
+
+function cOperation(path: string, method: string): Operation {
+  const document = load(readFileSync(C_CONTRACT, 'utf8')) as {
+    paths: Record<string, Record<string, Operation>>
+  }
+  const op = document.paths[path]?.[method]
+  if (!op) throw new Error(`C 端契约里找不到 ${method.toUpperCase()} ${path}`)
+  return op
 }
 
 describe('ErrorCode 与前端文案表', () => {
@@ -85,6 +100,18 @@ describe('响应体结构', () => {
   it('PageData 的必需字段与前端假设一致', () => {
     const required = commonSchema('PageData').required ?? []
     expect(new Set(required)).toEqual(new Set(PAGE_DATA_REQUIRED_FIELDS))
+  })
+})
+
+describe('C 端会话恢复接口', () => {
+  it('GET /auth/me 需要登录 —— 前端靠它恢复登录态,不能是匿名可调', () => {
+    // 前端用这个接口判定"刷新后我还是不是我";它若变成公开接口,
+    // 返回值就不再可信,路由守卫便形同虚设。
+    expect(cOperation('/auth/me', 'get').security).toEqual([{ cookieAuth: [] }])
+  })
+
+  it('GET /auth/me 声明真实 401 —— 未登录时前端要靠它清态跳登录页', () => {
+    expect(cOperation('/auth/me', 'get').responses).toHaveProperty('401')
   })
 })
 

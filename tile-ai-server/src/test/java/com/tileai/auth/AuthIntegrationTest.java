@@ -213,6 +213,55 @@ class AuthIntegrationTest {
     }
 
     // ---------------------------------------------------------------
+    // 取当前账号(会话恢复)
+    // ---------------------------------------------------------------
+
+    @Test
+    @DisplayName("GET /auth/me:返回当前账号,响应体不含密码哈希")
+    void meReturnsCurrentAccount() throws Exception {
+        register(USERNAME, PASSWORD);
+        String access = cookieOf(login(USERNAME, PASSWORD), "access_token");
+
+        MvcResult result = mvc.perform(get(BASE + "/me")
+                .cookie(new Cookie("access_token", access))).andReturn();
+
+        assertEquals(200, result.getResponse().getStatus());
+        String body = result.getResponse().getContentAsString();
+        assertEquals(0, codeOf(result), body);
+        assertTrue(body.contains("\"username\":\"" + USERNAME + "\""), body);
+        assertFalse(body.contains("passwordHash"), "响应体绝不能带密码哈希: " + body);
+    }
+
+    @Test
+    @DisplayName("GET /auth/me:未登录 → 401(该接口必须在受保护清单里)")
+    void meRequiresLogin() throws Exception {
+        // 这一条同时守着 SecurityConfig.PROTECTED_C_PATHS —— 漏登记该路径的话,
+        // 请求会落到 anyRequest().permitAll(),变成匿名可调,而这里是 401
+        assertEquals(401, mvc.perform(get(BASE + "/me")).andReturn().getResponse().getStatus());
+    }
+
+    @Test
+    @DisplayName("GET /auth/me:令牌签发后账号被停用 → 10002(会话失效,不是 30001)")
+    void meRejectsAccountDisabledAfterTokenIssued() throws Exception {
+        register(USERNAME, PASSWORD);
+        String access = cookieOf(login(USERNAME, PASSWORD), "access_token");
+        User user = findUser(USERNAME);
+
+        user.setStatus(User.STATUS_DISABLED);
+        userMapper.updateById(user);
+        try {
+            MvcResult result = mvc.perform(get(BASE + "/me")
+                    .cookie(new Cookie("access_token", access))).andReturn();
+
+            // 令牌签名仍有效(2 小时内),但账号已停用 —— 必须按"无此人"处理,不能放行
+            assertEquals(10002, codeOf(result), result.getResponse().getContentAsString());
+        } finally {
+            user.setStatus(User.STATUS_ENABLED);
+            userMapper.updateById(user);
+        }
+    }
+
+    // ---------------------------------------------------------------
     // 修改密码 / 登出 / 刷新
     // ---------------------------------------------------------------
 

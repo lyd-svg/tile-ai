@@ -13,6 +13,7 @@ import com.tileai.common.error.BusinessException;
 import com.tileai.common.error.ErrorCode;
 
 import java.time.LocalDateTime;
+import java.util.Optional;
 
 /**
  * C 端账户的领域逻辑(架构 §4.1 的 auth/account 模块;PRD §5.1)。
@@ -158,6 +159,25 @@ public class AuthService {
         }
         return userMapper.selectOne(Wrappers.<User>lambdaQuery()
                 .eq(User::getUsername, username));
+    }
+
+    /**
+     * 按主键取一个**启用中**的账号。
+     *
+     * <p>账号不存在或已停用一律返回空。<b>失败关闭</b>:令牌签发后账号可能被停用,
+     * 而令牌在最长 2 小时内仍然有效 —— 那时必须按"无此人"处理,不能放行。
+     * 这正是 {@code GET /auth/me} 与登录的区别:登录已把停用折叠进 20005(不暴露账号存在性),
+     * 而这里是会话恢复,必须如实反映"此会话已不可用"。
+     *
+     * <p>写法对齐 {@code AdminAccountService#findEnabledById}(后台的同名判定),
+     * 避免"什么算有效账号"的规则散成两份。
+     */
+    public Optional<User> findEnabledById(long userId) {
+        User user = userMapper.selectById(userId);
+        if (user == null || !User.STATUS_ENABLED.equals(user.getStatus())) {
+            return Optional.empty();
+        }
+        return Optional.of(user);
     }
 
     /**

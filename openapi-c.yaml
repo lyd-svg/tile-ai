@@ -156,6 +156,36 @@ paths:
             application/json:
               schema: { $ref: './openapi-common.yaml#/components/schemas/ApiResponse' }
 
+  /auth/me:
+    get:
+      tags: [auth]
+      summary: 取当前登录账号
+      description: |
+        返回当前会话对应的账号信息,**供前端在页面刷新后恢复会话**。§5.1、§10.2
+
+        **为什么需要它**:令牌在 HttpOnly Cookie 里,前端读不到(§10.1 的 D1 方案),
+        刷新页面后无法自行得知"当前是谁"。没有本接口,前端只能把账号信息缓存在本地 ——
+        那是把**展示状态**当成了凭证来源,账号一旦被停用,界面会继续按旧状态渲染。
+        有本接口后,每次加载都以服务端当下的事实为准。
+
+        账号已停用或不存在时按 **10002** 处理(会话已失效),而不是 30001 ——
+        对调用方而言这是"需要重新登录",与"资源不存在"是两回事。
+      security:
+        - cookieAuth: []
+      responses:
+        '200':
+          description: 当前账号(失败码 10002 会话失效)
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: './openapi-common.yaml#/components/schemas/ApiResponse'
+                  - type: object
+                    properties:
+                      data: { $ref: './openapi-common.yaml#/components/schemas/UserInfo' }
+        '401':
+          $ref: './openapi-common.yaml#/components/responses/Unauthorized'
+
   # ==========================================================
   # 产品库(路径 A,§5.2.1)
   # ==========================================================

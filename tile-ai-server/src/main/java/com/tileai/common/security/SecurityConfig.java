@@ -50,6 +50,7 @@ public class SecurityConfig {
             "/api/v1/plans/**",      // 我的方案(含分享、重算)
             "/api/v1/auth/password", // 修改密码
             "/api/v1/auth/logout",   // 登出
+            "/api/v1/auth/me",       // 取当前登录账号(会话恢复)
     };
 
     /**

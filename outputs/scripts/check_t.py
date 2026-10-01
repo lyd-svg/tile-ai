@@ -215,6 +215,7 @@ EXPECT_AUTH = {   # (path, method) -> 'login' | 'public' | 'temp'
     ('/auth/password','post'):'login',
     ('/auth/logout','post'):'login',
     ('/auth/refresh','post'):'public',
+    ('/auth/me','get'):'login',
     ('/products','get'):'public',
     ('/products/{sku}','get'):'public',
     ('/combos','get'):'public',

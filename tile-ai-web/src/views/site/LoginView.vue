@@ -13,8 +13,11 @@ import { useUserAuthStore } from '@/stores/userAuth'
  * 登录失败**一律**显示同一句话(20005),**不区分「用户名不存在」与「密码错误」** ——
  * 区分开等于对外提供一个账号枚举接口。前端不要自作聪明地去分辨,服务端也不会告诉它。
  *
- * ⚠️ 登录态**只存在内存**:契约里没有 C 端的"取当前账号"接口,
- * 刷新页面后拿不回身份(详见 stores/userAuth.ts 的说明)。
+ * 登录成功后会回到 `?redirect=` 指向的页面 —— 生成页会在守卫里把人送到这里,
+ * 登录后直接送回去,而不是一律进首页。
+ *
+ * 登录态**只存在内存**,但刷新后靠 `GET /auth/me` 回查(详见 stores/userAuth.ts)——
+ * **不要**为了让界面"看起来还登着"而把身份缓存到 localStorage/sessionStorage。
  */
 const auth = useUserAuthStore()
 const router = useRouter()
