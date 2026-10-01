@@ -25,6 +25,7 @@ import com.tileai.plan.dto.PlanImageView;
 import com.tileai.plan.dto.PlanPartView;
 import com.tileai.plan.dto.PlanRenameRequest;
 import com.tileai.plan.dto.PlanSummaryView;
+import com.tileai.plan.dto.ShareResultView;
 import com.tileai.plan.entity.Plan;
 import com.tileai.plan.entity.PlanPart;
 
@@ -154,6 +155,90 @@ class PlanContractTest {
         assertEquals("./openapi-common.yaml#/components/schemas/QuoteResult",
                 map(data, "recalc.data").get("$ref"),
                 "重算响应的 data 必须 $ref 到 QuoteResult —— 与 /quote/calc 同源");
+    }
+
+    // ------------------------------------------------------------------
+    // 分享(T-1.13)
+    // ------------------------------------------------------------------
+
+    /**
+     * 两条写接口都不接受请求体。
+     *
+     * <p>与不变量 6 同一类:契约里这两条只有 path 参数,没有"有效期""允许谁看"
+     * 这类开关。实现侧那半在 {@code PlanShareContractTest}(反射)。
+     */
+    @Test
+    @DisplayName("POST / DELETE /plans/{id}/share 都没有 requestBody")
+    void shareWriteEndpointsHaveNoRequestBody() {
+        assertNull(operation("/plans/{id}/share", "post").get("requestBody"),
+                "生成分享不接受任何参数 —— 契约里没有 requestBody");
+        assertNull(operation("/plans/{id}/share", "delete").get("requestBody"),
+                "废除分享不接受任何参数");
+    }
+
+    /** 生成分享返回的是 {@code ShareResult},不是裸信封。 */
+    @Test
+    @DisplayName("POST /plans/{id}/share 的响应 data 是契约 ShareResult")
+    void sharePostResponseIsShareResult() {
+        Object data = responseDataSchema("/plans/{id}/share", "post");
+        assertEquals("#/components/schemas/ShareResult", map(data, "share.data").get("$ref"),
+                "生成分享的 data 必须 $ref 到 ShareResult");
+    }
+
+    /**
+     * 废除分享返回的是<b>裸信封</b>。
+     *
+     * <p>这条看着像在挑刺,但它钉的是一个真实的分叉风险:顺手回一个"当前分享状态"
+     * 会让实现多发一个契约里不存在的 {@code data} —— 而契约比对工具<b>看不到</b>
+     * "契约没声明、实现却发了"这种多余字段(它比的是契约声明过的字段)。
+     */
+    @Test
+    @DisplayName("DELETE /plans/{id}/share 的响应是裸 ApiResponse,没有 data")
+    void shareDeleteResponseHasNoData() {
+        Map<String, Object> responses = map(
+                operation("/plans/{id}/share", "delete").get("responses"), "responses");
+        Map<String, Object> schema = map(
+                firstContent(map(responses.get("200"), "200")).get("schema"), "schema");
+
+        assertEquals("./openapi-common.yaml#/components/schemas/ApiResponse", schema.get("$ref"),
+                "废除分享的响应应当直接 $ref ApiResponse —— 契约里没有额外声明 data");
+        assertNull(schema.get("allOf"),
+                "出现了 allOf 说明契约给这条加了 data,实现与断言都要跟着改");
+    }
+
+    /**
+     * 分享页是<b>公开</b>的 —— {@code security: []}。
+     *
+     * <p>这是契约里唯一一条 {@code security: []} 的 C 端接口(不是"没写 security",
+     * 而是显式声明"不需要" —— 两者在 OpenAPI 里的含义完全不同:没写 = 继承全局默认,
+     * 空数组 = 明确公开)。
+     *
+     * <p>实现侧靠 {@code SecurityConfig} 的"没被登记进受保护清单"来满足它,
+     * 那是个很容易被后人改动的地方 —— 所以 {@code PlanShareIntegrationTest}
+     * 会不带 Cookie 真的调一次。
+     */
+    @Test
+    @DisplayName("GET /share/{token} 是公开的(security: []),data 是 PlanDetail")
+    void sharePageIsPublic() {
+        Map<String, Object> op = operation("/share/{token}", "get");
+
+        Object security = op.get("security");
+        assertNotNull(security, "契约里这条必须**显式**写 security: [] —— "
+                + "漏写会继承全局默认(需要登录),那是另一种意思");
+        assertTrue(((List<?>) security).isEmpty(),
+                "分享页必须显式声明为公开(security: []),实际: " + security);
+
+        assertEquals("./openapi-common.yaml#/components/schemas/PlanDetail",
+                map(responseDataSchema("/share/{token}", "get"), "sharePage.data").get("$ref"),
+                "分享页发的 data 与本人详情接口是**同一个 schema** —— "
+                        + "这也是 PlanDetailAssembler 存在的理由");
+    }
+
+    @Test
+    @DisplayName("ShareResultView 的字段集合 == 契约 ShareResult 的属性集合")
+    void shareResultMatchesContract() {
+        assertSameFields(jsonFields(ShareResultView.class),
+                schemaProperties("openapi-c.yaml", "ShareResult"));
     }
 
     // ------------------------------------------------------------------

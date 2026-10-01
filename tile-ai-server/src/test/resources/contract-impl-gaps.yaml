@@ -42,18 +42,6 @@ knownGaps:
     path: /api/v1/agent/chat/sessions/{id}
     source: T-1.6
     note: 对话记录详情未开工
-  - method: POST
-    path: /api/v1/plans/{id}/share
-    source: T-1.13
-    note: 生成分享链接 / 二维码未开工
-  - method: DELETE
-    path: /api/v1/plans/{id}/share
-    source: T-1.13
-    note: 废除分享链接未开工
-  - method: GET
-    path: /api/v1/share/{token}
-    source: T-1.13
-    note: 公开只读分享页未开工
   - method: GET
     path: /api/v1/admin/accounts
     source: PRD §10.3 未展开字段(见 tile-ai-tasks.md:934)

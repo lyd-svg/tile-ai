@@ -34,6 +34,15 @@ import com.tileai.plan.mapper.PlanMapper;
 @Component
 public class PlanOwnership {
 
+    /**
+     * 30001 的唯一措辞。
+     *
+     * <p>{@code public} 是给<b>公开分享页</b>(T-1.13)用的:那里的判据不是归属而是令牌,
+     * 走不了本类的三个方法,但它必须说出**同一句话** —— 接收方看到"方案不存在"时,
+     * 不该因为走的是哪条路而有不同的说法。测试也拿它当断言基准。
+     */
+    public static final String NOT_FOUND_MESSAGE = "方案不存在";
+
     private final PlanMapper planMapper;
 
     public PlanOwnership(PlanMapper planMapper) {
@@ -65,7 +74,7 @@ public class PlanOwnership {
     public Plan requireOwned(long userId, Long planId) {
         Plan plan = findOwned(userId, planId);
         if (plan == null) {
-            throw new BusinessException(ErrorCode.NOT_FOUND, "方案不存在");
+            throw new BusinessException(ErrorCode.NOT_FOUND, NOT_FOUND_MESSAGE);
         }
         return plan;
     }
@@ -99,7 +108,7 @@ public class PlanOwnership {
      */
     public void requireAffected(int affectedRows) {
         if (affectedRows == 0) {
-            throw new BusinessException(ErrorCode.NOT_FOUND, "方案不存在");
+            throw new BusinessException(ErrorCode.NOT_FOUND, NOT_FOUND_MESSAGE);
         }
     }
 }

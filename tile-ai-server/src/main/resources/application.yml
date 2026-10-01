@@ -92,6 +92,15 @@ tile:
     max-retry: 10
     dispatch-interval: 2s
 
+  # 分享链接(T-1.13;契约 openapi-c.yaml 的 share 分组)。
+  # ⚠️ 这个域名指向**前端页面**,不是 API —— 拿到链接的人是在浏览器里打开一个页面,
+  # 不是去调接口。别顺手改成 agent.base-url 那个地址。
+  # ⚠️ 上线前**必须**配 SHARE_BASE_URL:留成默认值的后果是分享出去一条指向
+  # localhost 的链接,而且是**发给别人**的 —— 分享者自己在浏览器里试不出来。
+  # 详见 openapi-verification.md §43。
+  share:
+    base-url: ${SHARE_BASE_URL:http://localhost:5173}
+
 mybatis-plus:
   configuration:
     # DB 用 snake_case,对外 JSON 用 camelCase,映射在 ORM 层完成(CLAUDE.md 命名约定)

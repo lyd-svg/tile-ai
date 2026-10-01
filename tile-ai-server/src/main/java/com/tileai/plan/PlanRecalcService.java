@@ -58,18 +58,18 @@ public class PlanRecalcService {
     private final PlanOwnership ownership;
     private final PlanMapper planMapper;
     private final PlanPartMapper planPartMapper;
-    private final PlanService planService;
+    private final PlanDetailAssembler assembler;
     private final PlanQuoteSnapshotService quoteSnapshotService;
     private final PlanPartsWriter partsWriter;
 
     public PlanRecalcService(PlanOwnership ownership, PlanMapper planMapper,
-                            PlanPartMapper planPartMapper, PlanService planService,
+                            PlanPartMapper planPartMapper, PlanDetailAssembler assembler,
                             PlanQuoteSnapshotService quoteSnapshotService,
                             PlanPartsWriter partsWriter) {
         this.ownership = ownership;
         this.planMapper = planMapper;
         this.planPartMapper = planPartMapper;
-        this.planService = planService;
+        this.assembler = assembler;
         this.quoteSnapshotService = quoteSnapshotService;
         this.partsWriter = partsWriter;
     }
@@ -88,7 +88,7 @@ public class PlanRecalcService {
 
         // 读的部分全部先做完(解密 + 校验 + 算价),一个字节都不写。
         // 下面任何一步抛异常,事务里都还没有脏东西。
-        LayoutModel layout = planService.readLayout(plan);
+        LayoutModel layout = assembler.readLayout(plan);
         List<PlanPart> rows = planPartMapper.selectList(Wrappers.<PlanPart>lambdaQuery()
                 .eq(PlanPart::getPlanId, planId)
                 .orderByAsc(PlanPart::getId));

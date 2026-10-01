@@ -264,7 +264,7 @@ class PlanManagementIntegrationTest {
     }
 
     @Test
-    @DisplayName("五条接口都要登录:不带 Cookie 一律 401(不是 30001)")
+    @DisplayName("七条接口都要登录:不带 Cookie 一律 401(不是 30001)")
     void allEndpointsRequireLogin() throws Exception {
         long id = insertPlan(USER, "T12-需要登录");
 
@@ -275,6 +275,13 @@ class PlanManagementIntegrationTest {
                 .andReturn().getResponse().getStatus());
         assertEquals(401, mvc.perform(delete(PLANS + "/" + id)).andReturn().getResponse().getStatus());
         assertEquals(401, mvc.perform(post(PLANS + "/" + id + "/copy")).andReturn()
+                .getResponse().getStatus());
+        // T-1.13:分享的两条写接口。**必须留在这里** —— 它们靠 SecurityConfig 里
+        // `/api/v1/plans/**` 这个前缀受保护,而公开页靠的是"没被加进那份清单"。
+        // 有人改动清单时,这四条会一起红。
+        assertEquals(401, mvc.perform(post(PLANS + "/" + id + "/share")).andReturn()
+                .getResponse().getStatus());
+        assertEquals(401, mvc.perform(delete(PLANS + "/" + id + "/share")).andReturn()
                 .getResponse().getStatus());
     }
 
