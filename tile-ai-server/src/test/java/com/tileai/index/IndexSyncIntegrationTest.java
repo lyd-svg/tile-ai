@@ -225,7 +225,7 @@ class IndexSyncIntegrationTest {
     @DisplayName("消息体在落库时就确定,投递时原样发出(不重新构造)")
     void payloadIsPersistedNotRebuiltAtDispatch() throws Exception {
         deleteProbeProduct();
-        long baseline = outboxMapper.selectCount(null);
+        long baseline = latestOutboxId();
         createProduct("100.00");
 
         OutboxMessage stored = awaitOutboxSentAfter(baseline);
@@ -275,6 +275,23 @@ class IndexSyncIntegrationTest {
             }
         }
         throw new AssertionError("30 秒内未收到满足条件的索引同步事件,最后看到: " + lastSeen);
+    }
+
+    /**
+     * 当前 {@code t_outbox} 的<b>最大 id</b>,不是行数。
+     *
+     * <p>这里踩过一次坑:原先取的是 {@code selectCount(null)},拿<b>行数</b>当 id 下限。
+     * 本表跨用例、跨轮次一直累积且只增不删,行数与 id 会越差越多(实测 行数 1266 /
+     * 最大 id 1396,差的 130 个号被插入回滚消耗掉了)。行数当下限时,
+     * {@code id > 行数} 会**立刻**命中一批历史行 —— 于是 {@link #awaitOutboxSentAfter}
+     * 不等本次的新记录就返回了上次用例的旧记录,而它的消息早被前序用例从队列取走,
+     * 等待必然超时。
+     */
+    private long latestOutboxId() {
+        OutboxMessage last = outboxMapper.selectOne(Wrappers.<OutboxMessage>lambdaQuery()
+                .orderByDesc(OutboxMessage::getId)
+                .last("LIMIT 1"));
+        return last == null ? 0L : last.getId();
     }
 
     /** 等 id 大于 baseline 的 outbox 记录被投递成功。 */
