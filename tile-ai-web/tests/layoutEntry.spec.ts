@@ -1,0 +1,216 @@
+/**
+ * 户型录入(F-1.5)。
+ *
+ * 两条路都要验到:选模板、手动录入(文字 / 参数)。
+ * 另外两条是**失败时的可用性**:
+ *   - 10001 会把逐字段原因放在 `data.errors[]` —— 必须逐项列出来,
+ *     只显示一句"参数不对"等于让用户自己猜;
+ *   - 模板的 `layout` 在契约里**可选** —— 没配要说明,不能画一个空户型。
+ *
+ * ⚠️ 字典必须打桩:页面 onMounted 会取字典,不打桩那次真实 fetch 会挂住,
+ * 表现为"页面空白"而不是报错(与 catalog.spec.ts 同一个坑)。
+ */
+
+import { flushPromises, mount } from '@vue/test-utils'
+import { createPinia, setActivePinia } from 'pinia'
+import { beforeEach, describe, expect, it, vi } from 'vitest'
+import { createMemoryHistory, createRouter } from 'vue-router'
+
+import { BusinessError, ErrorCode } from '../src/api/errors'
+import LayoutEntryView from '../src/views/site/LayoutEntryView.vue'
+import { useSelectionDraftStore } from '../src/stores/selectionDraft'
+import type { LayoutModel, UnitTemplate } from '../src/api/types'
+
+const listLayoutTemplates = vi.fn()
+const parseLayout = vi.fn()
+vi.mock('@/api/c/layout', () => ({
+  listLayoutTemplates: (...args: unknown[]) => listLayoutTemplates(...args),
+  parseLayout: (...args: unknown[]) => parseLayout(...args),
+}))
+
+vi.mock('@/api/dicts', () => ({
+  listDictsOfType: vi.fn(async () => [
+    { type: 'space', key: 'bathroom', label: '卫生间' },
+  ]),
+  listDicts: vi.fn(async () => []),
+}))
+
+const LAYOUT: LayoutModel = {
+  spaces: [
+    {
+      type: 'bathroom',
+      name: '主卫',
+      length: 2,
+      width: 1.8,
+      height: 2.7,
+      areas: { floor: 3.6, wall: 13.9, local: 0 },
+    },
+  ],
+}
+
+const TEMPLATES: UnitTemplate[] = [
+  { id: 1, name: '小两居', structure: '两室一厅', areaRange: '70-90㎡', layout: LAYOUT },
+  { id: 2, name: '无户型的模板' },
+]
+
+const Blank = { template: '<div />' }
+
+async function mountView(withParts = true) {
+  const pinia = createPinia()
+  setActivePinia(pinia)
+  const draft = useSelectionDraftStore()
+  if (withParts) draft.setPart('floor', 'TL-1001', { name: '雅灰石纹' })
+
+  const router = createRouter({
+    history: createMemoryHistory(),
+    routes: [
+      { path: '/layout', name: 'layout', component: LayoutEntryView },
+      { path: '/products', name: 'products', component: Blank },
+      { path: '/generate', name: 'generate', component: Blank },
+    ],
+  })
+  await router.push('/layout')
+  await router.isReady()
+
+  const wrapper = mount(LayoutEntryView, { global: { plugins: [pinia, router] } })
+  await flushPromises()
+  return { wrapper, router, draft }
+}
+
+/** 切换顶层 tab。 */
+async function switchMode(
+  wrapper: Awaited<ReturnType<typeof mountView>>['wrapper'],
+  text: string,
+) {
+  const tab = wrapper.findAll('button.tab').find((item) => item.text().includes(text))
+  if (!tab) throw new Error(`找不到 tab:${text}`)
+  await tab.trigger('click')
+}
+
+beforeEach(() => {
+  vi.clearAllMocks()
+  listLayoutTemplates.mockResolvedValue({ list: TEMPLATES, total: 2, page: 1, size: 20 })
+  parseLayout.mockResolvedValue(LAYOUT)
+})
+
+describe('模板', () => {
+  it('列出模板;选用后把户型写进草稿,并显示派生面积', async () => {
+    const { wrapper, draft } = await mountView()
+
+    const card = wrapper.findAll('button.template').find((item) => item.text().includes('小两居'))
+    await card?.trigger('click')
+    await flushPromises()
+
+    expect(draft.layout).toEqual(LAYOUT)
+    expect(wrapper.text()).toContain('3.6')
+    expect(wrapper.text()).toContain('13.9')
+  })
+
+  it('模板没有配户型时给出提示,而不是画一个空户型', async () => {
+    const { wrapper, draft } = await mountView()
+
+    const card = wrapper
+      .findAll('button.template')
+      .find((item) => item.text().includes('无户型的模板'))
+    await card?.trigger('click')
+
+    expect(draft.layout).toBeNull()
+    expect(wrapper.find('[role="alert"]').text()).toContain('尚未配置户型')
+  })
+})
+
+describe('手动录入', () => {
+  it('文字解析成功后写入草稿', async () => {
+    const { wrapper, draft } = await mountView()
+    await switchMode(wrapper, '手动录入')
+
+    await wrapper.find('textarea').setValue('卫生间 2m×1.8m')
+    await wrapper.find('button.primary').trigger('click')
+    await flushPromises()
+
+    expect(parseLayout).toHaveBeenCalledWith({ text: '卫生间 2m×1.8m' })
+    expect(draft.layout).toEqual(LAYOUT)
+  })
+
+  it('文字为空时不发请求,先提示', async () => {
+    const { wrapper } = await mountView()
+    await switchMode(wrapper, '手动录入')
+
+    await wrapper.find('button.primary').trigger('click')
+
+    expect(parseLayout).not.toHaveBeenCalled()
+    expect(wrapper.find('[role="alert"]').text()).toContain('描述一下户型')
+  })
+
+  it('参数方式:尺寸不合规时前端先挡,不发请求', async () => {
+    const { wrapper } = await mountView()
+    await switchMode(wrapper, '手动录入')
+    await switchMode(wrapper, '填参数')
+
+    const numbers = wrapper.findAll('input[type="number"]')
+    await numbers[0].setValue('2') // 长
+    // 宽 / 层高留空 → 不该提交
+    await wrapper.find('button.primary').trigger('click')
+
+    expect(parseLayout).not.toHaveBeenCalled()
+    expect(wrapper.find('[role="alert"]').text()).toContain('大于 0')
+  })
+})
+
+describe('解析失败', () => {
+  it('10001 的逐字段原因要**逐项**列出来,而不是只说一句"参数不对"', async () => {
+    parseLayout.mockRejectedValue(
+      new BusinessError({
+        code: ErrorCode.PARAM_INVALID,
+        message: '参数校验失败',
+        data: {
+          errors: [
+            { field: 'spaces[0].height', reason: '层高不能为空' },
+            { field: 'spaces[0].width', reason: '宽度必须大于 0' },
+          ],
+        },
+      }),
+    )
+    const { wrapper, draft } = await mountView()
+    await switchMode(wrapper, '手动录入')
+
+    await wrapper.find('textarea').setValue('卫生间')
+    await wrapper.find('button.primary').trigger('click')
+    await flushPromises()
+
+    expect(wrapper.find('[role="alert"]').text()).toContain('参数校验失败')
+    const listed = wrapper.findAll('.errors li').map((item) => item.text())
+    expect(listed).toEqual([
+      'spaces[0].height:层高不能为空',
+      'spaces[0].width:宽度必须大于 0',
+    ])
+    // 失败时不能留下上一次的结果
+    expect(draft.layout).toBeNull()
+  })
+})
+
+describe('下一步', () => {
+  it('没选砖时"去生成"进不去,并提示先选砖', async () => {
+    const { wrapper } = await mountView(false)
+
+    const cta = wrapper.findAll('button').find((item) => item.text().includes('去生成'))
+    // 还没解析出户型,结果区根本不在 —— 先确认有回选砖的链接
+    expect(wrapper.text()).toContain('还没有选砖')
+    expect(cta).toBeUndefined()
+  })
+
+  it('户型就绪且已选砖时能跳到生成页', async () => {
+    const { wrapper, router } = await mountView()
+
+    const card = wrapper.findAll('button.template').find((item) => item.text().includes('小两居'))
+    await card?.trigger('click')
+    await flushPromises()
+
+    const cta = wrapper.findAll('button').find((item) => item.text().includes('去生成'))
+    expect(cta?.attributes('disabled')).toBeUndefined()
+    await cta?.trigger('click')
+    await flushPromises()
+
+    expect(router.currentRoute.value.name).toBe('generate')
+  })
+})

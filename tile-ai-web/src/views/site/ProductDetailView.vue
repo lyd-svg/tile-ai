@@ -4,16 +4,44 @@ import { useRoute, useRouter } from 'vue-router'
 
 import { getProduct } from '@/api/c/catalog'
 import { listDictsOfType } from '@/api/dicts'
-import type { Sku } from '@/api/types'
+import { useSelectionDraftStore } from '@/stores/selectionDraft'
+import type { Part, Sku } from '@/api/types'
 
 /**
  * 产品详情(F-1.2)。
  *
  * 下架 SKU 服务端按 **30001** 返回(与列表口径一致:列表里看不到,
  * 拿旧链接进来也该说"不存在",而不是展示一块买不到的砖)。
+ *
+ * F-1.5 起这里多了一步:**选定这块砖铺在哪个部位**,写进选购草稿,
+ * 再由「录户型」页继续。部位是选砖与生成之间唯一的必填信息。
  */
 const route = useRoute()
 const router = useRouter()
+const draft = useSelectionDraftStore()
+
+/**
+ * 部位的中文名。
+ *
+ * ⚠️ **这是前端唯一允许硬编码的枚举映射** —— `Part` 恒为三值(契约 T-9,
+ * `tests/contract.spec.ts` 在钉)。**空间 / 风格不在此列**:它们由后台字典维护,
+ * 必须走 `listDictsOfType`(D-14)。
+ */
+const PART_LABELS: Record<Part, string> = {
+  floor: '地面',
+  wall: '墙面',
+  local: '局部(腰线 / 花砖)',
+}
+
+const PART_OPTIONS = (Object.keys(PART_LABELS) as Part[]).map((value) => ({
+  value,
+  label: PART_LABELS[value],
+}))
+
+/** 当前选中的部位 —— 只是"准备把这块砖用到哪",尚未写入草稿。 */
+const activePart = ref<Part>('floor')
+/** 刚加入草稿的提示文案,用来给一次轻确认 */
+const justChosen = ref('')
 
 const sku = computed(() => String(route.params.sku ?? ''))
 const product = ref<Sku | null>(null)
@@ -47,6 +75,29 @@ async function load() {
   } finally {
     loading.value = false
   }
+}
+
+/** 把当前这块砖写到选中的部位上。同部位再选一次是替换。 */
+function choose(part: Part) {
+  const current = product.value
+  if (!current) return
+
+  draft.setPart(part, current.sku, {
+    name: current.name,
+    pricePerSqm: current.pricePerSqm,
+  })
+  justChosen.value = `已加入:${PART_LABELS[part]} · ${current.name}`
+}
+
+/** 点已选中的部位 = 移除(同一个按钮承担双向操作,省一个"移除"按钮)。 */
+function toggle(part: Part) {
+  const existing = draft.partOf(part)
+  if (existing && product.value && existing.sku === product.value.sku) {
+    draft.removePart(part)
+    justChosen.value = ''
+    return
+  }
+  choose(part)
 }
 
 onMounted(async () => {
@@ -120,13 +171,47 @@ onMounted(async () => {
           </dd>
         </dl>
 
-        <p class="notice">
-          单张效果图与按部位报价**尚未开放**(开发中)。先把砖选好 ——
-          下一步是户型录入与生成。
-        </p>
+        <div class="pick">
+          <p class="pick-label">这块砖用在哪个部位?</p>
+          <div class="parts">
+            <button
+              v-for="option in PART_OPTIONS"
+              :key="option.value"
+              type="button"
+              :class="['part', {
+                'part--active': activePart === option.value,
+                'part--chosen': draft.partOf(option.value)?.sku === product.sku,
+              }]"
+              @click="toggle(option.value)"
+            >
+              {{ option.label }}
+              <span v-if="draft.partOf(option.value)?.sku === product.sku" class="tick">✓</span>
+            </button>
+          </div>
+          <p v-if="justChosen" class="chosen" role="status">{{ justChosen }}</p>
+        </div>
+
+        <div v-if="draft.hasParts" class="draft">
+          <p class="draft-title">已选部位({{ draft.selectedCount }})</p>
+          <ul>
+            <li v-for="item in draft.parts" :key="item.part">
+              <span>{{ PART_LABELS[item.part] }} · {{ item.name || item.sku }}</span>
+              <button type="button" class="remove" @click="draft.removePart(item.part)">移除</button>
+            </li>
+          </ul>
+        </div>
+
+        <p class="notice">选好砖后进入户型录入,再生成效果图。</p>
 
         <div class="cta">
-          <button type="button" class="primary" disabled>生成效果图(开发中)</button>
+          <button
+            type="button"
+            class="primary"
+            :disabled="!draft.hasParts"
+            @click="router.push({ name: 'layout' })"
+          >
+            去录户型 →
+          </button>
           <RouterLink to="/products">继续选砖</RouterLink>
         </div>
       </div>
@@ -242,6 +327,90 @@ dt {
 
 dd {
   margin: 0;
+}
+
+.pick {
+  margin-bottom: 1rem;
+}
+
+.pick-label {
+  margin: 0 0 0.5rem;
+  font-size: 0.9rem;
+  color: #374151;
+}
+
+.parts {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.5rem;
+}
+
+.part {
+  padding: 0.4rem 0.75rem;
+  border: 1px solid #d1d5db;
+  border-radius: 0.25rem;
+  background: white;
+  cursor: pointer;
+  font-size: 0.9rem;
+}
+
+.part--active {
+  border-color: #1d4ed8;
+  color: #1d4ed8;
+}
+
+.part--chosen {
+  border-color: #1d4ed8;
+  background: #eff6ff;
+  color: #1d4ed8;
+  font-weight: 600;
+}
+
+.tick {
+  margin-left: 0.25rem;
+}
+
+.chosen {
+  margin: 0.5rem 0 0;
+  color: #15803d;
+  font-size: 0.85rem;
+}
+
+.draft {
+  border: 1px solid #e5e7eb;
+  border-radius: 0.25rem;
+  padding: 0.6rem 0.75rem;
+  margin-bottom: 1rem;
+}
+
+.draft-title {
+  margin: 0 0 0.4rem;
+  font-size: 0.85rem;
+  color: #6b7280;
+}
+
+.draft ul {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  font-size: 0.9rem;
+}
+
+.draft li {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 0.5rem;
+  padding: 0.2rem 0;
+}
+
+.remove {
+  border: none;
+  background: none;
+  color: #b91c1c;
+  cursor: pointer;
+  font-size: 0.85rem;
+  padding: 0;
 }
 
 .notice {

@@ -130,6 +130,97 @@ export interface Store {
 /** 部位枚举,**恒为三值、一期不含美缝**(CLAUDE.md) */
 export type Part = 'floor' | 'wall' | 'local'
 
+/** 部位瓷砖来源:用户显式选择 / AI 自动补齐。§11.2 */
+export type PartSource = 'user' | 'ai'
+
+/** 门窗开口类型(用于面积扣减)。§8.8 */
+export type OpeningType = 'door' | 'window'
+
+/** 门窗开口。§8.3 */
+export interface Opening {
+  type: OpeningType
+  /** 宽(米) */
+  w: number
+  /** 高(米) */
+  h: number
+}
+
+/**
+ * 某空间各部位面积(㎡)。§8.3
+ *
+ * ⚠️ **服务端派生字段,前端只读展示、绝不重算** ——
+ * 前端再推一遍就等于有了第二份实现,两边迟早分叉。
+ * 派生规则见架构 §8.3:`floor = 长×宽`、`wall = 2×(长+宽)×层高`、`local = 0`。
+ */
+export interface LayoutAreas {
+  floor?: number
+  wall?: number
+  local?: number
+}
+
+/** 户型中的单个空间。§8.3 */
+export interface LayoutSpace {
+  /** 空间类型,取值以字典为准(契约 enum 只是内置默认值) */
+  type: string
+  /** 中文名(展示用) */
+  name?: string
+  /** 长(米) */
+  length: number
+  /** 宽(米) */
+  width: number
+  /** 层高(米) */
+  height: number
+  wallCount?: number
+  openings?: Opening[]
+  areas?: LayoutAreas
+}
+
+/** 结构化「户型数据模型」。§7.3、§8.3 */
+export interface LayoutModel {
+  /** 至少 1 个空间(minItems: 1) */
+  spaces: LayoutSpace[]
+}
+
+/** 部位 → 瓷砖的选定。§5.2.4、§8.4 */
+export interface PartSelection {
+  part: Part
+  sku: string
+  /** 该部位面积(㎡)。服务端可依户型计算,前端可不传 */
+  area?: number
+  /** 响应中必填,**请求中可省略**(默认 user) */
+  source?: PartSource
+}
+
+/** 户型模板。§8.3 */
+export interface UnitTemplate {
+  id: number
+  name: string
+  /** 居室数 */
+  roomCount?: number
+  /** 面积区间,例:80-100㎡ */
+  areaRange?: string
+  /** 户型结构,例:三室两厅 */
+  structure?: string
+  /** ⚠️ **可选** —— 模板未必配了户型,前端要有兜底文案 */
+  layout?: LayoutModel
+  status?: ProductStatus
+}
+
+/** 任务状态机。§6.4 */
+export type TaskStatus = 'pending' | 'running' | 'success' | 'failed'
+
+/**
+ * 方案效果图。§8.4
+ *
+ * **张数 = `angles`**(不是 angles+1)。第 1 张 `view = default` 且 `isCover = true`;
+ * 第 k 张(`k ≥ 2`)为 `angle{k-1}`。展示时**按 `view` 区分,不要靠数组下标猜**。
+ */
+export interface PlanImage {
+  url: string
+  view?: string
+  isCover?: boolean
+}
+
 /**
  * 以下常量**不是**给业务用的,是给 `tests/contract.spec.ts` 核对契约用的。
  *

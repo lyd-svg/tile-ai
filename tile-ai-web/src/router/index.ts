@@ -3,6 +3,7 @@ import { createRouter, createWebHistory } from 'vue-router'
 import AdminLayout from '@/layouts/AdminLayout.vue'
 import SiteLayout from '@/layouts/SiteLayout.vue'
 import { useAdminAuthStore } from '@/stores/adminAuth'
+import { useUserAuthStore } from '@/stores/userAuth'
 
 /**
  * 两套路由树:
@@ -45,6 +46,20 @@ const router = createRouter({
           path: 'store',
           name: 'store',
           component: () => import('@/views/site/StoreView.vue'),
+        },
+        {
+          // 录户型**不需要登录**(契约里 /layout/* 都是 security: [])——
+          // 登录门槛落在下一步「提交生成」,与 PRD §5.1「浏览免登录」一致。
+          path: 'layout',
+          name: 'layout',
+          component: () => import('@/views/site/LayoutEntryView.vue'),
+        },
+        {
+          // 生成与查进度都要登录(契约 /generate 两个接口都是 cookieAuth)
+          path: 'generate',
+          name: 'generate',
+          component: () => import('@/views/site/GenerateView.vue'),
+          meta: { requiresAuth: true },
         },
         {
           path: 'login',
@@ -149,24 +164,36 @@ const router = createRouter({
 })
 
 /**
- * 后台登录守卫。
+ * 登录守卫(两端共用)。
  *
  * ⚠️ **这不是安全边界** —— 前端没有令牌,拦不拦得住都不影响服务端。
- * 它的作用只是别让用户走进一个注定 401 的页面。真正的拦截在服务端(403/10004)。
+ * 它的作用只是别让用户走进一个注定 401 的页面。真正的拦截在服务端
+ * (C 端 `PROTECTED_C_PATHS` + `ROLE_USER`;后台 RBAC 的 403/10004)。
  *
  * v1.9 起:守卫会向服务端确认会话(`/auth/me`),而不是看本地有没有缓存 ——
  * 令牌在 HttpOnly Cookie 里,前端读不到,所以"是否登录"这件事**只有服务端知道**。
  * `ensureSession` 内部有 `verified` 标记,每次页面加载只问一次。
+ *
+ * C 端只有标了 `meta.requiresAuth` 的页面才拦(如「生成」);
+ * 浏览产品库、录户型都免登录(PRD §5.1)。
  */
 router.beforeEach(async (to) => {
   if (to.meta.public) return true
-  if (!to.path.startsWith('/admin')) return true
 
-  const auth = useAdminAuthStore()
+  if (to.path.startsWith('/admin')) {
+    const auth = useAdminAuthStore()
+    if (await auth.ensureSession()) return true
+    // 带上原目标,登录后回到用户本来要去的地方
+    return { name: 'admin-login', query: { redirect: to.fullPath } }
+  }
+
+  if (!to.meta.requiresAuth) return true
+
+  const auth = useUserAuthStore()
   if (await auth.ensureSession()) return true
 
-  // 带上原目标,登录后回到用户本来要去的地方
-  return { name: 'admin-login', query: { redirect: to.fullPath } }
+  // 登录页自己读 query.redirect 并 replace 回去(见 LoginView)
+  return { name: 'login', query: { redirect: to.fullPath } }
 })
 
 export default router
