@@ -54,8 +54,18 @@ public class GenerateCompensationScanner {
     /** 一轮最多处理多少个任务。安全网不需要吞吐,需要的是不要把一次定时扫描拉成几秒。 */
     private static final int SCAN_BATCH = 50;
 
-    /** 放弃时写给用户看的原因(进 {@code t_generation_task.error},失败回调会把它回给前端)。 */
-    private static final String GIVE_UP_MESSAGE = "生成任务长时间无响应,重试已达上限";
+    /**
+     * 放弃时写给用户看的原因(进 {@code t_generation_task.error},失败回调会把它回给前端)。
+     *
+     * <p><b>这句话是给用户看的,不是给运维看的。</b> 原来写的是"生成任务长时间无响应,
+     * 重试已达上限" —— 那是在解释机制,不是在告诉用户发生了什么、该怎么办
+     * (2026-10-02 改)。
+     *
+     * <p>它管的是**残余情况**:受理时消费端还在(所以没被
+     * {@code GenerationConsumerProbe} 拦下),跑到一半才挂。受理时就没消费端的,
+     * 由那个探测当场 40002 挡住,轮不到这里。
+     */
+    private static final String GIVE_UP_MESSAGE = "生成服务长时间无响应,请稍后重试";
 
     private final GenerationTaskMapper taskMapper;
     private final OutboxMapper outboxMapper;

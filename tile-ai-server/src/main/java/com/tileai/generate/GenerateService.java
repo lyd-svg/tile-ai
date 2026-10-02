@@ -86,11 +86,14 @@ public class GenerateService {
     private final PartCompletionService partCompletionService;
     private final ObjectMapper objectMapper;
     private final TransactionTemplate transactionTemplate;
+    private final GenerateProperties generateProperties;
+    private final GenerationConsumerProbe consumerProbe;
 
     public GenerateService(GenerationTaskMapper taskMapper, PlanImageMapper planImageMapper,
                            OutboxService outboxService, PlanAutoSaveService planAutoSaveService,
                            PartCompletionService partCompletionService,
-                           ObjectMapper objectMapper, TransactionTemplate transactionTemplate) {
+                           ObjectMapper objectMapper, TransactionTemplate transactionTemplate,
+                           GenerateProperties generateProperties, GenerationConsumerProbe consumerProbe) {
         this.taskMapper = taskMapper;
         this.planImageMapper = planImageMapper;
         this.outboxService = outboxService;
@@ -98,6 +101,8 @@ public class GenerateService {
         this.partCompletionService = partCompletionService;
         this.objectMapper = objectMapper;
         this.transactionTemplate = transactionTemplate;
+        this.generateProperties = generateProperties;
+        this.consumerProbe = consumerProbe;
     }
 
     // ------------------------------------------------------------------
@@ -111,9 +116,18 @@ public class GenerateService {
      * (可能几十秒),把它圈进事务会一直占着数据库连接。真正要原子的那一段
      * ("落任务 + 落发件箱")在 {@link #persist} 里,由 {@link TransactionTemplate} 包住。
      *
+     * <p><b>最前面先探一次"生成队列有没有消费端"</b>(见 {@link GenerationConsumerProbe})。
+     * 没有就当场 40002 拒绝,而不是受理之后让用户盯一个进度永远为 0 的转圈看几分钟。
+     * 探测在这一步最便宜 —— 排在归属校验与出网调用之前,不会白做任何工作。
+     *
      * @return {@code (taskId, "pending")} —— 契约 {@code GenerateAccepted}
+     * @throws BusinessException 40002 —— 生成队列上没有消费端(服务未启动/正在重启)
      */
     public GenerateAccepted accept(long userId, GenerateRequest request) {
+        if (generateProperties.isRequireConsumer()) {
+            consumerProbe.requireConsumer();
+        }
+
         String taskId = TASK_ID_PREFIX + UUID.randomUUID().toString().replace("-", "");
 
         // 带 planId 就是"覆盖原方案"(架构 §11.4)。归属必须**现在**校验,不能拖到

@@ -48,6 +48,13 @@ from app.agent.prompt import (
     SkuSource,
     prepare_prompts,
 )
+from app.gateway.errors import (
+    CircuitOpen,
+    GatewayConfigError,
+    GatewayTimeout,
+    ProviderError,
+    RateLimited,
+)
 from app.gateway.ports import ImageGenGateway
 
 logger = logging.getLogger(__name__)
@@ -273,13 +280,56 @@ def _succeeded(task_id: str, images: Sequence[GeneratedRef], trace_id: str) -> d
     }
 
 
+#: 出图失败时给**用户看**的话。
+#:
+#: 为什么需要这一层:契约里 `status=failed` 的 `error.message` 是**展示文案** ——
+#: Java 侧 `GenerateService.failureMessage` 的注释把这一点写得很死("它是我们自己
+#: 的 Python 编排器写的展示文案,**不是第三方 SDK 的原始异常**"),而这里原先直接
+#: 回传 `f"{type(error).__name__}: {error}"`。**实现与那句注释不符**,用户看到的是
+#: `ProviderError: HTTP 400 ...` 这种只有开发者看得懂的东西(2026-10-02 修)。
+_USER_FACING: dict[type[BaseException], str] = {
+    RateLimited: "AI 出图服务繁忙(请求过于集中),请稍后重试",
+    CircuitOpen: "AI 出图服务当前不可用,请稍后重试",
+    GatewayTimeout: "AI 出图服务响应超时,请稍后重试",
+    GatewayConfigError: "出图服务尚未配置好,请联系店员处理",
+}
+
+#: 百炼"额度不足 / 欠费"走的是 400(错误码 Arrearage、QuotaExceeded 之类)。
+#: 给用户的话**不点得太死** —— 参数错也是 400,具体原因在日志里。
+_PROVIDER_400_MESSAGE = "AI 出图服务调用被拒(账号额度可能不足),请联系店员处理"
+
+
+def _user_facing_message(error: BaseException) -> str:
+    """把网关异常翻译成用户能看懂的一句话。
+
+    只翻译**用户能理解、且可能据此行动**的几类;其余**保留技术串** ——
+    宁可难看,也不要把排查线索抹掉(诊断细节另有日志)。
+    """
+    for kind, text in _USER_FACING.items():
+        if isinstance(error, kind):
+            return text
+
+    if isinstance(error, ProviderError):
+        status = error.status_code
+        if status in (401, 403):
+            return "出图服务的访问凭据无效,请联系店员处理"
+        if status == 429:
+            return "AI 出图服务繁忙(请求过于集中),请稍后重试"
+        if status is not None and status >= 500:
+            return "AI 出图服务暂时故障,请稍后重试"
+        if status == 400:
+            return _PROVIDER_400_MESSAGE
+
+    return f"{type(error).__name__}: {error}"
+
+
 def _failed(task_id: str, error: BaseException, trace_id: str) -> dict[str, Any]:
     return {
         "taskId": task_id,
         "status": "failed",
         "error": {
             "code": CODE_GENERATE_FAILED,
-            "message": f"{type(error).__name__}: {error}"[:_ERROR_MESSAGE_LIMIT],
+            "message": _user_facing_message(error)[:_ERROR_MESSAGE_LIMIT],
         },
         "traceId": trace_id,
     }

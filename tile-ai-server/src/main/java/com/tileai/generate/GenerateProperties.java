@@ -59,6 +59,19 @@ public class GenerateProperties {
      */
     private boolean compensationEnabled = true;
 
+    /**
+     * 受理前是否要求"生成队列上有消费者"。
+     *
+     * <p>默认要求。没有消费端时<b>当场返回 40002</b>,而不是受理之后让用户
+     * 盯着一个进度永远为 0 的转圈看三到四分钟(见
+     * {@link GenerationConsumerProbe})。
+     *
+     * <p>⚠️ <b>集成测试必须关掉它</b>:跑测试的机器上<b>没有 Python 消费端</b>,
+     * consumerCount 恒为 0,不关的话凡是要调用 {@code POST /generate} 的用例会整批红。
+     * 手法与 {@code compensationEnabled} 完全一样。
+     */
+    private boolean requireConsumer = true;
+
     public Duration getPendingStuckAfter() {
         return pendingStuckAfter;
     }
@@ -97,5 +110,13 @@ public class GenerateProperties {
 
     public void setCompensationEnabled(boolean compensationEnabled) {
         this.compensationEnabled = compensationEnabled;
+    }
+
+    public boolean isRequireConsumer() {
+        return requireConsumer;
+    }
+
+    public void setRequireConsumer(boolean requireConsumer) {
+        this.requireConsumer = requireConsumer;
     }
 }

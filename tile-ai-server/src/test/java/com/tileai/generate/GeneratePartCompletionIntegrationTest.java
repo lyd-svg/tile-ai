@@ -71,6 +71,9 @@ import static org.mockito.Mockito.when;
         "tile.agent.service-token=t19-test-token",
         // 关掉补偿扫描:它会把 pending 任务挪走,断言"任务刚落库"的用例会飘
         "tile.generate.compensation-enabled=false",
+        // 关掉"受理前探测消费端":本机跑测试没有 Python 消费端,consumerCount 恒为 0,
+        // 不关的话本类所有 POST /generate 都会得到 40002。
+        "tile.generate.require-consumer=false",
         "tile.outbox.enabled=false"})
 @AutoConfigureMockMvc
 @TestInstance(TestInstance.Lifecycle.PER_CLASS)

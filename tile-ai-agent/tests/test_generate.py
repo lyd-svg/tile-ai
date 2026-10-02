@@ -25,10 +25,16 @@ from app.generate.orchestrator import (
     CODE_TASK_NOT_FOUND,
     GeneratedRef,
     TaskGoneError,
+    _user_facing_message,
     ref_images_of,
     run_generate_task,
 )
-from app.gateway.errors import ProviderError
+from app.gateway.errors import (
+    CircuitOpen,
+    GatewayTimeout,
+    ProviderError,
+    RateLimited,
+)
 from app.gateway.ports import GeneratedImage, Images
 
 # ----------------------------------------------------------------------
@@ -303,7 +309,40 @@ def test_gateway_error_reports_failed_then_reraises() -> None:
     assert callback.statuses == ["running", "failed"]
     failed = callback.bodies[-1]
     assert failed["error"]["code"] == CODE_GENERATE_FAILED
-    assert "ProviderError" in failed["error"]["message"]
+    # 文案是**给用户看的**,不是 SDK 原始异常 —— 契约把这个字段定义为展示文案
+    # (Java 侧 GenerateService.failureMessage 的注释写死了这一点,2026-10-02 对齐)
+    assert failed["error"]["message"] == "AI 出图服务暂时故障,请稍后重试"
+
+
+def test_failure_message_is_user_facing_not_sdk_text() -> None:
+    """失败文案必须**用户看得懂、且能照着做**。
+
+    原先直接回传 `f"{type(error).__name__}: {error}"`,用户看到的是
+    `ProviderError: HTTP 400 ...` 这种东西 —— 既不知道发生了什么,也不知道能做什么。
+    而"额度不足"这个最需要解释的场景,恰好就落在 400 上。
+    """
+    cases = [
+        # 百炼的额度不足/欠费走 400 —— 这是用户最需要被解释的一种失败
+        (ProviderError("HTTP 400 Arrearage", status_code=400), "额度"),
+        (ProviderError("HTTP 429", status_code=429), "稍后重试"),
+        (ProviderError("HTTP 502", status_code=502), "稍后重试"),
+        (ProviderError("HTTP 401", status_code=401), "联系店员"),
+        (GatewayTimeout("超时"), "稍后重试"),
+        (CircuitOpen("熔断"), "稍后重试"),
+        (RateLimited("限流"), "稍后重试"),
+    ]
+    for error, expected in cases:
+        message = _user_facing_message(error)
+        assert expected in message, f"{type(error).__name__} → {message}"
+        assert type(error).__name__ not in message, "不该把异常类名甩给用户"
+
+
+def test_unknown_failure_keeps_technical_text() -> None:
+    """不认识的原因**保留技术串** —— 宁可难看,也别把排查线索抹掉。"""
+    message = _user_facing_message(RuntimeError("生成时出了点怪事"))
+
+    assert "RuntimeError" in message
+    assert "生成时出了点怪事" in message
 
 
 def test_gateway_returning_no_image_is_failure() -> None:

@@ -98,6 +98,10 @@ tile:
     # 硬截止:给 running 分支兜底(一直"活着"地卡着的任务,单靠上面那条永远等不到)
     hard-deadline: 30m
     compensation-enabled: true
+    # 受理前是否要求生成队列上有消费端。没有就当场 40002 拒绝,而不是让用户
+    # 盯着一个进度永远为 0 的转圈看三到四分钟(2026-10-02)。
+    # ⚠️ 集成测试必须关掉:跑测试的机器上没有 Python 消费端,consumerCount 恒为 0。
+    require-consumer: ${GENERATE_REQUIRE_CONSUMER:true}
     # 扫描间隔。它是安全网不是主路径;§13.7 的告警窗口是 5 分钟,60s 落在窗口之内
     compensation-interval: 60s
 

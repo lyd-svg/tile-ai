@@ -94,6 +94,9 @@ import static org.springframework.test.web.servlet.request.MockMvcRequestBuilder
         "tile.crypto.layout-key=AAECAwQFBgcICQoLDA0ODxAREhMUFRYXGBkaGxwdHh8=",
         "tile.agent.service-token=t15-test-token",
         "tile.generate.compensation-enabled=false",
+        // 关掉"受理前探测消费端":本机跑测试没有 Python 消费端,consumerCount 恒为 0,
+        // 而本类要造方案 ⇒ 会走 POST /generate ⇒ 不关会整批 40002。
+        "tile.generate.require-consumer=false",
         "tile.outbox.enabled=false"})
 @AutoConfigureMockMvc
 @TestInstance(TestInstance.Lifecycle.PER_CLASS)

@@ -91,6 +91,10 @@ import static org.springframework.test.web.servlet.request.MockMvcRequestBuilder
         // 关掉补偿扫描的定时器:它 60 秒一次,会在断言"任务仍是 pending"的用例里
         // 把任务挪走。扫描本身由 GenerateCompensationIntegrationTest 显式驱动。
         "tile.generate.compensation-enabled=false",
+        // 关掉"受理前探测消费端":跑测试的机器上没有 Python 消费端,consumerCount
+        // 恒为 0,不关的话本类凡是要 POST /generate 的用例会整批 40002。
+        // 探测本身的验收在 GenerateConsumerProbeTest / GenerateConsumerRequiredIntegrationTest。
+        "tile.generate.require-consumer=false",
         // 关掉效果图转存:本测试的回调地址是 http://java.test/... (解析不了),
         // 开着会每张图都等一次 DNS 失败再降级,白白拖慢用例。转存自身的验收
         // 由专门的用例覆盖(它用一个可放行环回的 UrlPolicy 打本地桩服务)。

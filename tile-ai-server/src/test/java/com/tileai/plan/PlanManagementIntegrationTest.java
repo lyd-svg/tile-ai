@@ -100,6 +100,9 @@ import static org.springframework.test.web.servlet.request.MockMvcRequestBuilder
         // 关掉两个定时器:它们会把任务挪走、把发件箱的行投出去。
         // 本类验的是方案管理,不是编排的重试与投递。
         "tile.generate.compensation-enabled=false",
+        // 关掉"受理前探测消费端":本机跑测试没有 Python 消费端,consumerCount 恒为 0,
+        // 而本类要造方案 ⇒ 会走 POST /generate ⇒ 不关会整批 40002。
+        "tile.generate.require-consumer=false",
         "tile.outbox.enabled=false"})
 @AutoConfigureMockMvc
 @TestInstance(TestInstance.Lifecycle.PER_CLASS)
