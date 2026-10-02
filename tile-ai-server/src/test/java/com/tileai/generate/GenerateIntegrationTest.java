@@ -208,15 +208,18 @@ class GenerateIntegrationTest {
     }
 
     @Test
-    @DisplayName("受理:未选部位的补齐本期不做,source 恒为 user(T-1.9 尚未落地)")
+    @DisplayName("受理:两个部位都选了 → 不触发 AI 补齐,source 恒为 user")
     void partsCarryUserSourceAndNoAiCompletion() throws Exception {
+        // ⚠️ 本用例的两个部位(floor+wall)都是请求里给的,所以**不会**触发 T-1.9 的补齐
+        // —— 那一步只在"有未选的地面/墙面"时才发。补齐本身的验收在
+        // GeneratePartCompletionIntegrationTest。
         String taskId = taskIdOf(postGenerate(generateBody(null, 1)));
 
         JsonNode parts = payloadOf(taskId).get("parts");
-        assertEquals(2, parts.size(), "请求里给了几个部位就传几个,本期不做补齐");
+        assertEquals(2, parts.size(), "请求里给了几个部位就传几个");
         for (JsonNode part : parts) {
             assertEquals("user", part.get("source").asText(),
-                    "一期没有 AI 补齐,不应当出现 source=ai");
+                    "用户自己选的部位不该被标成 ai");
         }
     }
 

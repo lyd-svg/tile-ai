@@ -46,6 +46,14 @@ public record PartSelection(
     public static final String SOURCE_AI = "ai";
 
     /**
+     * 部位取值。与 {@code @Pattern} 里的正则**同源**,单独提出来是给
+     * 「哪些部位要 AI 补齐」这类判断用的 —— 那里写成字符串字面量迟早打错一个字母。
+     */
+    public static final String PART_FLOOR = "floor";
+    public static final String PART_WALL = "wall";
+    public static final String PART_LOCAL = "local";
+
+    /**
      * 把可省略的 {@code source} 归一成 {@code user}。
      *
      * <p>契约的 {@code PartSelection.source} 注明"响应中必填、请求中可省略(默认 user)"。

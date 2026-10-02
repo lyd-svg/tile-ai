@@ -296,3 +296,56 @@ describe('多角度图片', () => {
     expect(wrapper.find('.thumbs figcaption').text()).toBe('角度 1')
   })
 })
+
+describe('T-1.9 未选部位由 AI 补齐', () => {
+  it('页面不再说"不会被自动补齐" —— 那句话已经过时了', async () => {
+    const { wrapper } = await mountView()
+
+    expect(wrapper.text()).toContain('会由 AI 自动补齐')
+    expect(wrapper.text()).not.toContain('不会被自动补齐')
+  })
+
+  it('补齐来的部位标「AI 补齐」', async () => {
+    submitGenerate.mockResolvedValue({ taskId: 'g_1', status: 'pending' })
+    getGenerateProgress.mockResolvedValue({
+      taskId: 'g_1',
+      status: 'success',
+      progress: 100,
+      parts: [
+        { part: 'floor', sku: 'TL-1001', source: 'user' },
+        { part: 'wall', sku: 'TL-2001', source: 'ai' },
+      ],
+    })
+    const { wrapper } = await mountView()
+
+    vi.useFakeTimers()
+    await startGeneration(wrapper)
+    await tick()
+
+    expect(wrapper.text()).toContain('TL-2001')
+    expect(wrapper.find('.parts .tag').text()).toBe('AI 补齐')
+    expect(wrapper.text()).not.toContain('没有自动补齐')
+  })
+
+  it('**没补上的部位如实说明**,且不替后端解释原因', async () => {
+    // 草稿里只有地面(mountView 的预置),结果里也只有地面 ⇒ 墙面没补上
+    submitGenerate.mockResolvedValue({ taskId: 'g_1', status: 'pending' })
+    getGenerateProgress.mockResolvedValue({
+      taskId: 'g_1',
+      status: 'success',
+      progress: 100,
+      parts: [{ part: 'floor', sku: 'TL-1001', source: 'user' }],
+    })
+    const { wrapper } = await mountView()
+
+    vi.useFakeTimers()
+    await startGeneration(wrapper)
+    await tick()
+
+    expect(wrapper.text()).toContain('没有自动补齐')
+    expect(wrapper.text()).toContain('墙面')
+    // 页面并不知道是"库里没有"还是"服务没答上" —— 编个理由就是替后端说话
+    expect(wrapper.text()).not.toContain('失败')
+    expect(wrapper.text()).not.toContain('超时')
+  })
+})

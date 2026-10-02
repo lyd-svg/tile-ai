@@ -19,6 +19,7 @@
 canaries:
   - POST /internal/agent/parse-layout
   - POST /internal/agent/chat
+  - POST /internal/agent/complete-parts
 
 # 实现侧不在契约内、且**有理由**的路由(理由必写)。
 ignoredImplPaths:
@@ -31,10 +32,9 @@ knownGaps:
     path: /internal/agent/material-map
     source: "openapi-verification.md §30.2"
     note: "已裁决「当前无调用方,端点保留为预留」;材质短语走 Python 内部函数"
-  - method: POST
-    path: /internal/agent/complete-parts
-    source: "T-1.9(实现落在生成消费端内部;端点无调用方,未经评审)"
-    note: "补齐走生成流程内部,Java 不调此端点"
+  # complete-parts(T-1.9)已实装并注册路由 ⇒ 那条挂账已删。
+  # ⚠️ 它原来写的「补齐走生成流程内部,Java 不调此端点」**是错的**(与架构 §11.2 相反,
+  #    且自标"未经评审")—— 订正记在 openapi-verification.md §49。
 
 # 字段级挂账:本侧暂无(见文件头第 5 条)。写法与 Java 侧一致:
 #   - method / path / where(request|response) / field / dimension(type|enum|required) / source / note

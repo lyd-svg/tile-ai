@@ -9,6 +9,7 @@ import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
+import org.springframework.transaction.support.TransactionTemplate;
 
 import com.baomidou.mybatisplus.core.toolkit.Wrappers;
 import com.fasterxml.jackson.core.JsonProcessingException;
@@ -46,9 +47,17 @@ import com.tileai.plan.mapper.PlanImageMapper;
  * 的孤儿任务 —— 而且它看起来完全正常,只是永远不出图。发件箱把它变成一个问题:
  * 要么两个都成,要么两个都不成,消息交给独立投递器去发(架构 §6.4)。
  *
- * <p>所以本类的 {@code accept} 是 {@code @Transactional},而
+ * <p>所以本类的 {@code accept} 里,"落任务 + 落发件箱"那一段在事务内,而
  * {@link OutboxService#enqueue} 刻意<b>不带</b> {@code @Transactional} —— 它要加入
  * 调用方这个事务。这是那两处注解必须一起看的唯一原因。
+ *
+ * <h2>为什么事务不是整个方法(T-1.9)</h2>
+ *
+ * <p>受理里多了一步"问 Python 补齐未选部位"(架构 §11.2:在落任务之前补),
+ * 而那是一次**可能几十秒**的网络调用。若整个方法仍是 {@code @Transactional},
+ * 这次调用会**一直占着数据库连接** —— 并发一上来连接池就空了。
+ * 所以改成:补齐在事务外跑,只有"插任务 + 插发件箱"进事务
+ * ({@link TransactionTemplate})。
  */
 @Service
 public class GenerateService {
@@ -74,16 +83,21 @@ public class GenerateService {
     private final PlanImageMapper planImageMapper;
     private final OutboxService outboxService;
     private final PlanAutoSaveService planAutoSaveService;
+    private final PartCompletionService partCompletionService;
     private final ObjectMapper objectMapper;
+    private final TransactionTemplate transactionTemplate;
 
     public GenerateService(GenerationTaskMapper taskMapper, PlanImageMapper planImageMapper,
                            OutboxService outboxService, PlanAutoSaveService planAutoSaveService,
-                           ObjectMapper objectMapper) {
+                           PartCompletionService partCompletionService,
+                           ObjectMapper objectMapper, TransactionTemplate transactionTemplate) {
         this.taskMapper = taskMapper;
         this.planImageMapper = planImageMapper;
         this.outboxService = outboxService;
         this.planAutoSaveService = planAutoSaveService;
+        this.partCompletionService = partCompletionService;
         this.objectMapper = objectMapper;
+        this.transactionTemplate = transactionTemplate;
     }
 
     // ------------------------------------------------------------------
@@ -93,12 +107,12 @@ public class GenerateService {
     /**
      * 受理一次生成。
      *
-     * <p>整个方法是一个事务:{@code t_generation_task} 的行与 {@code t_outbox} 的行
-     * 一起提交,否则就退回到"落库成功但消息丢了"的老问题。
+     * <p><b>本方法本身不在事务里</b> —— 中间那步"问 Python 补齐未选部位"是一次网络调用
+     * (可能几十秒),把它圈进事务会一直占着数据库连接。真正要原子的那一段
+     * ("落任务 + 落发件箱")在 {@link #persist} 里,由 {@link TransactionTemplate} 包住。
      *
      * @return {@code (taskId, "pending")} —— 契约 {@code GenerateAccepted}
      */
-    @Transactional
     public GenerateAccepted accept(long userId, GenerateRequest request) {
         String taskId = TASK_ID_PREFIX + UUID.randomUUID().toString().replace("-", "");
 
@@ -113,10 +127,26 @@ public class GenerateService {
 
         // source 归一成 user。契约里响应必填、请求可省,归一放在这一个地方,
         // 否则每个读取点都要判一次 null,必然有一处会漏。
-        List<PartSelection> parts = request.parts().stream()
+        List<PartSelection> userParts = request.parts().stream()
                 .map(PartSelection::withDefaultSource)
                 .toList();
 
+        // 未选的地面/墙面由 AI 补齐(架构 §11.2:在落任务之前补)。
+        // **这一步在事务之外**;补不上会降级成原样返回(不是错误)。
+        List<PartSelection> parts = partCompletionService.completeIfNeeded(
+                request.space(), request.styleOrDefault(), userParts);
+
+        return transactionTemplate.execute(status -> persist(taskId, userId, request, layout, parts));
+    }
+
+    /**
+     * 把任务行与发件箱行**一起**写下去 —— 要么都成,要么都不成(架构 §6.4)。
+     *
+     * <p>由 {@link TransactionTemplate} 调用,所以这里**不需要** {@code @Transactional}
+     * (自己调自己,注解根本不会生效 —— 那是个安静失效的陷阱)。
+     */
+    private GenerateAccepted persist(String taskId, long userId, GenerateRequest request,
+                                     LayoutModel layout, List<PartSelection> parts) {
         // 序列化只做一次:同一串既写 t_generation_task.payload 又写 t_outbox.payload,
         // 投递器原样发出。所以"库里存的"与"Python 收到的"天然是同一份。
         String payload = toJson(new GenerateTaskPayload(

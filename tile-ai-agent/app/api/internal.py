@@ -23,6 +23,7 @@ from fastapi import APIRouter, Depends, HTTPException, Request
 from fastapi.responses import StreamingResponse
 from pydantic import BaseModel, Field
 
+from app.agent.complete_parts import complete_parts
 from app.agent.layout_parse import LayoutParseError, parse_layout, validate_layout
 from app.chat.pipeline import ChatDeps, chat_frames
 from app.chat.session_store import RedisChatContextStore
@@ -43,7 +44,6 @@ CODE_INTERNAL_ERROR = 90001
 
 #: 契约已冻结、尚未实装的端点(带 x-todo 者需先评审,勿自行定夺):
 #:   POST /internal/agent/material-map    Java → Python
-#:   POST /internal/agent/complete-parts  Java → Python
 #:   GET  /internal/products/{sku}        Python → Java
 #:   GET  /internal/furnish/prompts       Python → Java
 #:   POST /internal/generate/callback     Python → Java
@@ -255,3 +255,76 @@ async def _bridge(frames: Iterator[str]) -> AsyncIterator[str]:
             yield item
     finally:
         stop.set()
+
+
+# ----------------------------------------------------------------------
+# 未选部位 AI 补齐(T-1.9)—— Java 在受理生成时同步调用(架构 §11.2)
+# ----------------------------------------------------------------------
+
+
+class CompletePartsRequest(BaseModel):
+    """契约 `POST /internal/agent/complete-parts` 的请求体。
+
+    字段名与契约**逐字一致**(`space` / `style` / `selectedParts`)——
+    契约 ↔ 实现比对是按字段名判的,改个名就会被判成"契约里有个字段实现没有"。
+    """
+
+    space: str = Field(default="", description="空间(字典 key)")
+    style: str = Field(default="", description="风格(字典 key);不限时为空")
+    selectedParts: list[dict[str, Any]] = Field(
+        default_factory=list, description="用户已选的部位(PartSelection[])"
+    )
+
+
+@router.post(
+    "/agent/complete-parts",
+    dependencies=[Depends(require_service_token)],
+    summary="未选地面/墙面部位 AI 补齐",
+)
+def complete_parts_endpoint(request: Request, payload: CompletePartsRequest) -> dict[str, Any]:
+    """给未选的**地面/墙面**补砖。
+
+    **补不上就降级**(原样返回用户选的部位),不阻断生成 —— 见 `complete_parts` 的模块头。
+    """
+    trace_id = _trace_of(request)
+
+    if not payload.space.strip():
+        return _envelope(CODE_PARAM_INVALID, "参数校验失败",
+                         {"errors": [{"field": "space", "reason": "空间为空"}]}, trace_id)
+
+    try:
+        deps = _completion_deps()
+    except Exception as error:  # noqa: BLE001 —— 网关/密钥未配置
+        return _envelope(CODE_INTERNAL_ERROR, f"补齐依赖未就绪:{error}", None, trace_id)
+
+    try:
+        parts = complete_parts(
+            space=payload.space,
+            style=payload.style,
+            selected=payload.selectedParts,
+            trace_id=trace_id,
+            **deps,
+        )
+    except Exception as error:  # noqa: BLE001 —— 检索 / 模型 / 取数抛异常
+        return _envelope(CODE_INTERNAL_ERROR, f"补齐服务暂时不可用:{type(error).__name__}",
+                         None, trace_id)
+
+    return _envelope(0, "ok", {"parts": parts}, trace_id)
+
+
+def _completion_deps() -> dict[str, Any]:
+    """补齐要用的依赖(走共享单例)。
+
+    ⚠️ 「补不上」与「服务故障」是两件事:`complete_parts` 自己会把**内容层面**的失败
+    (没候选、模型没选、选了不在候选里的、权威校验不过)**降级掉**并原样返回;
+    能抛到这里的只剩真·故障 —— 所以折 90001 是对的。
+
+    ⚠️ **本端点不返回 40004**:契约声明了它,但"补不上就降级"的决策让它没有出现的
+    机会(登记于 `openapi-verification.md` §49)。
+    """
+    return {
+        "llm": clients.get_llm_gateway(),
+        "embedding": clients.get_embedding_gateway(),
+        "qdrant": clients.get_qdrant_client(),
+        "java_api": clients.get_java_api_client(),
+    }

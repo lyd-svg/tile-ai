@@ -256,6 +256,20 @@ onMounted(async () => {
   }
 })
 
+/**
+ * 这次有哪几个"未选的地面/墙面"**没被补上**。
+ *
+ * 判据:用户当初没选它、结果里也没有它 —— 说明 AI 没能补上。
+ * **只陈述事实,不猜原因**:页面并不知道是"库里没有合适的砖"还是"补齐服务没答上",
+ * 编一个理由就是在替后端说话(与分享页"照抄后端文案"同一口径)。
+ */
+const uncompletedParts = computed<Part[]>(() => {
+  if (status.value !== 'success') return []
+  const chosen = new Set(draft.parts.map((item) => item.part))
+  const returned = new Set(resultParts.value.map((item) => item.part))
+  return (['floor', 'wall'] as Part[]).filter((part) => !chosen.has(part) && !returned.has(part))
+})
+
 onBeforeUnmount(cancelPolling)
 </script>
 
@@ -324,8 +338,8 @@ onBeforeUnmount(cancelPolling)
           </li>
         </ul>
         <p class="note">
-          至少选一个部位。当前阶段建议把地面与墙面都选上 ——
-          未选的部位不会被自动补齐。
+          至少选一个部位。<b>未选的地面/墙面会由 AI 自动补齐</b>;
+          腰线/花砖等局部为可选项,不强制补齐。
         </p>
         <RouterLink v-if="!draft.hasParts" :to="{ name: 'products' }">去选砖</RouterLink>
       </div>
@@ -393,6 +407,11 @@ onBeforeUnmount(cancelPolling)
               <span v-if="item.source === 'ai'" class="tag">AI 补齐</span>
             </li>
           </ul>
+          <!-- 如实说明"这次没补上" —— 只讲事实,不替后端解释原因 -->
+          <p v-if="uncompletedParts.length" class="note">
+            未选的{{ uncompletedParts.map((part) => PART_LABELS[part]).join('、') }}
+            这次没有自动补齐,可回上一步手动补选后再生成。
+          </p>
         </div>
 
         <div class="actions">
