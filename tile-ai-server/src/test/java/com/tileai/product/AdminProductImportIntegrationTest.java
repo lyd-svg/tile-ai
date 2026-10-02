@@ -359,6 +359,38 @@ class AdminProductImportIntegrationTest {
         return "";
     }
 
+    /**
+     * 回归(2026-10-02):多角度图 URL 必须按 {@code VARCHAR(500)} 判,而不是按多值列的
+     * 通用上限 50 判。
+     *
+     * <p>曾经所有多值列共用一个 50 字符闸门,而真实图床地址普遍 70+ 字符 ——
+     * 于是调用点后面那段"按 500 判"的检查**永远执行不到**(死代码),导入真实数据时
+     * 25 条挂了 24 条。模板自带的示例 URL 只有 28 字符,恰好躲过了这个坑。
+     */
+    @Test
+    @DisplayName("长图片 URL(>50 字符)可以导入 —— 按列宽 500 判,不按多值列的 50 判")
+    void longImageUrlsAreAccepted() throws Exception {
+        String longUrl = "https://www.monalisa.com.cn/uploadfiles/2025/06/20250611084809016.jpg";
+        assertTrue(longUrl.length() > 50,
+                "用例前提:这条 URL 必须比多值列的通用上限长,实际=" + longUrl.length());
+
+        Map<ImportColumn, String> values = new LinkedHashMap<>();
+        values.put(ImportColumn.SKU, SKU_PREFIX + "LONGURL");
+        values.put(ImportColumn.NAME, "长地址款");
+        values.put(ImportColumn.PRICE_PER_SQM, "268.00");
+        values.put(ImportColumn.COVER_IMAGE, longUrl);
+        values.put(ImportColumn.IMAGE_URLS, longUrl + ";" + longUrl.replace("09016", "10016"));
+
+        JsonNode status = runImport(csv(row(values)), "upsert");
+
+        assertEquals(0, status.get("failedCount").asInt(),
+                "长 URL 不该被判失败,实际错误=" + status.get("errors"));
+        assertEquals(1, status.get("successCount").asInt());
+        assertEquals(2, productImageMapper.selectCount(Wrappers.<ProductImage>lambdaQuery()
+                .eq(ProductImage::getProductId, idOf(SKU_PREFIX + "LONGURL"))),
+                "两张多角度图都要落库");
+    }
+
     private byte[] csv(String[]... dataRows) {
         StringBuilder sb = new StringBuilder();
         sb.append(String.join(",", ImportColumn.headers())).append("\r\n");

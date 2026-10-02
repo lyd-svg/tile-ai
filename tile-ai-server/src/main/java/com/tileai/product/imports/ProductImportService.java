@@ -61,7 +61,14 @@ public class ProductImportService {
     private static final int MAX_MATERIAL = 50;
     private static final int MAX_SURFACE = 50;
     private static final int MAX_COLOR_PATTERN = 200;
-    private static final int MAX_COVER_IMAGE = 500;
+    /** {@code t_product_image.url VARCHAR(500)} —— 封面与多角度图是同一列宽。 */
+    private static final int MAX_IMAGE_URL = 500;
+    /**
+     * <b>非 URL</b> 多值单元格(适用空间 / 风格标签)的单项长度上限。
+     *
+     * <p>⚠️ <b>不能拿它卡图片 URL。</b> 那不是"值写得对不对"的问题:真实图床地址
+     * 天然就比它长(实测 70+ 字符),共用会让<b>全部合法 URL 被拒</b>。见 {@link #multiValues}。
+     */
     private static final int MAX_MULTI_VALUE = 50;
     private static final int MAX_IMAGES = 20;
 
@@ -219,7 +226,7 @@ public class ProductImportService {
         String material = optional(row, columns, ImportColumn.MATERIAL, MAX_MATERIAL);
         String surface = optional(row, columns, ImportColumn.SURFACE, MAX_SURFACE);
         String colorPattern = optional(row, columns, ImportColumn.COLOR_PATTERN, MAX_COLOR_PATTERN);
-        String coverImage = optional(row, columns, ImportColumn.COVER_IMAGE, MAX_COVER_IMAGE);
+        String coverImage = optional(row, columns, ImportColumn.COVER_IMAGE, MAX_IMAGE_URL);
 
         List<String> spaces = multiValues(row, columns, ImportColumn.APPLICABLE_SPACES);
         dict.validate(spaces, DictEntry.TYPE_SPACE, ImportColumn.APPLICABLE_SPACES);
@@ -227,12 +234,8 @@ public class ProductImportService {
         List<String> styles = multiValues(row, columns, ImportColumn.STYLE_TAGS);
         dict.validate(styles, DictEntry.TYPE_STYLE, ImportColumn.STYLE_TAGS);
 
-        List<String> imageUrls = multiValues(row, columns, ImportColumn.IMAGE_URLS);
-        for (String url : imageUrls) {
-            if (url.length() > MAX_COVER_IMAGE) {
-                throw new ImportRowException(ImportColumn.IMAGE_URLS.header() + " 中存在过长的 URL");
-            }
-        }
+        // 图片 URL 按列宽(500)卡,不是按多值列的通用上限(50)—— 见 MAX_MULTI_VALUE 的说明
+        List<String> imageUrls = multiValues(row, columns, ImportColumn.IMAGE_URLS, MAX_IMAGE_URL);
         if (imageUrls.size() > MAX_IMAGES) {
             throw new ImportRowException(ImportColumn.IMAGE_URLS.header() + " 最多 " + MAX_IMAGES + " 条");
         }
@@ -278,10 +281,26 @@ public class ProductImportService {
         return price.setScale(2, java.math.RoundingMode.HALF_UP);
     }
 
-    /** 拆多值单元格;空白项被丢弃。 */
+    /** 拆多值单元格,按非 URL 列的通用上限校验。 */
     private static List<String> multiValues(SpreadsheetTable.Row row,
                                             Map<ImportColumn, Integer> columns,
                                             ImportColumn column) {
+        return multiValues(row, columns, column, MAX_MULTI_VALUE);
+    }
+
+    /**
+     * 拆多值单元格;空白项被丢弃。
+     *
+     * <p>⚠️ <b>{@code maxLength} 必须按列给。</b> 早先这里硬编码 {@code MAX_MULTI_VALUE}(50)
+     * 给所有多值列共用,而图片那张表的列宽是 {@code VARCHAR(500)} —— 结果是
+     * <b>一条 70 字符的正常图床地址先被 50 的闸门拦掉</b>,调用点后面那段按 500 判的
+     * 检查<b>永远执行不到</b>(死代码)。模板自带的示例 URL 只有 28 字符,恰好躲过这个坑,
+     * 直到导入真实数据才暴露(2026-10-02,导入蒙娜丽莎产品时 25 条挂了 24 条)。
+     */
+    private static List<String> multiValues(SpreadsheetTable.Row row,
+                                            Map<ImportColumn, Integer> columns,
+                                            ImportColumn column,
+                                            int maxLength) {
         String raw = row.value(columns, column);
         if (raw == null) {
             return List.of();
@@ -292,7 +311,7 @@ public class ProductImportService {
             if (value.isEmpty()) {
                 continue;
             }
-            if (value.length() > MAX_MULTI_VALUE) {
+            if (value.length() > maxLength) {
                 throw new ImportRowException(column.header() + " 中的值过长:" + value);
             }
             values.add(value);
