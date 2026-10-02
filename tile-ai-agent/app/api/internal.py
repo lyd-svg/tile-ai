@@ -1,7 +1,8 @@
 """`/internal/*` 路由(Java ↔ Python)。
 
 契约:`openapi-internal.yaml`。端点自 T-1.5 起逐个落地 —— 目前实装了
-`POST /internal/agent/parse-layout`(T-1.7)。
+`POST /internal/agent/parse-layout`(T-1.7)与
+`POST /internal/agent/chat`(T-1.6,SSE 流式)。
 
 鉴权:服务令牌 `X-Service-Token`
 (`openapi-common.yaml#/components/securitySchemes/serviceToken`),
@@ -13,14 +14,25 @@
 
 from __future__ import annotations
 
-from typing import Any
+import asyncio
+import logging
+import threading
+from typing import Any, AsyncIterator, Iterator
 
 from fastapi import APIRouter, Depends, HTTPException, Request
+from fastapi.responses import StreamingResponse
 from pydantic import BaseModel, Field
 
 from app.agent.layout_parse import LayoutParseError, parse_layout, validate_layout
+from app.chat.pipeline import ChatDeps, chat_frames
+from app.chat.session_store import RedisChatContextStore
+from app.chat.sse import CODE_INTERNAL_ERROR as CHAT_CODE_INTERNAL_ERROR
+from app.chat.sse import error_frame
+from app.core import clients
 from app.core.config import settings
 from app.gateway.factory import build_llm_gateway
+
+logger = logging.getLogger(__name__)
 
 router = APIRouter(prefix="/internal", tags=["internal"])
 
@@ -30,7 +42,6 @@ CODE_PARAM_INVALID = 10001
 CODE_INTERNAL_ERROR = 90001
 
 #: 契约已冻结、尚未实装的端点(带 x-todo 者需先评审,勿自行定夺):
-#:   POST /internal/agent/chat            Java → Python  SSE(事件集见契约,含 error)
 #:   POST /internal/agent/material-map    Java → Python
 #:   POST /internal/agent/complete-parts  Java → Python
 #:   GET  /internal/products/{sku}        Python → Java
@@ -139,3 +150,108 @@ def parse_layout_endpoint(request: Request, payload: ParseLayoutRequest) -> dict
     # 刻意**不派生 areas** —— 那是 Java 的职责(唯一实现),
     # 否则派生逻辑会出现两份,迟早不一致。见 layout_parse 模块头第 3 条。
     return _envelope(0, "ok", layout, trace_id)
+
+
+# ----------------------------------------------------------------------
+# 对话咨询(路径 C,T-1.6)—— SSE 流式
+# ----------------------------------------------------------------------
+
+
+class ChatRequest(BaseModel):
+    """契约 `POST /internal/agent/chat` 的请求体。
+
+    **所有字段都带默认值**:FastAPI 对缺字段会直接返 HTTP 422(detail 结构与契约
+    信封不同),而本端点约定"失败一律走 SSE error 帧"(§10.4 约定 2)。
+    收下宽松形状、在编排里判空,失败才长得一样。
+    """
+
+    sessionId: str = Field(default="", description="会话 ID(Java 侧生成)")
+    message: str = Field(default="", description="用户消息")
+    userId: int | None = Field(default=None, description="发起用户(Java 透传,留痕)")
+    context: dict[str, Any] | None = Field(default=None, description="可选上下文")
+
+
+@router.post(
+    "/agent/chat",
+    dependencies=[Depends(require_service_token)],
+    summary="对话咨询编排(路径 C,SSE)",
+)
+async def agent_chat(request: Request, payload: ChatRequest) -> StreamingResponse:
+    """RAG 检索 → LLM 生成 → SSE 逐帧返回(事件集见 D-7 裁决)。"""
+    trace_id = _trace_of(request)
+    headers = {
+        "Cache-Control": "no-cache",
+        # 反代(网关)不要缓冲这条流 —— 缓冲会让"边想边说"变成"憋完再说"
+        "X-Accel-Buffering": "no",
+        "Connection": "keep-alive",
+    }
+
+    try:
+        deps = _chat_deps(trace_id)
+    except Exception as error:  # noqa: BLE001 —— 网关未配置等:仍以 error 帧作答,不返 5xx
+        logger.warning("对话依赖装配失败:%s", error)
+        return StreamingResponse(
+            _one_frame(error_frame(CHAT_CODE_INTERNAL_ERROR, "系统内部错误", trace_id)),
+            media_type="text/event-stream",
+            headers=headers,
+        )
+
+    frames = chat_frames(session_id=payload.sessionId, message=payload.message, deps=deps)
+    return StreamingResponse(_bridge(frames), media_type="text/event-stream", headers=headers)
+
+
+def _chat_deps(trace_id: str) -> ChatDeps:
+    return ChatDeps(
+        gateway=clients.get_llm_gateway(),
+        embedding=clients.get_embedding_gateway(),
+        qdrant=clients.get_qdrant_client(),
+        store=RedisChatContextStore(clients.get_redis_client()),
+        java_api=clients.get_java_api_client(),
+        trace_id=trace_id,
+    )
+
+
+async def _one_frame(frame: str) -> AsyncIterator[str]:
+    """只吐一帧 —— 用于"依赖装配就失败了"的情形,好让失败也走 SSE 契约。"""
+    yield frame
+
+
+async def _bridge(frames: Iterator[str]) -> AsyncIterator[str]:
+    """把**同步**的帧生成器桥到事件循环。
+
+    ⚠️ **不用 `run_in_threadpool` 逐帧**:httpx 的流式迭代器必须**在同一线程**
+    创建与消费,逐帧往线程池丢会在不同 worker 之间飘,流式读取就不安全了;
+    而且每个 token 一次线程池往返,开销也大。这里改成"**一个后台线程当 producer,
+    用 `asyncio.Queue` 把帧交回事件循环**" —— 既不阻塞 loop,又保证迭代器始终在
+    自己那一个线程里。
+
+    客户端断开时 `finally` 置 `stop`,producer 在下一帧前收手
+    —— 不能让一个已断开的连接把后台线程一直占着。
+    """
+    loop = asyncio.get_running_loop()
+    queue: asyncio.Queue[str | None] = asyncio.Queue()
+    stop = threading.Event()
+
+    def produce() -> None:
+        try:
+            for frame in frames:
+                if stop.is_set():
+                    break
+                loop.call_soon_threadsafe(queue.put_nowait, frame)
+        except Exception:  # noqa: BLE001 —— 兜底:绝不能把异常抛进生成器
+            logger.exception("对话帧生成崩溃")
+        finally:
+            try:
+                loop.call_soon_threadsafe(queue.put_nowait, None)
+            except RuntimeError:  # 事件循环已关闭(进程正在退出)
+                pass
+
+    threading.Thread(target=produce, name="chat-producer", daemon=True).start()
+    try:
+        while True:
+            item = await queue.get()
+            if item is None:
+                break
+            yield item
+    finally:
+        stop.set()

@@ -36,6 +36,19 @@ public class AgentProperties {
     /** 单次调用超时。解析含一次模型调用,给足余量但仍要有限。 */
     private Duration timeout = Duration.ofSeconds(30);
 
+    /**
+     * 对话流(SSE)的超时,单位与 {@link #timeout} 同为 {@link Duration}。
+     *
+     * <p><b>比 {@link #timeout} 宽得多</b>:一次问答是"检索 + 流式生成",
+     * 逐字往外冒,整体耗时天然比一次解析长。它同时是两处的上界:
+     * <ul>
+     *   <li>Spring MVC 的异步请求超时({@code WebMvcConfig#configureAsyncSupport})
+     *       —— 不配的话 Servlet 默认超时会把长回答<b>截断</b>;</li>
+     *   <li>{@code SseEmitter} 与出网请求的超时。</li>
+     * </ul>
+     */
+    private Duration chatTimeout = Duration.ofSeconds(180);
+
     public String getBaseUrl() {
         return baseUrl;
     }
@@ -58,5 +71,13 @@ public class AgentProperties {
 
     public void setTimeout(Duration timeout) {
         this.timeout = timeout;
+    }
+
+    public Duration getChatTimeout() {
+        return chatTimeout;
+    }
+
+    public void setChatTimeout(Duration chatTimeout) {
+        this.chatTimeout = chatTimeout;
     }
 }

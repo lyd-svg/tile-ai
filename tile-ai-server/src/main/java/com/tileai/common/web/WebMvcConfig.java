@@ -1,10 +1,12 @@
 package com.tileai.common.web;
 
 import org.springframework.context.annotation.Configuration;
+import org.springframework.web.servlet.config.annotation.AsyncSupportConfigurer;
 import org.springframework.web.servlet.config.annotation.InterceptorRegistry;
 import org.springframework.web.servlet.config.annotation.WebMvcConfigurer;
 
 import com.tileai.admin.rbac.AdminPermissionInterceptor;
+import com.tileai.common.agent.AgentProperties;
 import com.tileai.common.security.ServiceTokenInterceptor;
 
 /**
@@ -36,16 +38,32 @@ public class WebMvcConfig implements WebMvcConfigurer {
 
     private final AdminPermissionInterceptor adminPermissionInterceptor;
     private final ServiceTokenInterceptor serviceTokenInterceptor;
+    private final AgentProperties agentProperties;
 
     public WebMvcConfig(AdminPermissionInterceptor adminPermissionInterceptor,
-                        ServiceTokenInterceptor serviceTokenInterceptor) {
+                        ServiceTokenInterceptor serviceTokenInterceptor,
+                        AgentProperties agentProperties) {
         this.adminPermissionInterceptor = adminPermissionInterceptor;
         this.serviceTokenInterceptor = serviceTokenInterceptor;
+        this.agentProperties = agentProperties;
     }
 
     @Override
     public void addInterceptors(InterceptorRegistry registry) {
         registry.addInterceptor(adminPermissionInterceptor).addPathPatterns(ADMIN_PATH);
         registry.addInterceptor(serviceTokenInterceptor).addPathPatterns(INTERNAL_PATH);
+    }
+
+    /**
+     * Servlet 异步请求的超时。
+     *
+     * <p><b>T-1.6 的 SSE 依赖它。</b>Servlet 容器的异步默认超时(Tomcat 约 30s)
+     * 会让一次较长的问答在图还没出完时被<b>静默截断</b> —— 前端只看到"流断了",
+     * 分不清是模型慢还是网络坏。这里用与 {@code SseEmitter} 同一个
+     * {@code tile.agent.chat-timeout} 作为上界。
+     */
+    @Override
+    public void configureAsyncSupport(AsyncSupportConfigurer configurer) {
+        configurer.setDefaultTimeout(agentProperties.getChatTimeout().toMillis());
     }
 }

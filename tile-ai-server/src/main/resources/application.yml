@@ -60,6 +60,9 @@ tile:
     # 解析含一次模型调用(实测真实解析约 2–5s),给足余量但仍要有限 ——
     # 没有超时的内部调用会把上游请求线程一起拖住。
     timeout: 30s
+    # 对话流(SSE,T-1.6)的超时。一次问答是"检索 + 流式生成",比一次解析长得多。
+    # 它同时是 Spring MVC 异步超时与出网请求超时的上界 —— **不配会把长回答截断**。
+    chat-timeout: ${AGENT_CHAT_TIMEOUT:180s}
 
   # 隐私字段的静态加密(架构 §13.5 / §8.3):t_layout.layout_enc / t_plan.layout_enc
   crypto:

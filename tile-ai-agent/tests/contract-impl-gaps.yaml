@@ -18,6 +18,7 @@
 
 canaries:
   - POST /internal/agent/parse-layout
+  - POST /internal/agent/chat
 
 # 实现侧不在契约内、且**有理由**的路由(理由必写)。
 ignoredImplPaths:
@@ -26,10 +27,6 @@ ignoredImplPaths:
 
 # 已知未开工。source 一栏是「出处」—— 任务号或决议条目。
 knownGaps:
-  - method: POST
-    path: /internal/agent/chat
-    source: T-1.6
-    note: "AI 咨询(SSE 流式)未开工"
   - method: POST
     path: /internal/agent/material-map
     source: "openapi-verification.md §30.2"

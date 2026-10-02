@@ -351,6 +351,23 @@ def test_stream_yields_deltas_then_done():
     assert chunks[-2].usage.prompt_tokens == 7
 
 
+def test_stream_does_not_leak_reasoning_content():
+    """思考模式下的推理内容**不得**混进用户可见的 delta。
+
+    DeepSeek 当前价目表里 `deepseek-flash` **默认开思考模式**。若供应商把推理
+    放在 `delta.reasoning_content`(或同理的 `reasoning`)里,本层只取
+    `delta.content` —— 这是"用户只看到答案"的**结构性保证**,不靠提示词约束。
+    代价是:开着思考模式会更慢、更贵(推理 token 计入 completion_tokens)。
+    """
+    chunks = list(iter_stream_chunks([
+        'data: {"choices":[{"delta":{"reasoning_content":"让我想想…"}}]}',
+        'data: {"choices":[{"delta":{"content":"推荐"}}]}',
+        "data: [DONE]",
+    ]))
+
+    assert "".join(c.delta for c in chunks) == "推荐", "推理内容不该出现在 delta 里"
+
+
 def test_stream_parsing_skips_unparseable_lines():
     """供应商会插心跳与注释行,不该为一行噪音炸掉整条流。"""
     chunks = list(iter_stream_chunks([

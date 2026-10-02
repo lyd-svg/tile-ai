@@ -105,6 +105,15 @@ public class SecurityConfig {
                 .logout(AbstractHttpConfigurer::disable)
                 .sessionManagement(s -> s.sessionCreationPolicy(SessionCreationPolicy.STATELESS))
                 .authorizeHttpRequests(auth -> auth
+                        // ⚠️ **只对 REQUEST / FORWARD 判权,跳过 ASYNC 与 ERROR 回派。**
+                        // 不加这一行,SSE(`SseEmitter`)会在**流结束时**炸:
+                        // 异步回派会再走一遍过滤链,而自定义的 JwtAuthenticationFilter
+                        // 继承自 OncePerRequestFilter —— 它**默认跳过 ASYNC 回派**,
+                        // 于是回派时无人认证;但鉴权过滤器默认**会**在 ASYNC 上再判一次,
+                        // 结果就是 `AuthorizationDeniedException: Access Denied`,
+                        // 且因为响应已经提交而无法改状态码(2026-10-02 联调实测踩到)。
+                        // ASYNC 回派不会重新执行 controller,放行它不放宽任何权限。
+                        .shouldFilterAllDispatcherTypes(false)
                         .requestMatchers("/actuator/health", "/actuator/info").permitAll()
                         .requestMatchers(HttpMethod.OPTIONS, "/**").permitAll()
 

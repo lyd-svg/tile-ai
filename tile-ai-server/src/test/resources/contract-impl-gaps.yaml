@@ -23,6 +23,8 @@ canaries:
   - POST /api/v1/admin/auth/login
   - GET /api/v1/admin/products
   - GET /internal/products/{sku}
+  - POST /api/v1/agent/chat
+  - GET /api/v1/agent/chat/sessions
 
 ignoredImplPaths:
   - path: /error
@@ -30,18 +32,6 @@ ignoredImplPaths:
 
 # 已知未开工。source 一栏是「出处」—— 任务号 T-x.y 或需求条目。
 knownGaps:
-  - method: POST
-    path: /api/v1/agent/chat
-    source: T-1.6
-    note: AI 咨询(路径 C,SSE 流式)未开工
-  - method: GET
-    path: /api/v1/agent/chat/sessions
-    source: T-1.6
-    note: 对话记录列表未开工
-  - method: GET
-    path: /api/v1/agent/chat/sessions/{id}
-    source: T-1.6
-    note: 对话记录详情未开工
   - method: GET
     path: /api/v1/admin/accounts
     source: PRD §10.3 未展开字段(见 tile-ai-tasks.md:934)
