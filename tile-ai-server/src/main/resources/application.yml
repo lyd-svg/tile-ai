@@ -5,6 +5,20 @@ spring:
   application:
     name: tile-ai-server
 
+  # 文件上传(批量导入,架构 §8.7)。
+  # ⚠️ **Spring Boot 默认单文件只收 1MB**,而导入代码允许 **20000 行**
+  # (SpreadsheetReader.MAX_ROWS)—— 一份上万行的 CSV 轻松超过 1MB,
+  # **默认值等于把整个导入功能挡在门外**,而且报出来的是 90001「系统内部错误」,
+  # 用户会以为服务挂了。这里按"2 万行 × 约 11 列"的实际体量给 20MB(约 3~10 倍余量)。
+  # 单行塞满长 URL 的超大文件属"请拆分重导",不为了它把上限放到吃爆堆
+  # —— 读取时是整份进内存的(file.getBytes())。
+  servlet:
+    multipart:
+      max-file-size: 20MB
+      max-request-size: 25MB
+      # 超过 1MB 落临时文件,不驻留堆。导入执行器并发很低,这样更稳。
+      file-size-threshold: 1MB
+
   # 数据库口令**不落代码**(架构 §12.3 / §13.6):一律走环境变量。
   # 本地开发可另建 application-local.yml(.gitignore 已排除)覆盖,或设 DB_* 环境变量。
   datasource:

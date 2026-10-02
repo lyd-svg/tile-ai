@@ -143,20 +143,38 @@ const router = createRouter({
         {
           path: 'products/import',
           name: 'admin-products-import',
-          component: () => import('@/views/admin/AdminPlaceholderView.vue'),
-          meta: { task: 'F-0.4', title: '批量导入' },
+          component: () => import('@/views/admin/AdminProductImportView.vue'),
         },
         {
           path: 'combos',
           name: 'admin-combos',
-          component: () => import('@/views/admin/AdminPlaceholderView.vue'),
-          meta: { task: 'F-0.5', title: '推荐搭配' },
+          component: () => import('@/views/admin/AdminCombosView.vue'),
+        },
+        {
+          // 新增放在 :id 之前 —— 静态段优先级更高,不会与下面的 :id 冲突
+          path: 'combos/new',
+          name: 'admin-combo-new',
+          component: () => import('@/views/admin/AdminComboEditView.vue'),
+        },
+        {
+          path: 'combos/:id',
+          name: 'admin-combo-edit',
+          component: () => import('@/views/admin/AdminComboEditView.vue'),
         },
         {
           path: 'templates',
           name: 'admin-templates',
-          component: () => import('@/views/admin/AdminPlaceholderView.vue'),
-          meta: { task: 'F-0.6', title: '户型模板' },
+          component: () => import('@/views/admin/AdminTemplatesView.vue'),
+        },
+        {
+          path: 'templates/new',
+          name: 'admin-template-new',
+          component: () => import('@/views/admin/AdminTemplateEditView.vue'),
+        },
+        {
+          path: 'templates/:id',
+          name: 'admin-template-edit',
+          component: () => import('@/views/admin/AdminTemplateEditView.vue'),
         },
         {
           path: 'furnish',

@@ -40,6 +40,13 @@ export interface RequestOptions {
   path: string
   query?: Record<string, unknown>
   body?: unknown
+  /**
+   * multipart 请求体(批量导入用)。**与 `body` 互斥**。
+   *
+   * 有它时**不设 `Content-Type`** —— 必须让浏览器自己带 `boundary`,
+   * 手写一个 `multipart/form-data` 反而会让服务端解析不了。
+   */
+  formData?: FormData
   signal?: AbortSignal
 }
 
@@ -117,14 +124,16 @@ export async function request<T>(options: RequestOptions): Promise<T> {
 }
 
 async function send<T>(options: RequestOptions, allowRefresh: boolean): Promise<T> {
-  const { method = 'GET', path, query, body, signal } = options
+  const { method = 'GET', path, query, body, formData, signal } = options
+  const isForm = formData !== undefined
 
   const response = await fetch(`${path}${buildQuery(query)}`, {
     method,
     // 令牌是 HttpOnly Cookie,由浏览器自动带上
     credentials: 'include',
-    headers: buildHeaders(body),
-    body: body === undefined ? undefined : JSON.stringify(body),
+    headers: buildHeaders(body, isForm),
+    // multipart 原样交给浏览器(它要自己算 boundary);JSON 才 stringify
+    body: isForm ? formData : body === undefined ? undefined : JSON.stringify(body),
     signal,
   })
 
@@ -190,11 +199,26 @@ async function send<T>(options: RequestOptions, allowRefresh: boolean): Promise<
   return (payload.data ?? undefined) as T
 }
 
-function buildHeaders(body: unknown): Record<string, string> {
+function buildHeaders(body: unknown, isForm = false): Record<string, string> {
   // 注意:这里**没有** Authorization —— 鉴权靠 Cookie(CLAUDE.md)
   const headers: Record<string, string> = { Accept: 'application/json' }
-  if (body !== undefined) headers['Content-Type'] = 'application/json'
+  // multipart 时**不能**设 Content-Type:boundary 得由浏览器生成
+  if (!isForm && body !== undefined) headers['Content-Type'] = 'application/json'
   return headers
+}
+
+/**
+ * 上传一个 `FormData`(目前只有批量导入用它)。
+ *
+ * **之所以加在这里、而不是另写一个 fetch**:上面 `send()` 里的 401 单飞续期、
+ * `ApiResponse` 解包、`BusinessError`/`HttpError` 的区分,都是**每一条出网路径都必须有的**。
+ * 另写一份迟早会与主路径漂移 —— 那时导入这条路的错误处理就成了另一套。
+ *
+ * ⚠️ 401 续期成功后会**用同一个 `FormData` 重发**。这是安全的:里面的 `File` 可以重复读;
+ * 而且 401 发生在进 controller 之前,**不会留下半个批次**。
+ */
+export function upload<T>(path: string, formData: FormData, options: { signal?: AbortSignal } = {}): Promise<T> {
+  return send<T>({ method: 'POST', path, formData, signal: options.signal }, true)
 }
 
 async function readJson<T>(response: Response): Promise<ApiResponse<T> | null> {

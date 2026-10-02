@@ -95,10 +95,18 @@ export interface Sku {
 /** 搭配所含 SKU 及部位。§8.2 t_recommend_combo_item */
 export interface ComboItem {
   sku: string
-  /** 冗余展示名(可选) */
+  /**
+   * 冗余展示名(可选)。
+   *
+   * ⚠️ **只用于展示,不提交** —— 库里不存它,读取时由后端从产品表带出来。
+   */
   name?: string
   /** 恒为 floor / wall / local 三值(契约 T-9) */
   part: Part
+  /** 备注(可选)。**后端会落库** —— 编辑时丢了它,备注就被静默清空 */
+  note?: string
+  /** 排序(可选)。同上,编辑时按行序回填 */
+  sort?: number
 }
 
 /** 推荐搭配(人工维护的成套方案)。§8.2 */

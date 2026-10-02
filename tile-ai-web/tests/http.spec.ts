@@ -9,7 +9,7 @@
 import { afterEach, describe, expect, it, vi } from 'vitest'
 
 import { BusinessError, ErrorCode } from '../src/api/errors'
-import { HttpError, buildQuery, request } from '../src/api/http'
+import { HttpError, buildQuery, request, upload } from '../src/api/http'
 
 function jsonResponse(body: unknown, status = 200): Response {
   return new Response(JSON.stringify(body), {
@@ -212,5 +212,55 @@ describe('请求本身的约定', () => {
     await request({ path: '/x' })
     const headers = spy.mock.calls[0][1]?.headers as Record<string, string>
     expect(headers['Content-Type']).toBeUndefined()
+  })
+})
+
+describe('upload(multipart)', () => {
+  function formOf(file: File, mode: string): FormData {
+    const form = new FormData()
+    form.append('file', file)
+    form.append('mode', mode)
+    return form
+  }
+
+  it('把 FormData 原样交给 fetch,**不设 Content-Type**(boundary 得由浏览器算)', async () => {
+    const spy = stubFetch(() => jsonResponse({ code: 0, message: 'ok', traceId: 't', data: { batchId: 'b1' } }))
+    const form = formOf(new File(['x'], 'a.csv'), 'upsert')
+
+    await upload('/x', form)
+
+    const init = spy.mock.calls[0][1] as RequestInit
+    expect(init.body).toBe(form)
+    // 设了 Content-Type 就会丢掉 boundary,服务端直接解析不了
+    expect((init.headers as Record<string, string>)['Content-Type']).toBeUndefined()
+    expect(init.credentials).toBe('include')
+  })
+
+  it('同样是解包 ApiResponse、业务失败抛 BusinessError', async () => {
+    stubFetch(() => jsonResponse({ code: 0, message: 'ok', traceId: 't', data: { batchId: 'b1' } }))
+    await expect(upload('/x', formOf(new File(['x'], 'a.csv'), 'upsert'))).resolves.toEqual({
+      batchId: 'b1',
+    })
+
+    stubFetch(() => jsonResponse({ code: 10001, message: '参数校验失败', traceId: 't' }))
+    await expect(upload('/x', formOf(new File(['x'], 'a.csv'), 'upsert'))).rejects.toBeInstanceOf(
+      BusinessError,
+    )
+  })
+
+  it('401 时静默刷新一次再重放,且重放的**还是原来那个 FormData**', async () => {
+    const form = formOf(new File(['x'], 'a.csv'), 'insert_only')
+    let call = 0
+    const spy = stubFetch(() => {
+      call += 1
+      if (call === 1) return jsonResponse({ code: 10002, message: '未登录', traceId: 't' }, 401)
+      if (call === 2) return new Response(null, { status: 200 }) // /auth/refresh
+      return jsonResponse({ code: 0, message: 'ok', traceId: 't', data: { batchId: 'b2' } })
+    })
+
+    await expect(upload('/x', form)).resolves.toEqual({ batchId: 'b2' })
+
+    expect(spy).toHaveBeenCalledTimes(3)
+    expect((spy.mock.calls[2][1] as RequestInit).body).toBe(form)
   })
 })

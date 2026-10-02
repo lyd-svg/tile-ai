@@ -12,6 +12,7 @@ import org.springframework.web.bind.MissingServletRequestParameterException;
 import org.springframework.web.bind.annotation.ExceptionHandler;
 import org.springframework.web.bind.annotation.RestControllerAdvice;
 import org.springframework.web.method.annotation.MethodArgumentTypeMismatchException;
+import org.springframework.web.multipart.MaxUploadSizeExceededException;
 
 import com.tileai.common.api.ApiResponse;
 import com.tileai.common.api.ErrorItem;
@@ -112,6 +113,20 @@ public class GlobalExceptionHandler {
         return build(ErrorCode.PARAM_INVALID, ErrorCode.PARAM_INVALID.defaultMessage(),
                 ValidationErrors.of(List.of(
                         new ErrorItem(ex.getName(), "参数类型不正确", ex.getValue()))));
+    }
+
+    /**
+     * 上传文件超过大小上限(批量导入)。
+     *
+     * <p>不接这一手的话,它会落到下面的兜底 {@code Exception} 分支 —— 对外就变成
+     * <b>90001「系统内部错误」</b>,而真实原因是"文件太大"。用户看着像服务挂了,
+     * 于是反复重传同一个文件。上限值见 {@code application.yml} 的
+     * {@code spring.servlet.multipart}(改那里时,这里与前端预检都要跟着改)。
+     */
+    @ExceptionHandler(MaxUploadSizeExceededException.class)
+    public ResponseEntity<ApiResponse<Void>> handleUploadTooLarge(MaxUploadSizeExceededException ex) {
+        log.info("上传文件超过大小上限: {}", ex.getMessage());
+        return build(ErrorCode.PARAM_INVALID, "上传文件超过大小上限(单个文件 20MB),请拆分后重试", null);
     }
 
     /** 兜底 —— 未预期异常。对外不暴露任何细节,靠 traceId 回查日志。 */
