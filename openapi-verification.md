@@ -4757,6 +4757,360 @@ expect(wrapper.text()).not.toContain('NaN')   // 整页文本,不只是价格那
 (`contract.spec.ts` / `planDetail.spec.ts`)**都是纯追加**(−0)。
 **`tile-ai-server/`、四份 OpenAPI、AsyncAPI、PRD:`git status` 里一个字没有。**
 
+---
+
+## 46. T-1.6 AI 咨询:双端落地、SSE 事件集与三处设计取定(2026-10-02)
+
+M3 第一张卡。**双端从零**(Java 三条 C 端接口 + Python 的 `/internal/agent/chat`
+此前都只是 `knownGaps`),契约 YAML **一个字没动**。
+
+### 46.1 交付面
+
+| 侧 | 新增 |
+| --- | --- |
+| Python | `app/chat/{sse,scope,session_store,rag,pipeline}.py`、`app/core/clients.py`;`internal.py` 加 `POST /internal/agent/chat`(SSE) |
+| Java | `com.tileai.agent`(实体×2 / Mapper×2 / DTO×5 / `ChatSessionService` / `AgentChatOrchestrator` / `AgentChatController` / `AgentChatConfig`)、`com.tileai.common.agent` 的 `ChatEvent` / `SseEventParser` / `AgentChatStreamClient` / `HttpAgentChatStreamClient`;`AgentProperties.chatTimeout`、`application.yml`、`WebMvcConfig.configureAsyncSupport` |
+
+**不需要新迁移**:`V6` 的 `t_chat_session` / `t_chat_message` 逐列覆盖契约字段
+(唯一缺"按最近活动置顶",契约未要求,本期接受)。
+
+### 46.2 SSE 事件集:**没有门禁能拦,测试是唯一判据**
+
+G1–G7 只校验契约自身;契约比对明确**不比 SSE 事件集**
+(§40.4 表末行;§36.5 第 4 条也早写了"`/internal/agent/chat` 的价值几乎全在事件集上,
+那个端点在本骨架里等于没绑")。本轮实测印证:两份清单里 `POST /api/v1/agent/chat`
+与 `POST /internal/agent/chat` 的响应都落进**「无法比对」**一栏。
+
+⇒ 契约里那几条硬要求(D-7 的帧顺序、`error` 与 `[DONE]` 互斥、refs 至多一帧)
+**只能由本轮新增的测试钉住**:Python `tests/test_chat_stream.py`(帧序列、50001、
+refs 真实性、降级)、Java `AgentChatIntegrationTest`(代理后的帧序列、落库、
+中途失败不落 assistant)、`SseEventParserTest`(解析规则)。
+**这是一条结构性缺口,不是本轮遗漏** —— 记录的用意是下次改事件集时知道该改哪里。
+
+### 46.3 Java 侧第一个 SSE:为什么是 `HttpClient` + `SseEmitter`
+
+- **不引 WebFlux**。本项目是 Spring MVC(servlet)栈,为了一个流式客户端把整套
+  WebFlux 拖进来,会让"到底哪套在跑"变得含糊。JDK 自带的
+  `java.net.http.HttpClient`(`BodyHandlers.ofLines()`)按行产出,**零新依赖**,
+  天然就是 SSE 的消费形态。
+- **现有 `AgentClient` 不能复用**:它是同步 `RestClient`,会把整段响应缓冲完再返回
+  —— 那不是流式,是"憋完再说"。故新增 `AgentChatStreamClient` 作为**可打桩的接缝**。
+- **`WebMvcConfig` 必须加 `configureAsyncSupport`**。原先没有 —— Servlet 异步默认超时
+  (Tomcat 约 30s)会把长回答**静默截断**。这是"不配就必坏"的一项,已与
+  `SseEmitter` 共用 `tile.agent.chat-timeout`。
+- **鉴权/追踪的 ThreadLocal 不跨线程**:`SecurityContextHolder` 与 `TraceContext`
+  都是 ThreadLocal,所以在请求线程取好 `userId` / `traceId` 再作参数传给编排线程,
+  编排器内不得再调 `CurrentPrincipal`。
+
+### 46.4 会话权威在 Java,sessionId 由 Java 下发
+
+契约 `ChatSession.id` 是 **string**,而 `t_chat_session.id` 是自增 `BIGINT` ——
+本轮取"`String.valueOf(id)`"这个映射(与 `/plans/{id}` 暴露数字 id 的既有做法一致),
+于是 **Java 是会话权威**:新建时先落 `t_chat_session`,把该字符串既作 C 端 id、
+又作传给 Python 的 `sessionId`;**首帧 `sessionId` 由 Java 下发**。
+
+因此 **Python 不发 sessionId 帧**(内部契约正文的正常序列本就是
+`delta → refs → [DONE]`);Java 若收到 `{"sessionId":…}` **一律吞掉**,
+保证 C 端"恰好一帧"(有专门用例钉住)。
+
+**归属判定刻意不区分**"不存在 / 不属于本人 / 不是数字",三者一律 30001 且同一措辞
+—— 分开就变成一个可枚举他人会话 id 的探针(与 `PlanOwnership` 同一口径)。
+
+### 46.5 refs 为什么不交给模型
+
+硬约束是"**不得编造 SKU**"。若 refs 由模型输出,**无法证明**它没编造。
+所以 refs 走确定性代码:检索候选逐个回问 `JavaApiClient.get_product`(即
+`/internal/products/{sku}`),**取不到即丢弃**,`name` 取 Java 权威值。
+测试里有两条反例:只查得到一个就只给一个;一个都查不到就给**空数组**而不是凑一个。
+
+### 46.6 问价拦截:两道闸门,顺序即分工
+
+1. **确定性关键词先跑**(`app/chat/scope.py`):命中即 50001,**不调模型**。
+   硬约束要求"问价 → 50001"必须**可靠**,而模型是概率性的 —— 关键词是保底。
+   关键词只认"价/钱/费/贵/便宜/优惠"这类**词**,不认素面数字,所以
+   `750×1500` 这类**尺寸**不会被误拦(有用例)。
+2. **模型意图分类后跑**:补隐晦越界;**分类器故障/超时一律放行**(宁可漏拒一句,
+   也不该因分类器连不上把正常咨询全打成错误)。
+
+另外**上下文块逐字段白名单拼接**,`price` 字段绝不进入(有用例断言拼出的文本
+里既没有价格数字也没有 `price` 字样)。
+
+⚠️ **残余风险如实登记**:模型仍可能在正文里吐出一个数字,而流已开始无法撤回。
+
+### 46.7 挂账清理是本任务的**隐性必做**
+
+`/agent/chat`、两条 sessions、`/internal/agent/chat` 四条 `knownGaps` 一实现就会命中
+⇒ 触发"**挂账已过期**"**无条件判红**。本轮已删(Java 3 条、Python 1 条),
+并把 `POST /api/v1/agent/chat`、`GET /api/v1/agent/chat/sessions`、
+`POST /internal/agent/chat` 加进两侧 `canaries`(锚点)。
+
+### 46.8 与既定倾向的两处**推翻**(开工时复核的结果)
+
+1. **`run_in_threadpool` 逐帧转 SSE → 否决**。httpx 的流式迭代器必须**在同一线程**
+   创建与消费,逐帧往线程池丢会在 worker 之间飘;且每 token 一次线程池往返。
+   改为"**单线程 producer + `asyncio.Queue` 桥接**"。
+2. **网关接进 `lifespan` → 改为惰性单例**。网关内含熔断器/失败率/连接池,必须有
+   跨请求生命周期(否则熔断永远打不开);但**不硬启动** —— 配置缺失时 `/health` 仍要活,
+   与 `_start_generate_consumer` 同口径。
+
+顺带:**§23.7 的复核结论 = 保持同步网关**,只把它放进专用后台线程,不 async 化。
+
+### 46.9 校验结果(2026-10-02)
+
+| 项 | 结果 |
+| --- | --- |
+| Python 全量 | **237 passed / 11 skipped**(基线 **175 / 11**) |
+| Python 新增 | `test_chat_stream.py` 15、`test_chat_scope.py` 22、`test_chat_session_store.py` 8、`test_chat_rag.py` 13、`test_clients.py` 2(死锁回归);`test_gateway.py` +1(推理内容不外泄) |
+| Java 全量 | **501 passed / 0 skipped**(基线 **481**) |
+| Java 新增 | `AgentChatIntegrationTest` 12、`SseEventParserTest` 8 |
+| 契约 ↔ 实现比对 | **两侧干净**;四条挂账已清、无"挂账已过期" |
+| 契约门禁 | **7/7 PASS**(`contract-diff.sh` 先跑,再 `ci.sh`) |
+| 契约 YAML | **一个字没动** |
+
+### 46.10 未闭合(逐条标它挡不挡下一步)
+
+1. **检索质量无意义** —— embedding 仍是确定性占位(sha256,无语义)。⇒ 本轮只能声明
+   "管路通、帧与落库正确、refs 有真实性保证",**不能声称"推荐准确/搭配合理"**。
+   要谈质量须先定 Embedding 模型并全量重建索引(P0-2)。**不挡**继续开发。
+2. **未做真实跨进程联调** —— 两侧各自验证(Java 侧把 `AgentChatStreamClient` 打桩),
+   **尚未在一个进程里跑通"Java → Python → 真模型"**。**挡**:它是下一步第一件事。
+3. **refs 的 `part` 是启发式**(payload 无该字段,按问句关键词猜,推不出默认 `wall`)。
+   猜错会误导"一键采纳"。**待产品决策**。
+4. **会话列表不按最近活动置顶**(表无 `updated_at`)。要改需加列(V12)。契约未要求。
+5. **思考模式**:价目表显示 `deepseek-flash` 默认开思考模式。网关只取 `delta.content`,
+   **推理内容不会漏给用户**(离线用例钉住),代价是更慢更贵;**未做**真实开关对比。
+6. **单价表订正**:`.env.example` 的 `GATEWAY_MODEL_PRICES` 由"输入 1 / 输出 2"
+   改为**输入 2 / 输出 8(取高峰档)**,并注明 `CostMeter` 目前**不分峰谷、不分缓存命中**,
+   故是**偏高估计**。精确记账需要给 `CostMeter` 加分档能力(**尚未做**)。
+
+### 46.11 「模型答不上来」的兜底:不发明错误码(2026-10-02 追加)
+
+**问题**:核对实现时发现一个空洞 —— 若模型**一个字都没吐**(空回答),
+原实现会照常发 `refs` → `[DONE]`,`t_chat_message` 里那条 assistant 正文是**空的**,
+前端于是显示**一段空白**:既没有错误码,也没有任何提示。
+
+**为什么不给它一个码**。这一档与已有两档都不同:
+
+| 情形 | 码 | 对用户的含义 |
+| --- | --- | --- |
+| 问价 / 施工售后 / 效果图(越界) | **50001** | "这问题**不归我管**" —— 该换问法 |
+| 模型超时 / 连不上 / 熔断(故障) | **90001** | "**我这边坏了**" —— 该重试 |
+| 模型没答上来但服务正常 | **本轮新增第三档** | "我问得不清楚" —— 该说得更具体 |
+
+用 90001 会让用户白等一次重试;用 50001 等于骗他说"这问题不归我管"。
+而"服务正常、只是内容为空"**并不是错误** —— 这次问答在协议上是**成功**的。
+
+⇒ **不新增错误码**,而是把它当**正文**处理:Python 侧在生成结束后判空,
+若为空则补一句固定文案,**作为一帧 `delta` 发出**,再照常 `refs` → `[DONE]`。
+
+**为什么必须发成 `delta` 而不是只在内部替换**:Java 靠**累积 delta** 决定落库正文,
+前端靠 **delta** 渲染,Redis 上下文也存这份文本 —— 只在内部替换会让
+"用户看到的 / 库里存的 / 下一轮模型记得的"三者对不上,前端依旧空白。
+
+**契约零改动**,这是刻意的:事件集、字段、错误码一个都没变,只是"同样的帧里写什么"。
+若改成新增码,则要走 PRD → 架构 → 契约 YAML → 本记录四层链条,还要过门禁、
+前端多一个分支 —— 把"内容问题"升级成"协议变更",成本不对等。
+
+**测试**:`tests/test_chat_stream.py::test_empty_model_answer_gets_a_fallback`
+(断言有一帧非空 `delta`、以 `[DONE]` 收尾、**不出现 error 帧**、且写进了上下文)。
+**文档**:同步在任务卡 T-1.6 的进度块里记了一笔。
+
+---
+
+## 47. T-1.6 真实跨进程冒烟:三个只有真环境才暴露的缺陷(2026-10-02)
+
+第一次把 Java 与 Python **同时真起起来**、经浏览器同款的 HTTP 路径跑一问一答。
+链路是通的(见 §47.4),但过程中抓出**三个缺陷 + 一处既存数据问题** ——
+**三个都不在两侧的单元/集成测试覆盖范围内**,这正是本次冒烟的价值。
+
+> 一句话总结:**MockMvc 不跑真 HTTP,也不跑 Servlet 的异步回派** ——
+> 凡是"真连接 / 真线程 / 真容器行为"上的错,只有真环境能看见。
+
+### 47.1 缺陷一:Java 的 HTTP 客户端默认要用 HTTP/2,Python 不认
+
+- **现象**:对话永远失败;Java 日志 `调用智能体对话接口返回非 200 status=400`,
+  Python 日志 `Unsupported upgrade request` / `Invalid HTTP request received`。
+- **根因**:`java.net.http.HttpClient` 默认版本是 HTTP/2。在**明文 http://** 上,
+  它会先发一个 `Upgrade: h2c` 的升级请求;uvicorn(FastAPI 默认服务器)不支持 h2c,
+  直接回 **400**。
+- **修法**:构造客户端时显式 `.version(HttpClient.Version.HTTP_1_1)`。
+- **测试为什么没抓到**:Java 侧集成测试把 `AgentChatStreamClient` 整个换成了替身
+  (本来就该如此 —— 测试不该依赖真 Python),所以**从来没有真发过一次 HTTP**。
+
+### 47.2 缺陷二:Spring Security 在 ASYNC 回派上二次鉴权,把 SSE 收尾拦掉了
+
+- **现象**:流结束后 Java 抛 `AuthorizationDeniedException: Access Denied`,
+  并伴随 `Unable to handle the Spring Security Exception because the response is already committed`。
+- **根因**:`SseEmitter` 结束时 Servlet 会做一次 **ASYNC 回派**,再走一遍过滤链。而
+  - 自定义的 `JwtAuthenticationFilter` 继承 `OncePerRequestFilter`,它**默认跳过 ASYNC 回派**
+    → 回派时无人认证;
+  - 但 Spring Security 6 的鉴权过滤器**默认会在 ASYNC 回派上再判一次** → 拒。
+  两边默认值正好相反,合起来就是一个必炸的组合。
+- **修法**:`authorizeHttpRequests(...).shouldFilterAllDispatcherTypes(false)` ——
+  只对 REQUEST / FORWARD 判权。ASYNC 回派不会重新执行 controller,**不放宽任何权限**。
+- **测试为什么没抓到**:MockMvc 的异步测试走的是另一套回派路径,没有真的经过容器。
+  (换句话说:**这是本项目引入 SSE 才会有的坑**,而 T-1.6 正是第一个。)
+
+### 47.3 缺陷三:Python 共享客户端的锁不可重入,把请求静默锁死
+
+- **现象**:整个对话请求**永久挂起**,**日志里一个字都没有**;curl 直打 Python 也超时。
+- **根因**:`app/core/clients.py` 里 `get_llm_gateway()` **持锁**期间调用
+  `get_redis_client()`,而后者要拿**同一把** `threading.Lock` —— 自己把自己锁死。
+- **修法**:改用 `threading.RLock()`,并把取 redis 的动作挪到**进锁之前**(两道保险)。
+- **测试为什么没抓到**:单元测试把 `_chat_deps` 整段换成了替身,`clients` 这条路径
+  **从未被真正走过**。已补 `tests/test_clients.py`:用"另起线程 + `join(timeout)`"
+  把死锁变成一次**失败**而不是一次静默挂起(方法本身值得复用)。
+
+### 47.4 既存数据问题:演示商品的中文是**双重编码**(不在 T-1.6 范围)
+
+- **现象**:`refs` 里的商品名是乱码(`éç°ç³çº¹`),而模型生成的正文中文正常。
+- **定位**:直接查库,`hex(name) = C3A9C29B...` —— **库里存的就已经是乱的**。
+  库的字符集变量全是 `utf8mb4`,所以**不是 MySQL 配置问题,是当初灌数据那一步的
+  客户端编码错了**(UTF-8 字节被当拉丁文解码后又存成 UTF-8)。
+- **影响面**:不止 AI 咨询 —— **公开商品接口 `/api/v1/products` 返回的同样是乱码**,
+  也就是说这个库里的中文商品文案**整体是坏的**。Java/Python 两侧都是忠实读、忠实返。
+- **为什么现在才发现**:`M2` 的人工验收关注的是"链路通不通",没逐字核对商品名;
+  而 AI 咨询把**商品名直接摆到用户眼前**(`refs` 要"一键采纳"),才让它刺眼。
+- **处置**:**未修**。这是**数据**问题(演示数据从哪来、怎么修,属用户决定),
+  不擅自动库。修法有两条:重新按正确编码灌一遍,或就地转换
+  (`CONVERT(BINARY(CONVERT(col USING latin1)) USING utf8mb4)` —— 需先确认**哪些行是坏的**)。
+
+### 47.5 冒烟通过的部分
+
+| 项 | 结果 |
+| --- | --- |
+| 向量库 | 全量重建:**产品 12 + 搭配 3** 条入 `product_index` / `combo_index` |
+| 首帧 | `data:{"sessionId":"23"}` —— **仅一次**,由 Java 下发 |
+| 流式 | 150+ 帧 `delta`,**中文正确**(模型真在逐字产出) |
+| refs | 一帧 `refs`,内含 3 个**经权威接口校验过**的 SKU |
+| 收尾 | `data:[DONE]` 为最后一帧 |
+| **问价拦截** | 「这款砖多少钱一平」→ **单帧 `error 50001`**,无 `delta`、无 `[DONE]` |
+| 真实模型 | DeepSeek `deepseek-flash` 联调成功(非流式 1.6s、流式 1.6s / 194 帧) |
+
+### 47.6 顺带记两条
+
+1. **`Settings(env_file=".env")` 是相对当前目录的**。从仓库根目录启动 Python,
+   读不到 `tile-ai-agent/.env` ⇒ 模型配置**全部为空**,对话会以 90001 失败,
+   而报错完全不提"配置没加载"。启动目录不能错(排查时踩到,已记)。
+2. **响应头 `Content-Type: text/event-stream` 未带 `charset`**。浏览器 `EventSource`
+   强制按 UTF-8 解码,所以**前端不受影响**;但其它客户端(如 .NET 的
+   `HttpWebRequest`)会按拉丁文解出乱码 —— 排查时被它误导过一次。是否补
+   `;charset=utf-8` 属实现细节,未改。
+3. **跑 Java 全量测试时,必须先把本地的 Python 服务停掉。** Python 的生成消费端
+   会**抢走** `queue.generate` 的消息,`GenerateIntegrationTest` 于是等不到自己发的那条,
+   两条用例各自**卡满 30 秒超时**后失败 —— 看起来像"代码坏了",其实是被抢了消息。
+   (实测踩到一次:501 → 2 failed;停掉 Python 再跑即 501 passed。)反过来,
+   `queue.index.sync` 积压着 60+ 条也没有消费者 —— 那是**刻意**的(§35.11),
+   所以**索引只能靠 `tools/rebuild_index.py` 手动重建**,增量同步当前不生效。
+
+---
+
+## 48. F-1.6 AI 咨询页:前端落地与三处取舍(2026-10-02)
+
+C 端一期**最后一个页面**。**纯前端**:契约 YAML 一个字没动,后端一行没改。
+
+### 48.1 交付面
+
+| 动作 | 文件 |
+| --- | --- |
+| 流式客户端(新) | `src/api/c/chat.ts`(`streamChat` 异步生成器 + 两条会话接口) |
+| 帧解析(新) | `src/api/sse.ts`(纯函数,单独可测"半帧") |
+| 页面(新) | `src/views/site/ConsultView.vue` |
+| 富文本渲染(新) | `src/utils/richText.ts`(全项目**唯一**一处 `v-html`,见 §48.8) |
+| 类型与契约常量(追加) | `src/api/types.ts`(`SkuRef` / `ChatSession` / `ChatMessage` + 四个常量) |
+| 复用全站刷新(纯追加导出) | `src/api/http.ts` 导出 `tryRefreshSession` |
+| 三处入口 | `router/index.ts`(`consult`,**`requiresAuth`**)、`SiteLayout.vue`(导航)、`HomeView.vue`(路径 C 卡片由「开发中」转「可用」) |
+
+### 48.2 为什么不能用 `EventSource`
+
+契约里 `/agent/chat` 是 **POST + JSON body + Cookie 鉴权**,而 `EventSource`
+**只支持 GET、不能带请求体**。⇒ 只能 `fetch` + `response.body.getReader()` +
+`TextDecoder` **手工切帧**。
+
+两处必须做对:
+1. **跨块半帧要缓冲** —— 网络块边界与帧边界无关,最后一段不完整的留在 buffer 里;
+2. **多字节字符也会被劈开** —— 一个汉字占 3 个 UTF-8 字节,`decode(value, {stream:true})`
+   才能接住。测试里有一条**故意把汉字从字节中间切开**的用例钉住它。
+
+额外收益:自持 `TextDecoder('utf-8')`,不受 §47.3「响应头无 charset」影响。
+
+### 48.3 两类"没答成"必须分开(本页最容易被改坏的一条)
+
+| 情形 | 来源 | 页面表现 |
+| --- | --- | --- |
+| **拒答**(问价 → 50001) | 后端的 `error` 帧 | 照抄后端 `message`,**提示态**;**不报"失去联系"、不给重试** |
+| **连接断了** | fetch 失败 / 流在终态前结束 / 校验不过 | 才显示「与服务器失去联系,请重试」,半截文本标「(不完整)」 |
+
+理由:重试同一个问题不会有不同的答案;把"这事我不答"显示成"服务器坏了",
+会让用户白重试,也会让运维被无谓地叫起来。契约里这两种结局**互斥**
+(失败帧之后不会再有 `[DONE]`),而 `streamChat` 把"静默断流"也变成了**可判定**的中断。
+
+### 48.4 一键采纳:**采纳 ≠ 跳走**,且**绝不 `clear()`**
+
+- 采纳 = `selectionDraft.setPart(part, sku, {name?})` —— **同部位替换、其余保留**(合并);
+- **不调用 `draft.clear()`**:那会把用户已录的**户型**一起清掉。有专门用例钉住
+  (预置户型 + 地面砖,采纳墙面砖后断言**两者都还在**);
+- **不在采纳时自动跳转** —— refs 常有 2~3 条,每点一下就弹走没法核对。
+  跳转做成页面级按钮「带着这些砖去录户型」(`router.push({name:'layout'})`,不带参数,
+  数据都在 store 里)。PRD 说的"点击搭配方案可直接跳到户型录入页"由它满足。
+
+### 48.5 演示库商品名乱码:**前端不兜、不修**
+
+`refs` 卡片要显示 `name`,而演示库里 `name` 是**双重编码的乱码**(§47.4,**数据问题**)。
+前端**不做任何"修复"** —— 修了就会与产品库页显示不一致,而且是猜测。
+做法是**始终把 `sku` 显出来当主标识**,`name` 有就显示、缺失或乱码也不留空白
+(`SkuRef.name` 在契约里本就是**可选**)。观感问题源自数据,不源自本页。
+
+⚠️ 另登记一处**消不掉**的既存缺口:`refs[].part` 是后端按问句关键词**猜的**(§46.10.3),
+猜错会把砖铺到错的部位,而采纳是**替换**语义、会静默覆盖。前端能做的只有
+**把部位写在卡片上**、采纳后立刻更新摘要、**不自动跳走**,给用户核对的机会。
+
+### 48.6 校验结果(2026-10-02)
+
+| 项 | 结果 |
+| --- | --- |
+| 前端全量 | **264 passed / 20 文件**(基线 **206 / 16**) |
+| 新增 spec | `sse.spec.ts` 9、`chat.spec.ts` 14、`consult.spec.ts` 20、`richText.spec.ts` 11;`contract.spec.ts` **纯追加 4** |
+| 类型与构建 | `npm run build`(`vue-tsc --noEmit && vite build`)**通过**;产物里有独立的 `ConsultView-*.js` chunk(路由确实懒加载) |
+| 契约 / 后端 | **一个字没动**(前端改动不触及契约) |
+| **真机冒烟(经 Vite 代理)** | 登录 → 提问:**332 帧**,以 `refs` + `[DONE]` 收尾 |
+| **代理是否缓冲** | **实测不缓冲**:响应头 16ms、**第一个数据块 23ms**、整条流 28.6s 读完(867 次读)⇒ 开发环境**逐字出字成立** |
+
+⚠️ **生产 Nginx 必须对 `/api/v1/agent/chat` 关 `proxy_buffering`** —— 否则逐字会变成
+"憋完再说"。那是 T-2.4 部署的事,前端修不了,在此登记。
+
+### 48.7 回答里的 Markdown 标记:渲染,但**只认三条规则**
+
+**问题**:模型是按 Markdown 回的(`**首选墙砖:**云灰大理石`、行首 `- ` 的列表),
+而页面按纯文本渲染 ⇒ 那些 `**` **原样显示**出来,很难看。
+
+**做法**(用户 2026-10-02 拍板:在前端渲染):新增 `src/utils/richText.ts`,
+把 `**粗体**` → `<strong>`、`` `代码` `` → `<code>`、行首 `- `/`* ` → `• `,
+其余 Markdown(标题、表格、链接……)**一律按纯文本显示**。
+**每多支持一条规则,就多一处可以被模型内容穿透的缝。**
+
+**这是全项目唯一一处 `v-html`,所以顺序不可颠倒**:内容来自**大模型**,是不可信输入,
+完全可能吐出 `<script>` 或 `<img onerror=…>`。因此**先整体转义、再插入自己造的标签** ——
+进入 `v-html` 的字符串里,**任何 HTML 都不是原文带来的**。有专门的用例钉住
+(`<script>` 与 `**<img onerror=…>**` 都不得变成元素)。
+
+两个实现细节,都属于"错了不报错、只是不对"的那类:
+1. **列表用 `•` 字符而不是 `<ul><li>`** —— 气泡是 `white-space: pre-wrap` 逐行显示的,
+   插块级元素会在列表前后多出空行,反而更乱;
+2. **样式必须写 `:deep()`** —— `v-html` 注入的元素**拿不到 scoped 属性**,
+   直接写 `.text strong` 不匹配,而且不会报错。
+
+### 48.8 浏览器里的人工验收(**2026-10-02 通过**,用户执行)
+
+用户按 §48.6 列的四点走了一遍:**逐字出字**、问价显示 **50001 的后端文案**、
+采纳后**摘要更新**、点跳转**进到「户型录入」页** —— 全部正常。
+⇒ **F-1.6 到此是人验过的,不再只是"组件测试 + 构建 + 经代理的 HTTP 链路"。**
+
+⚠️ 签的是这一页**跑通了、看着也顺**;**不代表**"推荐准不准" —— 那取决于 embedding
+(仍是占位,§46.10),与本页无关。
+
+另注:`sessionId` 是**内存态**,刷新即丢(与 `selectionDraft` 同规矩,前端零存储)。
+
 ⚠️ ~~**没有做人工浏览器验证。**~~ ✅ **已在同日补上,见 §45.10** ——
 与 §44.8 同一条欠账,而且这一轮**更该做**:分享这条链路上有三处形状必须一致(§45.3),
 而**只有一条能被测试读到**。组件测试证明的是"页面逻辑对",

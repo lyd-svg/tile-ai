@@ -43,6 +43,14 @@ const router = createRouter({
           component: () => import('@/views/site/ComboListView.vue'),
         },
         {
+          // AI 咨询(F-1.6)。**要登录** —— 契约里 /agent/chat 与两条对话记录
+          // 都是 cookieAuth(PRD §5.2.3「向 AI 提问前必须登录」),而且对话要留痕。
+          path: 'consult',
+          name: 'consult',
+          component: () => import('@/views/site/ConsultView.vue'),
+          meta: { requiresAuth: true },
+        },
+        {
           path: 'store',
           name: 'store',
           component: () => import('@/views/site/StoreView.vue'),

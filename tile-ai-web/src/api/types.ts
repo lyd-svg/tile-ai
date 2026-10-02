@@ -328,6 +328,51 @@ export interface QuoteResult {
 }
 
 /**
+ * 可采纳的推荐项(**含部位**)。§10.6③ refs
+ *
+ * 契约 `required: [sku, part]`,**`name` 是可选的** —— 它只是冗余展示名。
+ *
+ * ⚠️ 演示库里商品名可能是**双重编码的乱码**(`openapi-verification.md` §47.4,
+ * 数据问题、不在前端修)。所以展示时**必须把 `sku` 也画出来**当主标识:
+ * 有 `name` 就显示、没有或异常也不该出现空白。
+ */
+export interface SkuRef {
+  sku: string
+  name?: string
+  /** 该砖要铺的部位(契约枚举,与 `Part` 同形) */
+  part: Part
+}
+
+/** 对话会话。§8.6 t_chat_session */
+export interface ChatSession {
+  /**
+   * ⚠️ **string,不是 number** —— 库里是自增 BIGINT,对外映射成十进制字符串
+   * (`openapi-verification.md` §46.4)。别顺手改成 number,那会让 `/sessions/{id}` 的
+   * 路径参数类型与契约对不上。
+   */
+  id: string
+  title?: string
+  createdAt?: string
+}
+
+/** 对话消息。§8.6 t_chat_message */
+export interface ChatMessage {
+  id?: number
+  /** **只有 user / assistant 两个值**(不是 PartSource 的 user/ai —— 那是部位来源) */
+  role: 'user' | 'assistant'
+  content: string
+  /** 助手消息引用的 SKU 列表,支持「一键采纳」。没有时为省略或空数组 */
+  refs?: SkuRef[]
+  createdAt?: string
+}
+
+/** 会话详情:会话本体 + 全部消息。§10.2 */
+export interface ChatSessionDetail {
+  session: ChatSession
+  messages: ChatMessage[]
+}
+
+/**
  * 以下常量**不是**给业务用的,是给 `tests/contract.spec.ts` 核对契约用的。
  *
  * TypeScript 的类型在运行期不存在,没法拿 `interface` 去和契约 YAML 比。
@@ -363,4 +408,16 @@ export const PLAN_PART_REQUIRED_FIELDS = ['part', 'sku', 'materialFee'] as const
 
 /** 契约 QuoteResult.required。明细四项齐备才画得出报价单 */
 export const QUOTE_RESULT_REQUIRED_FIELDS = ['materialTotal', 'auxTotal', 'total', 'items'] as const
+
+/** 契约 SkuRef.required。**`name` 不在其中** —— 它是可选展示名,前端要兜 */
+export const SKU_REF_REQUIRED_FIELDS = ['sku', 'part'] as const
+
+/** 契约 ChatSession.required */
+export const CHAT_SESSION_REQUIRED_FIELDS = ['id'] as const
+
+/** 契约 ChatMessage.required */
+export const CHAT_MESSAGE_REQUIRED_FIELDS = ['role', 'content'] as const
+
+/** 契约 ChatMessage.role.enum。**只有两个值** —— 与部位来源(user/ai)不是一回事 */
+export const CHAT_MESSAGE_ROLES = ['user', 'assistant'] as const
 

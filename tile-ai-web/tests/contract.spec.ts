@@ -20,11 +20,15 @@ import { describe, expect, it } from 'vitest'
 import { ERROR_MESSAGES, ErrorCode } from '../src/api/errors'
 import {
   API_RESPONSE_REQUIRED_FIELDS,
+  CHAT_MESSAGE_REQUIRED_FIELDS,
+  CHAT_MESSAGE_ROLES,
+  CHAT_SESSION_REQUIRED_FIELDS,
   PAGE_DATA_REQUIRED_FIELDS,
   PART_VALUES,
   PLAN_PART_REQUIRED_FIELDS,
   PLAN_SUMMARY_REQUIRED_FIELDS,
   QUOTE_RESULT_REQUIRED_FIELDS,
+  SKU_REF_REQUIRED_FIELDS,
 } from '../src/api/types'
 
 // 用 fileURLToPath + path.resolve 而不是把 URL 直接交给 readFileSync:
@@ -259,5 +263,64 @@ describe('C 端分享接口(F-1.10)', () => {
       'shareToken',
       'shareUrl',
     ])
+  })
+})
+
+describe('AI 咨询(F-1.6)', () => {
+  it('三条接口都要登录(契约 cookieAuth)—— C 端提问前必须登录', () => {
+    const endpoints = [
+      ['/agent/chat', 'post'],
+      ['/agent/chat/sessions', 'get'],
+      ['/agent/chat/sessions/{id}', 'get'],
+    ] as const
+
+    for (const [path, method] of endpoints) {
+      expect(cOperation(path, method).security, `${method.toUpperCase()} ${path}`).toEqual([
+        { cookieAuth: [] },
+      ])
+    }
+  })
+
+  it('/agent/chat 是 POST + `text/event-stream`;`message` 必填、`sessionId` 可省略', () => {
+    const op = cOperation('/agent/chat', 'post')
+
+    expect(op.requestBody?.required).toBe(true)
+    const request = op.requestBody?.content?.['application/json']?.schema
+    // **只有 message 必填** —— sessionId 首次省略是契约明说的(服务端建会话并在首帧下发)
+    expect(request?.required).toEqual(['message'])
+    expect(Object.keys(request?.properties ?? {}).sort()).toEqual(['message', 'sessionId'])
+
+    const ok = (op.responses?.['200'] ?? {}) as { content?: Record<string, unknown> }
+    expect(Object.keys(ok.content ?? {})).toContain('text/event-stream')
+    expect(op.responses).toHaveProperty('401')
+  })
+
+  it('⚠️ 弱哨兵:`/agent/chat` 的说明文字里还写着事件集的关键词', () => {
+    // **这条拦不住行为漂移** —— SSE 事件集在契约里只是**散文描述**
+    // (响应 schema 只有一个不透明的 `{type: string}`),而 G1–G7 与契约比对
+    // **都不解析 SSE**(见 openapi-verification.md §46.2:两个 /agent/chat 都落在
+    // 「无法比对」那一栏)。**真正的判据是 tests/chat.spec.ts**。
+    //
+    // 留着它只有一个用处:哪天有人把这段协议说明整段删掉,这里会红 ——
+    // 提醒他那是**契约变更**,要按文档链走,而不是顺手删。
+    const ok = (cOperation('/agent/chat', 'post').responses?.['200'] ?? {}) as { description?: string }
+    const description = ok.description ?? ''
+
+    for (const token of ['[DONE]', 'delta', 'refs', 'sessionId', 'error']) {
+      expect(description, `说明里应仍提到 ${token}`).toContain(token)
+    }
+  })
+
+  it('结构 schema 的必填与枚举,与前端常量逐字对齐', () => {
+    expect(commonSchema('SkuRef').required).toEqual(SKU_REF_REQUIRED_FIELDS)
+    // `name` 是**可选展示名** —— 前端必须能兜住"没有它"
+    expect(SKU_REF_REQUIRED_FIELDS).not.toContain('name')
+
+    expect(commonSchema('ChatSession').required).toEqual(CHAT_SESSION_REQUIRED_FIELDS)
+    // ⚠️ **id 是 string**(库里是自增 BIGINT,对外映射成十进制字符串,§46.4)
+    expect(commonSchema('ChatSession').properties?.id?.type).toBe('string')
+
+    expect(commonSchema('ChatMessage').required).toEqual(CHAT_MESSAGE_REQUIRED_FIELDS)
+    expect(commonSchema('ChatMessage').properties?.role?.enum).toEqual(CHAT_MESSAGE_ROLES)
   })
 })

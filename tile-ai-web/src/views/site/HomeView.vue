@@ -2,8 +2,8 @@
 /**
  * C 端首页 —— 三条选砖路径的入口(PRD §5.2)。
  *
- * 路径 C(AI 咨询)后端尚未实现(T-1.6),故这里**明说"开发中"而不给可点入口** ——
- * 一个点了就坏的按钮比"暂未开放"更糟。
+ * 三条**都已开放**:自己挑砖 / 看成套搭配 / 问 AI 顾问。
+ * (路径 C 曾因后端未实现而显示"开发中";T-1.6 与 F-1.6 于 2026-10-02 落地后放开。)
  */
 </script>
 
@@ -28,18 +28,18 @@
       <span class="tag tag--on">可用</span>
     </RouterLink>
 
-    <div class="card card--off">
+    <RouterLink class="card" to="/consult">
       <h2>C · 问 AI 顾问</h2>
       <p>用自然语言描述需求,让 AI 推荐瓷砖与搭配方案。</p>
-      <span class="tag">开发中</span>
-    </div>
+      <span class="tag tag--on">可用</span>
+    </RouterLink>
   </section>
 
   <section class="next">
     <h2>接下来会发生什么</h2>
     <p class="hint">
-      选好砖之后进入<b>户型录入</b>与<b>效果图生成</b> —— 这两步尚未开放,
-      正在开发中(T-1.7 / T-1.11)。
+      选好砖之后进入<b>户型录入</b>与<b>效果图生成</b> —— 这两步都已开放,
+      选好砖就能走完「录户型 → 生成效果图 → 按部位报价」。
     </p>
   </section>
 </template>

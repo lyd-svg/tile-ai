@@ -89,8 +89,13 @@ function isAuthRefreshCall(path: string): boolean {
  *
  * 成功与否**不抛异常** —— 调用方只关心"要不要重试原请求";
  * 刷新失败本身就是"该重新登录了",由原请求的错误统一表达。
+ *
+ * ⚠️ **本函数对外导出,是给流式请求(`api/c/chat.ts`)复用的。**
+ * SSE 那条路不能用 `request()`,但它**必须复用这一把单飞锁** ——
+ * 见 `refreshInFlight` 的说明:各自刷新会打出 N 次刷新、且令牌轮转互相覆盖。
+ * 所以宁可把这里导出,也不要让流式那条路自己再写一份。
  */
-async function tryRefreshSession(path: string): Promise<boolean> {
+export async function tryRefreshSession(path: string): Promise<boolean> {
   if (refreshInFlight) return refreshInFlight
 
   refreshInFlight = fetch(refreshPathFor(path), {

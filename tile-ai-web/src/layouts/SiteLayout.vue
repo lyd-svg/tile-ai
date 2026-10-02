@@ -6,9 +6,9 @@ import { useUserAuthStore } from '@/stores/userAuth'
 /**
  * C 端(业主)外壳。
  *
- * 三条选砖路径的入口放这里:直接浏览 / 推荐搭配 / AI 咨询。
- * 后两者中 **AI 咨询(T-1.6)后端未实现**,故先不放入口 —— 点了只会 404,
- * 不如等做出来再挂,免得演示时点出一个坏页面。
+ * 三条选砖路径的入口都放这里:直接浏览 / 推荐搭配 / **AI 咨询**。
+ * (AI 咨询的那个入口曾经因为"后端未实现"而留空,后端 T-1.6 与页面 F-1.6
+ * 均已于 2026-10-02 落地,入口随之挂上。)
  */
 const auth = useUserAuthStore()
 const router = useRouter()
@@ -26,6 +26,7 @@ async function handleLogout() {
     <nav>
       <RouterLink to="/products">选砖</RouterLink>
       <RouterLink to="/combos">推荐搭配</RouterLink>
+      <RouterLink to="/consult">问 AI</RouterLink>
       <RouterLink to="/layout">录户型</RouterLink>
       <RouterLink to="/plans">我的方案</RouterLink>
       <RouterLink to="/store">门店</RouterLink>
