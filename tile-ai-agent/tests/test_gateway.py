@@ -731,7 +731,12 @@ def test_embedding_gateway_defaults_to_deterministic_placeholder():
 
 
 def test_unknown_embedding_provider_raises_rather_than_silently_placeholder():
-    with pytest.raises(GatewayConfigError, match="尚未实现"):
+    """认不出来的 provider **必须响**,不能静默退回占位实现。
+
+    静默退回的后果是:"配错了"表现得像"模型不行" —— 排查方向会整个跑偏。
+    (顺带:报错里会列出当前支持的 provider,配置时能直接照着改。)
+    """
+    with pytest.raises(GatewayConfigError, match="未知的 Embedding provider"):
         build_embedding_gateway(settings(model_embedding_provider="bge-m3"))
 
 

@@ -22,6 +22,12 @@ redis~=8.1.0
 # 才谈得上"从 MySQL 恢复出一致的索引"。服务本身**不**使用它。
 PyMySQL~=1.2.3
 
+# 本地嵌入模型(架构 §15.1 的 Embedding 选型,2026-10-02 接入)。
+# 进程内跑开源模型(Qwen3-Embedding-0.6B,Apache 2.0),不依赖外部服务。
+# ⚠️ 它会把 torch 一起拖进来(CPU 版约 200MB)—— 这是本地推理的必然代价。
+# 不想装它就用另一种实现:provider 填 `ollama`(调本地 Ollama 服务,见 ollama_embedding.py)。
+sentence-transformers~=6.1.0
+
 # 测试
 pytest~=9.1.1
 

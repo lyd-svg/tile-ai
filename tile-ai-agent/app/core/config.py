@@ -79,6 +79,9 @@ class Settings(BaseSettings):
     model_embedding_api_key: SecretStr = SecretStr("")
     model_embedding_base_url: str = ""
     model_embedding_model: str = ""
+    #: 本地嵌入模型跑在哪。**不自动挑**:自动挑会让"换个机器行为就变"
+    #: (有 GPU 走 GPU、没有走 CPU,数值上的一点差异会让检索结果飘)。
+    embedding_device: str = "cpu"
 
     # 成本计量单价表,形如 {"deepseek": {"input_per_million": 1, "output_per_million": 2}}
     gateway_model_prices: dict[str, ModelPrice] = {}
@@ -89,6 +92,9 @@ class Settings(BaseSettings):
     # 超时:图像 60s 是架构 §7.3 / §13.1 的**硬指标**(单图 ≤60s),不可放宽。
     gateway_llm_timeout_seconds: float = 30.0
     gateway_image_timeout_seconds: float = 60.0
+    # Embedding:本地推理(如 Ollama 跑 0.6B 的小模型),一次几十毫秒到几秒。
+    # 给 15s 是"本机服务没起/卡住"时的告警线,不是性能指标。
+    gateway_embedding_timeout_seconds: float = 15.0
 
     gateway_max_attempts: int = 3
     gateway_backoff_base_seconds: float = 0.5

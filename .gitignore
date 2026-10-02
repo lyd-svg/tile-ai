@@ -81,6 +81,11 @@ mysql_data/
 *.sqlite
 *.db
 
+# ---------- 本地嵌入模型权重(约 1GB,按需现下)----------
+# 由 `python tools/download_embedding.py` 落到这里;权重是公开的开源文件,
+# 没必要进版本库 —— 换台机器重新下一次即可(factory 的默认路径指向它)。
+tile-ai-agent/models/
+
 # ---------- IDE / 编辑器 ----------
 .idea/
 *.iml

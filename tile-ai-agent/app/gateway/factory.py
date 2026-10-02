@@ -18,6 +18,7 @@ import logging
 import random
 import time
 from dataclasses import dataclass
+from pathlib import Path
 from typing import Any, Callable
 
 from app.gateway.errors import GatewayConfigError
@@ -64,9 +65,25 @@ _IMAGE_PRESETS: dict[str, ProviderPreset] = {
     "dashscope": ProviderPreset("https://dashscope.aliyuncs.com", "wan2.7-image-pro"),
 }
 
-#: Embedding 的真实厂商预置**故意留空** —— 模型选型是 P0-2 的残留项,
-#: 现在编一个预置等于把没做的决策假装做掉了。
-_EMBEDDING_PRESETS: dict[str, ProviderPreset] = {}
+#: Embedding 的预置。
+#:
+#: **云端厂商仍然留空** —— 那几家的模型 ID 要按官方文档填,编一个等于把没做的决策
+#: 假装做掉了(P0-2 残留)。这里只有**本地 Ollama**:端点固定、模型是公开的开源权重
+#: (Apache 2.0),不存在"选型未定"的问题。
+#:
+#: ⚠️ 换这个模型时**必须全量重建索引** —— 向量语义变了,旧新混在同一个集合里,
+#: 检索结果是乱的(§9.1 / §15.2)。`OllamaEmbedding` 会在维度对不上时当场报错。
+_EMBEDDING_PRESETS: dict[str, ProviderPreset] = {
+    "ollama": ProviderPreset("http://localhost:11434", "qwen3-embedding:0.6b"),
+}
+
+#: 进程内跑本地模型时的默认模型目录。
+#:
+#: ⚠️ **相对于本仓库的 `tile-ai-agent/`,不是当前工作目录** —— 用相对路径会踩
+#: "从哪个目录跑就读哪个目录"的坑(`tools/rebuild_index.py` 那条已经踩过一次)。
+_LOCAL_EMBEDDING_DEFAULT_MODEL = str(
+    Path(__file__).resolve().parents[2] / "models" / "Qwen3-Embedding-0.6B"
+)
 
 
 def build_llm_gateway(
@@ -206,10 +223,15 @@ def build_image_gateway(
 def build_embedding_gateway(settings: Any = None) -> EmbeddingGateway:
     """组装 Embedding 网关。
 
-    **模型选型未定(P0-2 残留),故默认返回确定性占位实现** —— 索引同步链路
-    照常可跑、可测,只是没有语义检索能力。真实适配器等模型定案后再落:
-    换 Embedding 模型会改变向量语义,必须全量重建索引才能验证(§9.1 / §15.2),
-    不能顺手接上。
+    **留空 = 确定性占位实现**(T-0.13 的产物):索引链路照常可跑、可测,
+    但**没有语义能力** —— "浅灰"和"灰白"在它眼里毫无关系,检索能跑但挑不准。
+
+    填了 provider 就用真的。目前只支持 **`ollama`**(本地开源模型,见
+    `app/gateway/ollama_embedding.py`);云端厂商的模型选型(P0-2)仍未定,
+    不在这里编预设。
+
+    ⚠️ **从占位换成真模型必须全量重建索引** —— 向量语义变了,旧新混在一个集合里
+    检索结果是乱的。重建用 `tools/rebuild_index.py`(它读这里的配置,不会再写死占位)。
     """
     config = _config(settings)
     provider = (config.model_embedding_provider or "").strip()
@@ -221,10 +243,38 @@ def build_embedding_gateway(settings: Any = None) -> EmbeddingGateway:
 
         return DeterministicPlaceholderEmbedding(config.index_vector_size)
 
-    raise GatewayConfigError(
-        f"Embedding provider「{provider}」尚未实现 —— 模型选型属 P0-2 残留项,"
-        f"定案后在此接上(可选:{['placeholder'] + sorted(_EMBEDDING_PRESETS)})"
-    )
+    preset = _EMBEDDING_PRESETS.get(provider)
+    if preset is None and provider != "local":
+        raise GatewayConfigError(
+            f"未知的 Embedding provider:{provider}。"
+            f"已支持:{['placeholder', 'local'] + sorted(_EMBEDDING_PRESETS)}"
+            f"(云端厂商模型选型属 P0-2 残留,定案后再接)"
+        )
+
+    if provider == "ollama":
+        from app.gateway.ollama_embedding import OllamaEmbedding
+
+        return OllamaEmbedding(
+            base_url=config.model_embedding_base_url or preset.base_url,
+            model=config.model_embedding_model or preset.default_model,
+            # 维度取 `index_vector_size` —— 集合就是按它建的。两边必须一致,
+            # 对不上时适配器会当场报错(而不是写出一堆维度错的向量)。
+            dimension=config.index_vector_size,
+            timeout_seconds=config.gateway_embedding_timeout_seconds,
+        )
+
+    if provider == "local":
+        from app.gateway.local_embedding import LocalEmbedding
+
+        return LocalEmbedding(
+            model=config.model_embedding_model or _LOCAL_EMBEDDING_DEFAULT_MODEL,
+            dimension=config.index_vector_size,
+            # **不自动挑设备**:自动挑会让"换个机器行为就变"(有 GPU 的走 GPU、
+            # 没有的走 CPU,两边若有一丁点数值差异,检索结果就会飘)。显式配置。
+            device=config.embedding_device,
+        )
+
+    raise GatewayConfigError(f"Embedding provider「{provider}」尚未实现")
 
 
 # ----------------------------------------------------------------------

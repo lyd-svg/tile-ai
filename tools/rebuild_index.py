@@ -12,6 +12,11 @@ MySQL(CLAUDE.md 不变量 4)。因此"从 MySQL 恢复出一致的索引"这件�
     python tools/rebuild_index.py                 # 清空并重建(默认)
     python tools/rebuild_index.py --keep          # 不清空,仅重放覆盖
     python tools/rebuild_index.py --dry-run       # 只统计,不写
+    python tools/rebuild_index.py --embedding placeholder   # 强制占位(离线自检)
+
+**嵌入模型走项目配置**(`tile-ai-agent/.env` 的 `MODEL_EMBEDDING_PROVIDER`)——
+与线上服务用同一个工厂,所以"重建出来的向量"与"检索时算的向量"必然是同一套。
+换过嵌入模型之后**必须跑一次全量重建**。
 
 环境变量(与 Java 侧同名,便于复用):
     DB_URL / DB_USERNAME / DB_PASSWORD   —— MySQL 连接
@@ -34,6 +39,8 @@ sys.path.insert(0, str(_AGENT_DIR))
 import pymysql  # noqa: E402
 from qdrant_client import QdrantClient  # noqa: E402
 
+from app.core.config import Settings  # noqa: E402
+from app.gateway.factory import build_embedding_gateway  # noqa: E402
 from app.index import collections  # noqa: E402
 from app.index.apply import point_id_for  # noqa: E402
 from app.index.embedding import DeterministicPlaceholderEmbedding  # noqa: E402
@@ -137,11 +144,33 @@ def _loads(value: object) -> list[str] | None:
     return parsed if isinstance(parsed, list) else None
 
 
-def rebuild(drop: bool, dry_run: bool) -> RebuildStats:
+def build_embedding(mode: str):
+    """按项目配置组装嵌入模型 —— **与线上服务用的是同一个工厂**。
+
+    这一点很要紧:重建工具以前写死占位实现,而线上用的是真模型,两边**在同一个集合里
+    却不是一个向量空间**,检索结果全是乱的。走同一个工厂,就不可能再分叉。
+
+    ⚠️ **配置必须显式指向 `tile-ai-agent/.env`** —— `Settings` 的 `env_file` 是
+    **相对当前工作目录**的,而本工具通常从仓库根目录运行:不显式指定就会读到一份
+    空配置(provider 为空),于是**静默退回占位实现**。
+    """
+    settings = Settings(_env_file=_AGENT_DIR / ".env")
+    if mode == "placeholder":
+        print("嵌入模型:确定性占位实现(--embedding=placeholder 显式指定)")
+        return DeterministicPlaceholderEmbedding(settings.index_vector_size)
+
+    embedding = build_embedding_gateway(settings)
+    provider = settings.model_embedding_provider or "(空 ⇒ 占位)"
+    print(f"嵌入模型:{embedding!r} · 配置的 provider={provider}")
+    return embedding
+
+
+def rebuild(drop: bool, dry_run: bool, embedding=None) -> RebuildStats:
     stats = RebuildStats()
     connection = mysql_connection()
     qdrant = QdrantClient(url=os.getenv("QDRANT_URL", "http://localhost:6333"))
-    embedding = DeterministicPlaceholderEmbedding(size())
+    if embedding is None:
+        embedding = build_embedding("auto")
 
     try:
         products = fetch_products(connection)
@@ -220,9 +249,13 @@ def main() -> int:
     parser.add_argument("--keep", action="store_true",
                         help="不清空集合,仅重放覆盖(默认会先删除集合以清除残留)")
     parser.add_argument("--dry-run", action="store_true", help="只统计,不写")
+    parser.add_argument("--embedding", choices=["auto", "placeholder"], default="auto",
+                        help="auto(默认)= 按 tile-ai-agent/.env 的配置;"
+                             "placeholder = 强制用确定性占位实现(离线自检用)")
     args = parser.parse_args()
 
-    stats = rebuild(drop=not args.keep, dry_run=args.dry_run)
+    stats = rebuild(drop=not args.keep, dry_run=args.dry_run,
+                    embedding=build_embedding(args.embedding))
     print(f"完成:产品 {stats.products} 条,搭配 {stats.combos} 条,共 {stats.total()} 条已重建")
     return 0
 
