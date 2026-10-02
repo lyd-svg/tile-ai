@@ -161,26 +161,22 @@ const router = createRouter({
         {
           path: 'furnish',
           name: 'admin-furnish',
-          component: () => import('@/views/admin/AdminPlaceholderView.vue'),
-          meta: { task: 'F-0.7', title: '陈设风格' },
+          component: () => import('@/views/admin/AdminFurnishView.vue'),
         },
         {
           path: 'quote-params',
           name: 'admin-quote-params',
-          component: () => import('@/views/admin/AdminPlaceholderView.vue'),
-          meta: { task: 'F-0.8', title: '报价参数' },
+          component: () => import('@/views/admin/AdminQuoteParamsView.vue'),
         },
         {
           path: 'dicts',
           name: 'admin-dicts',
-          component: () => import('@/views/admin/AdminPlaceholderView.vue'),
-          meta: { task: 'F-0.8', title: '数据字典' },
+          component: () => import('@/views/admin/AdminDictsView.vue'),
         },
         {
           path: 'store',
           name: 'admin-store',
-          component: () => import('@/views/admin/AdminPlaceholderView.vue'),
-          meta: { task: 'F-0.9', title: '门店信息' },
+          component: () => import('@/views/admin/AdminStoreView.vue'),
         },
         {
           path: 'accounts',
