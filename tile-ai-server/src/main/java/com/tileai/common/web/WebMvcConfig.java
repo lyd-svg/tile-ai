@@ -1,13 +1,17 @@
 package com.tileai.common.web;
 
+import org.springframework.boot.context.properties.EnableConfigurationProperties;
 import org.springframework.context.annotation.Configuration;
+import org.springframework.http.CacheControl;
 import org.springframework.web.servlet.config.annotation.AsyncSupportConfigurer;
 import org.springframework.web.servlet.config.annotation.InterceptorRegistry;
+import org.springframework.web.servlet.config.annotation.ResourceHandlerRegistry;
 import org.springframework.web.servlet.config.annotation.WebMvcConfigurer;
 
 import com.tileai.admin.rbac.AdminPermissionInterceptor;
 import com.tileai.common.agent.AgentProperties;
 import com.tileai.common.security.ServiceTokenInterceptor;
+import com.tileai.common.storage.StorageProperties;
 
 /**
  * Web 层装配 —— 把两个拦截器挂到各自的路径上。
@@ -23,6 +27,11 @@ import com.tileai.common.security.ServiceTokenInterceptor;
  * <p>C 端没有拦截器:登录态要求由 {@code SecurityConfig} 的路径规则负责。
  */
 @Configuration
+// ⚠️ 这一行不是可有可无的。本类被 @WebMvcTest 切片加载,而切片**不跑**
+// @ConfigurationPropertiesScan —— 少了它,切片里就没有 StorageProperties 这个 bean,
+// 整个上下文起不来(实测:11 个契约测试全红)。@EnableConfigurationProperties 是
+// 幂等的,和 SecurityConfig 上的那一份重复注册也无害。
+@EnableConfigurationProperties(StorageProperties.class)
 public class WebMvcConfig implements WebMvcConfigurer {
 
     private static final String ADMIN_PATH = "/api/v1/admin/**";
@@ -39,13 +48,16 @@ public class WebMvcConfig implements WebMvcConfigurer {
     private final AdminPermissionInterceptor adminPermissionInterceptor;
     private final ServiceTokenInterceptor serviceTokenInterceptor;
     private final AgentProperties agentProperties;
+    private final StorageProperties storageProperties;
 
     public WebMvcConfig(AdminPermissionInterceptor adminPermissionInterceptor,
                         ServiceTokenInterceptor serviceTokenInterceptor,
-                        AgentProperties agentProperties) {
+                        AgentProperties agentProperties,
+                        StorageProperties storageProperties) {
         this.adminPermissionInterceptor = adminPermissionInterceptor;
         this.serviceTokenInterceptor = serviceTokenInterceptor;
         this.agentProperties = agentProperties;
+        this.storageProperties = storageProperties;
     }
 
     @Override
@@ -65,5 +77,27 @@ public class WebMvcConfig implements WebMvcConfigurer {
     @Override
     public void configureAsyncSupport(AsyncSupportConfigurer configurer) {
         configurer.setDefaultTimeout(agentProperties.getChatTimeout().toMillis());
+    }
+
+    /**
+     * 效果图的静态托管。
+     *
+     * <p>把 {@code tile.storage.root} 这个磁盘目录映射到
+     * {@code {media-path}/**}。图片不在 classpath 里(是运行时抓下来的),
+     * 所以不能像 {@code placeholder.svg} 那样靠 Spring Boot 的默认
+     * {@code classpath:/static/} 映射,必须显式指出去。
+     *
+     * <p>缓存可以放心地设长:{@link com.tileai.common.storage.ImageTransloader}
+     * 是<b>按内容哈希</b>命名的,同一个地址的字节永远不会变。
+     *
+     * <p>访问权限不在这里管 —— {@code /media/**} 不在
+     * {@code SecurityConfig} 的受保护路径里,匿名可读(分享页要用)。
+     */
+    @Override
+    public void addResourceHandlers(ResourceHandlerRegistry registry) {
+        String pattern = storageProperties.normalizedMediaPath() + "/**";
+        registry.addResourceHandler(pattern)
+                .addResourceLocations(storageProperties.resolvedRootUri())
+                .setCacheControl(CacheControl.maxAge(java.time.Duration.ofDays(30)).cachePublic());
     }
 }

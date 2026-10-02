@@ -6,14 +6,16 @@ import java.util.List;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.stereotype.Service;
-import org.springframework.transaction.annotation.Transactional;
+import org.springframework.transaction.support.TransactionTemplate;
 
 import com.baomidou.mybatisplus.core.toolkit.Wrappers;
 import com.fasterxml.jackson.core.JsonProcessingException;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.tileai.common.error.BusinessException;
 import com.tileai.common.error.ErrorCode;
+import com.tileai.common.storage.ImageTransloader;
 import com.tileai.generate.dto.GenerateCallbackRequest;
+import com.tileai.generate.dto.GenerateCallbackRequest.ImageRef;
 import com.tileai.generate.dto.GenerateTaskPayload;
 import com.tileai.generate.dto.PartSelection;
 import com.tileai.generate.entity.GenerationTask;
@@ -45,8 +47,13 @@ import com.tileai.plan.dto.PlanPartRef;
  * 那份方案是回不掉的(它在一个已经提交或即将提交的事务里)。所以顺序是
  * 先抢 → 再存 → 再回填 planId。
  *
- * <p><b>整个 {@code handle} 是一个事务</b>:状态更新与方案保存要么都成、要么都不成。
+ * <p><b>状态更新与方案保存必须同一事务</b>:要么都成、要么都不成。
  * 只有这一点保证了"任务说 success ⟺ 方案真的存在"。
+ *
+ * <p>但<b>转存图片不在事务里</b>(见 {@link #handle})—— 那是网络 + 磁盘 I/O,
+ * 圈进事务会一直占着数据库连接,而且下载失败会连状态更新一起回滚。切分方式
+ * 照 {@code GenerateService#accept} 的既有范式:{@code handle} 本身不在事务里,
+ * 真正要原子的那一段由 {@link TransactionTemplate} 包住。
  */
 @Service
 public class GenerateCallbackService {
@@ -71,23 +78,53 @@ public class GenerateCallbackService {
     private final GenerationTaskMapper taskMapper;
     private final PlanAutoSaveService planAutoSaveService;
     private final ObjectMapper objectMapper;
+    private final ImageTransloader imageTransloader;
+    private final TransactionTemplate transactionTemplate;
 
     public GenerateCallbackService(GenerationTaskMapper taskMapper,
                                    PlanAutoSaveService planAutoSaveService,
-                                   ObjectMapper objectMapper) {
+                                   ObjectMapper objectMapper,
+                                   ImageTransloader imageTransloader,
+                                   TransactionTemplate transactionTemplate) {
         this.taskMapper = taskMapper;
         this.planAutoSaveService = planAutoSaveService;
         this.objectMapper = objectMapper;
+        this.imageTransloader = imageTransloader;
+        this.transactionTemplate = transactionTemplate;
     }
 
     /**
      * 处理一次回调。
      *
+     * <p><b>本方法本身不在事务里。</b>成功回调要先做一步"把图抓回本地"的
+     * 网络 + 磁盘 I/O,而这一步有三个理由必须待在事务外:
+     * <ol>
+     *   <li>圈进事务会一直占着数据库连接(下载最坏几秒);</li>
+     *   <li>下载失败必须<b>降级</b>而不是让事务回滚 —— 回滚会把任务退回可重试,
+     *       补偿扫描随后重投,Python 会<b>重跑一次真实模型</b>;</li>
+     *   <li>真正要原子的是"状态 + 方案",而它与下载无关。</li>
+     * </ol>
+     *
+     * <p>⚠️ <b>转存必须发生在 {@code claimSuccess} 之前。</b>那个闸门在 SQL 里是
+     * 单向的({@code WHERE status <> 'success'}),<b>没有对应的"撤回"</b>。
+     * 若先抢闸门、提交、再转存、再另起一个事务存方案,一旦存方案失败就得回退
+     * 一个已经提交的 success —— 那会引入新的状态机分支。放在前面,则
+     * 抢闸门 / 存方案 / 回填 planId 仍在<b>同一事务</b>里原子完成。
+     *
+     * <p>代价是重复的 success 回调会多下载一次。可以接受:Python 不重发回调
+     * (见 {@code orchestrator._notify}),而补偿重投时任务本来就被重新生成过、
+     * 图也确实该重抓;落盘是内容寻址的,重复写幂等,数据库侧仍被闸门挡住。
+     *
      * @throws BusinessException 40003 —— taskId 不存在
      * @throws BusinessException 10001 —— {@code success} 却没给图片
      */
-    @Transactional
     public void handle(GenerateCallbackRequest request) {
+        GenerateCallbackRequest effective = archiveImagesIfSuccess(request);
+        transactionTemplate.executeWithoutResult(status -> dispatch(effective));
+    }
+
+    /** 真正要原子的那一段。由 {@link TransactionTemplate} 调用。 */
+    private void dispatch(GenerateCallbackRequest request) {
         String taskId = request.taskId();
         switch (request.status()) {
             case GenerationTask.STATUS_RUNNING -> handleRunning(taskId, request);
@@ -101,6 +138,39 @@ public class GenerateCallbackService {
             default -> throw new BusinessException(ErrorCode.PARAM_INVALID,
                     "未知任务状态: " + request.status());
         }
+    }
+
+    /**
+     * 成功回调的前置:把外部临时地址换成我们自己的地址(架构 §15.1)。
+     *
+     * <p>真实图像模型给的是 24 小时过期的 OSS 地址,直接入库等于"图明天就没了"。
+     * 这里换成 {@code {publicBaseUrl}/media/…} 之后,库里存的是长期有效的地址
+     * —— <b>顺带把 {@code t_generation_task.result_ref}(进度接口返回的封面)</b>
+     * 也一并换掉了,因为那条路径读的正是同一份图片列表。
+     *
+     * <p>转存失败或未启用时<b>原样返回</b>,行为与没有这个功能时完全一致。
+     */
+    private GenerateCallbackRequest archiveImagesIfSuccess(GenerateCallbackRequest request) {
+        if (!GenerationTask.STATUS_SUCCESS.equals(request.status())) {
+            return request;
+        }
+        List<ImageRef> images = request.imageUrls();
+        if (images == null || images.isEmpty()) {
+            // 交给 handleSuccess 报 10001 —— 那是"契约被违反",不该在这里悄悄吞掉
+            return request;
+        }
+
+        List<ImageRef> localized = imageTransloader.localize(images, request.taskId());
+        if (localized == images) {
+            return request;
+        }
+        return new GenerateCallbackRequest(
+                request.taskId(),
+                request.status(),
+                localized,
+                request.progress(),
+                request.error(),
+                request.traceId());
     }
 
     // ------------------------------------------------------------------

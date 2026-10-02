@@ -1,10 +1,12 @@
 package com.tileai.common.security;
 
+import org.springframework.boot.context.properties.EnableConfigurationProperties;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
 import org.springframework.http.HttpMethod;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
+import com.tileai.common.storage.StorageProperties;
 import org.springframework.security.config.annotation.web.builders.HttpSecurity;
 import org.springframework.security.config.annotation.web.configuration.EnableWebSecurity;
 import org.springframework.security.config.annotation.web.configurers.AbstractHttpConfigurer;
@@ -30,6 +32,9 @@ import org.springframework.security.web.authentication.UsernamePasswordAuthentic
  */
 @Configuration
 @EnableWebSecurity
+// 与 WebMvcConfig 上的那一份同理:@WebMvcTest 切片不跑 @ConfigurationPropertiesScan,
+// 本类又要用 StorageProperties 放行 {media-path}/** —— 自己注册一份,切片才能起来。
+@EnableConfigurationProperties(StorageProperties.class)
 public class SecurityConfig {
 
     /**
@@ -89,7 +94,8 @@ public class SecurityConfig {
     public SecurityFilterChain securityFilterChain(HttpSecurity http,
                                                    JwtAuthenticationFilter jwtFilter,
                                                    RestAuthenticationEntryPoint entryPoint,
-                                                   RestAccessDeniedHandler deniedHandler) throws Exception {
+                                                   RestAccessDeniedHandler deniedHandler,
+                                                   StorageProperties storageProperties) throws Exception {
         http
                 // 关闭 CSRF:本服务是无状态的纯 JSON API,不依赖表单;
                 // 跨站发起的状态变更请求会被 SameSite=Lax 挡在门外(见 JwtProperties#sameSite),
@@ -116,6 +122,11 @@ public class SecurityConfig {
                         .shouldFilterAllDispatcherTypes(false)
                         .requestMatchers("/actuator/health", "/actuator/info").permitAll()
                         .requestMatchers(HttpMethod.OPTIONS, "/**").permitAll()
+
+                        // 效果图。匿名必须可读 —— 分享页(§43)就是给没登录的人看的,
+                        // 把这条收进 PROTECTED_C_PATHS 会让分享页静默图裂(不报错,
+                        // 只是图不显示),所以显式写出来钉住这个意图。
+                        .requestMatchers(storageProperties.normalizedMediaPath() + "/**").permitAll()
 
                         // 注册 / 登录 / 刷新 —— 契约声明 security: [],本就无需登录态
                         // (最终会落到下方的 anyRequest().permitAll())。显式列出是为了让

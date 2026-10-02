@@ -11,7 +11,9 @@ import com.fasterxml.jackson.annotation.JsonInclude;
  * 第 1 张 {@code default}、第 k 张({@code k ≥ 2}){@code angle{k-1}} ——
  * 张数必须等于角度数。本类只是搬运 {@code t_plan_image.view},重算命名是出图环节的事。
  *
- * @param url     图片地址(本期是替身占位图 URL,未接真实模型)
+ * @param url     图片地址。替身模式下是 Java 自己的 {@code /placeholder.svg};接真实模型后
+ *                由回调时的转存换成本机地址({@code {public-base-url}/media/…},§53),
+ *                两种形态都是<b>绝对地址</b> —— 前端直接放进 {@code <img src>},不做拼接
  * @param view    视图名:{@code default} / {@code angle1} …
  * @param isCover 是否封面。<b>存量数据里可能</b>一张封面都没有(见 {@code PlanSummaryView} 的说明)
  */

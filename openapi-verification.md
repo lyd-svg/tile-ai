@@ -5549,3 +5549,157 @@ CSV 轻松超过 1MB ⇒ 抛 `MaxUploadSizeExceededException` ⇒ 落到全局�
 > 下次有人（包括我）看到 61 这个数,先读 `main.py:41` 那段注释,别直接开修。
 
 
+## 53. 效果图转存落地:存在哪、谁来存、以及一条"下载必须封顶"的硬约束(2026-10-02)
+
+**触发**:用户决定接回真实图像模型。而路线图 §4 早就登记着一条前置 ——
+架构 §15.1 实测结论写着"出图地址是 **OSS 临时 URL(24 小时过期)**,调用方须及时转存",
+但 **T-1.11 没做转存**(对象存储选型连续顺延两次,T-1.12 也只做到"记住哪张是封面",
+**从未真正存过一张图**)。该遗留条目当时的处理方式就是
+"**改卡「接真实图像模型时」——换回真模型时必须先定**"。
+
+⇒ 本次到点。**不做转存的话,今晚出的图明天打开全是裂图**,分享页尤其难看
+(链接不过期,接收方打开是空图,且失败方式是"图裂"而非报错)。
+
+### 53.1 三项决策
+
+**① 转存放在 Java 侧,不放 Python。**
+
+架构原文写的是"调用方(T-1.11)须及时转存"。T-1.11 这张卡**跨两侧**,所以这句话
+并不指定实现落在哪一端。选 Java 侧的理由:
+
+- Python 侧转存就得新增一个 Java 内部接口(如 `/internal/images`)来接收图片,
+  那要连带改 **`openapi-internal.yaml` + 权威链文档 + 门禁**;
+- Java 侧做则**不改任何契约** —— 图片 URL 本来就是 Java 当不透明字符串透传的;
+- 不变量 3 说 **Java 是唯一对外 API**,公共 URL 空间本就归它;
+- 收口只有一处:`GenerateCallbackService#handleSuccess`。
+
+**② 存储形态:本机磁盘 + 抽一层接口。**
+
+用户选择(见架构 §15.5 改写)。落地是 "`ImageTransloader` + 本机目录 +
+Spring 静态映射",**不引入云 OSS、不自建 MinIO**;换实现时业务侧无感。
+
+**③ URL 存绝对地址,不存相对路径。**
+
+用户实际跑的是 `npm run dev`,前端在 **5173**,而 `vite.config.ts` 的 dev 代理
+**只转发 `/api`** ⇒ 相对路径 `/media/x.png` 会打到 Vite 而 404。
+(相对路径 + 给 Vite 加一条代理也能work,但那把"能显示"绑在了 dev 配置上。)
+
+⚠️ **`tile.storage.public-base-url` 指 Java API 的地址,不是前端地址** ——
+`tile.share.base-url` 默认是 `http://localhost:5173`(前端页面),两者语义相反,
+抄错会得到 `http://localhost:5173/media/...`,dev 下同样 404。已在两处配置注释里点明。
+
+### 53.2 硬约束:下载必须有时间上界(这一条比功能本身重要)
+
+**先把一个想当然的错判排除掉**:回调超时**不会**让 Python 重跑模型。
+`orchestrator._notify` 的注释写死了"回调自身抛异常只记日志,**不影响生成**",
+唯一能叫停生成的回调结果是 `40003`。所以超时本身基本只是**日志噪音**
+(Java 那边会照常跑完并提交)。
+
+**真正的风险链是另一条**:
+
+```
+下载长时间挂着 → Java 迟迟提交不了 → 任务一直停在 running
+  → 补偿扫描(GenerateCompensationScanner,running-stuck-after=360s)判定"卡住"
+  → 重投 → Python 真的重跑一次真实模型 → 白烧额度
+```
+
+⇒ 两条措施,缺一不可:
+
+1. **转存设总预算**(`tile.storage.overall-budget`,默认 **8 秒**),超预算即放弃
+   剩余图、保留临时地址。**这是唯一能封死上面那条链的东西。**
+2. 该预算**必须小于 Python 的 `java_callback_timeout_seconds`**(当前 **10 秒**)。
+   两处配置各写了一句交叉注释 —— 它们之间**没有编译期约束**,后人调一侧时必须知道另一侧。
+
+**另一条同源的约束:转存失败绝不抛。** 抛出 ⇒ 回调 500 ⇒ 事务回滚 ⇒ 任务退回可重试
+⇒ 落进上面同一条重投链。所以任何一张图出问题都只**降级为"保留原始临时 URL"**
+—— 那与加这个功能之前的行为完全一致,24 小时内仍然看得见。
+
+### 53.3 另外三处取定
+
+- **转存必须在 `claimSuccess` 之前。** 那个闸门在 SQL 里是单向的
+  (`WHERE status <> 'success'`),**没有对应的"撤回"**。若先抢闸门、提交、再转存、
+  再另起事务存方案,一旦存方案失败就得回退一个已提交的 success —— 会引入新的状态机
+  分支。放在前面,则**抢闸门 / 存方案 / 回填 planId 仍在同一事务**里原子完成,
+  "任务说 success ⟺ 方案真的存在"这条不变量完整保留。
+  代价是重复的 success 回调会多下载一次 —— 可接受(Python 不重发;补偿重投时任务
+  本就被重新生成过;落盘内容寻址,重复写幂等;数据库侧仍被闸门挡住)。
+- **文件名按内容哈希,不用 `planId`/`view`。** 两个原因:① `view` 由 Python 传来、
+  契约只限长度 50,**可以含 `../`**,进了路径就是目录穿越;② 内容寻址让同一张图
+  无论被回调几次都落到**同一个文件**,天然幂等。副作用是覆盖方案会留下孤儿文件
+  (`replaceImages` 先删库行、不删文件),已登记为技术债。
+- **事务切分照 `GenerateService.accept()` 的既有范式**:`handle()` 去掉
+  `@Transactional`,网络 + 磁盘 I/O 放事务外,要原子的那段由 `TransactionTemplate` 包住。
+  ⚠️ 不能"自己调自己"—— 同类内调用 `@Transactional` 方法**不走代理、注解静默失效**
+  (`GenerateService#persist` 的 Javadoc 已把这个陷阱写死)。
+
+### 53.4 新增的攻击面:SSRF
+
+在此之前 Java 只是把 URL **当字符串存起来**,存什么都不出事;现在它会**主动去 GET**
+—— 于是"能不能指向内网"从一个数据问题变成了一个指令问题。
+
+`common/storage/UrlPolicy`(纯函数,可单测)做三档判定:`OWN`(自有域,跳过转存)、
+`FETCH`、`REJECT`。拒绝项:非 http(s) 协议、环回 / 私网 / 链路本地(含云元数据
+`169.254.169.254`)/ 运营商级 NAT、IP 的非点分十进制写法(`2130706433`、`0x7f000001`)、
+带 `userinfo` 的地址。自有域用 **origin 比较**而非字符串前缀(后者会被
+`http://localhost:8080.evil.com` 绕过)。
+
+**另外必须禁重定向**(`HttpClient.Redirect.NEVER`)—— `UrlPolicy` 只判了第一跳,
+一个公网地址 302 到 `169.254.169.254` 就能把上面全部判定绕开。收到 3xx 直接降级。
+
+**残余风险(诚实标注)**:不做 DNS 解析后再判,因此挡不住 **DNS rebinding**。
+彻底解法是把校验过的 IP 钉死、直连 IP 带 Host 头。该 URL 来源是内网服务、内容来自
+已签约的模型厂商,判定当前不值得上这套复杂度 —— 但这一条写在代码注释里,不假装不存在。
+
+### 53.5 实现
+
+| 文件 | 作用 |
+| --- | --- |
+| `common/storage/StorageProperties` | `tile.storage.*`(开关 / 目录 / 对外前缀 / 自有域 / 三层超时 / 体积上限) |
+| `common/storage/UrlPolicy` | 判定纯函数(53.4) |
+| `common/storage/ImageTransloader` | 下载 + 魔数校验 + 内容寻址落盘 + 降级;失败只 WARN |
+| `common/storage/StorageConfig` | 装配两个 bean,启动时打一次落盘绝对路径 |
+| `common/web/WebMvcConfig#addResourceHandlers` | `{media-path}/**` → 磁盘目录(该方法一直是空的) |
+| `common/security/SecurityConfig` | 显式 `{media-path}/**` 放行 —— **分享页匿名要读** |
+| `generate/GenerateCallbackService` | `handle` 去 `@Transactional`;成功分支先转存再进事务 |
+
+**尺寸校验按实际读取字节计数,不信任 `Content-Length`**;并按**魔数**定扩展名
+(png/jpeg/webp),防"200 + 一页 HTML 错误页"被当图存下来。
+
+### 53.6 验收
+
+- **不消耗额度**:图片由绑在 `127.0.0.1` 的桩服务提供,直接 POST
+  `/internal/generate/callback` 即可跑完整条链路。
+- `ImageTransloaderTest`(14 条):落盘与地址改写、幂等、非图片 Content-Type、
+  魔数不符、超体积、**302 不跟随**、连不上、500、空响应体、一张坏不影响其它张、
+  自有域不下载、开关关掉不下载。
+- `UrlPolicyTest`(35 条):自有域 origin 比较、公网放行、内网/云元数据/走私写法/非 http 协议
+  /userinfo 全部拒绝。
+   - ⚠️ **其中一条是真 bug 的回归**:四段的主机名**不是 IP**。首版把
+     `dashscope-result.oss-cn-beijing.aliyuncs.com` 这类四段域名误判成"可疑 IP"而拒掉,
+     而 OSS 域名**恰好几乎都是四段** —— 会静默拦死全部正常图源。已钉住。
+- `ImageTransloadIntegrationTest`(5 条,需 MySQL):落盘 + **`t_plan_image.url` 与
+  `t_generation_task.result_ref` 都被换掉** + **匿名 GET `/media/**` 拿到字节** +
+  重复回调幂等 + 抓不到时保留原地址且任务仍成功 + 非 http(s) 被拒后降级。
+- 回归:Java 全量 + 前端 + `contract-diff.sh` + `ci.sh` 七个门禁(见 §53.7)。
+
+### 53.7 契约:不需要改,并说明为什么
+
+- `openapi-internal.yaml` 的 `imageUrls[].url` 只是 `type: string`,无 `format` / `pattern` /
+  `maxLength`;换成更短的本地绝对地址仍是合法值。
+- `/media/**` 由 `ResourceHandlerRegistry` 注册,**不进 `RequestMappingHandlerMapping`**,
+  契约↔实现比对器(只遍历 `getHandlerMethods()`)看不到它,不会被判成"未登记端点"。
+  `placeholder.svg` 是同类先例。
+- **无 DB 迁移**:`t_plan_image.url VARCHAR(500)` 够用,本地地址反而更短。
+  (若有人提议加 `local_path` 列:没必要,URL 本身已足够,加列只会扩散契约面。)
+
+### 53.8 明确不做
+
+- **旧数据不回补**。库里的占位图行仍指向磁盘上真实存在的 `static/placeholder.svg`,
+  不会裂;而历史真实临时 URL**已过期、源端无法再取**,回补任务无物可拉,只会失败刷日志。
+- 孤儿文件回收、签名 URL 防盗链、生命周期归档 —— 单机内网场景暂不需要。
+- **仍未验证**:真实模型下的出图画质与"图长得对不对"(属 §29 明确推迟项,需额度)。
+- **上线前的必配项**(已加进部署清单):`tile.storage.public-base-url` 改成对外地址;
+  反代要转发 `{media-path}/**`(dev 直连 8080 能跑通,**上线才炸**)。
+
+
+

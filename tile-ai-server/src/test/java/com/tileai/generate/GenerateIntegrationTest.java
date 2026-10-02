@@ -90,7 +90,11 @@ import static org.springframework.test.web.servlet.request.MockMvcRequestBuilder
         "tile.agent.service-token=t11-test-token",
         // 关掉补偿扫描的定时器:它 60 秒一次,会在断言"任务仍是 pending"的用例里
         // 把任务挪走。扫描本身由 GenerateCompensationIntegrationTest 显式驱动。
-        "tile.generate.compensation-enabled=false"})
+        "tile.generate.compensation-enabled=false",
+        // 关掉效果图转存:本测试的回调地址是 http://java.test/... (解析不了),
+        // 开着会每张图都等一次 DNS 失败再降级,白白拖慢用例。转存自身的验收
+        // 由专门的用例覆盖(它用一个可放行环回的 UrlPolicy 打本地桩服务)。
+        "tile.storage.enabled=false"})
 @AutoConfigureMockMvc
 @TestInstance(TestInstance.Lifecycle.PER_CLASS)
 class GenerateIntegrationTest {
