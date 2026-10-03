@@ -18,7 +18,7 @@ import { load } from 'js-yaml'
 import { createPinia, setActivePinia } from 'pinia'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 
-import { normalize } from './helpers/antd'
+import { normalize, openedSelectOptionTexts, openSelect } from './helpers/antd'
 import { createMemoryHistory, createRouter } from 'vue-router'
 
 import AdminTemplatesView from '../src/views/admin/AdminTemplatesView.vue'
@@ -243,12 +243,12 @@ describe('编辑', () => {
     updateTemplate.mockResolvedValue(undefined)
 
     const wrapper = await mountEdit()
-    const openingValues = wrapper
-      .findAll('select')
-      .flatMap((select) => select.findAll('option').map((option) => (option.element as HTMLOptionElement).value))
 
-    expect(openingValues).toContain('door')
-    expect(openingValues).toContain('window')
+    // ⚠️ antd `Select` 的选项**不在 DOM 里**(要打开下拉才渲染,而且在 portal 中)(§72.6)
+    //    ⇒ 改成"开一次「开口类型」下拉,断言**恒为门/窗两项**"。
+    //    选项的**值**(`door` / `window`)由下面的提交断言兜住(提交体里是 `type: 'door'`)。
+    await openSelect(wrapper.find('.opening-type-select'))
+    expect(new Set(openedSelectOptionTexts())).toEqual(new Set(['门', '窗']))
 
     await wrapper.find('form').trigger('submit')
     await flushPromises()

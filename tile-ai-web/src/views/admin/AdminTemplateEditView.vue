@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { Alert, Button, Skeleton } from 'ant-design-vue'
+import { Alert, Button, Select, Skeleton } from 'ant-design-vue'
 import { computed, onMounted, reactive, ref } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 
@@ -270,10 +270,14 @@ onMounted(async () => {
 
       <label>
         状态
-        <select v-model="form.status">
-          <option value="on_sale">上架</option>
-          <option value="off_sale">下架</option>
-        </select>
+        <Select
+          v-model:value="form.status"
+          class="status-select"
+          :options="[
+            { value: 'on_sale', label: '上架' },
+            { value: 'off_sale', label: '下架' },
+          ]"
+        />
       </label>
 
       <h2>户型</h2>
@@ -286,12 +290,15 @@ onMounted(async () => {
           <div class="row">
             <label>
               空间类型
-              <select v-if="spaceOptions.length" v-model="space.type">
-                <option value="">请选择</option>
-                <option v-for="item in spaceOptions" :key="item.key" :value="item.key">
-                  {{ item.label }}
-                </option>
-              </select>
+              <Select
+                v-if="spaceOptions.length"
+                v-model:value="space.type"
+                class="space-type-select"
+                :options="[
+                  { value: '', label: '请选择' },
+                  ...spaceOptions.map((item) => ({ value: item.key, label: item.label })),
+                ]"
+              />
               <input v-else v-model="space.type" type="text" placeholder="字典取不到,请填 key" />
             </label>
             <label>
@@ -332,11 +339,11 @@ onMounted(async () => {
             <li v-for="(opening, openingIndex) in space.openings" :key="openingIndex" class="row">
               <label>
                 类型
-                <select v-model="opening.type">
-                  <option v-for="option in OPENING_OPTIONS" :key="option.value" :value="option.value">
-                    {{ option.label }}
-                  </option>
-                </select>
+                <Select
+                  v-model:value="opening.type"
+                  class="opening-type-select"
+                  :options="OPENING_OPTIONS"
+                />
               </label>
               <label>
                 宽(米)
@@ -440,8 +447,10 @@ label {
   color: var(--color-text-secondary);
 }
 
-input,
-select {
+/* 三个下拉已迁 antd `Select`(§72.6),但**输入框仍是原生的** ——
+   而 antd `Select` 内部会渲染 `<input class="ant-select-selection-search-input">`,
+   裸 `input` 会照样命中它(§5.6)。故显式排除库的元素。 */
+input:not([class*='ant-']) {
   height: var(--control-height);
   padding: 0 var(--space-3);
   border: 1px solid var(--color-border-strong);
@@ -452,8 +461,7 @@ select {
   font-size: var(--text-sm);
 }
 
-input:focus-visible,
-select:focus-visible {
+input:not([class*='ant-']):focus-visible {
   outline: 2px solid var(--color-focus);
   outline-offset: 1px;
   border-color: var(--color-primary);

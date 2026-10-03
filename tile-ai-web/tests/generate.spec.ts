@@ -15,8 +15,9 @@ import { flushPromises, mount } from '@vue/test-utils'
 import { createPinia, setActivePinia } from 'pinia'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
-import { normalize } from './helpers/antd'
+import { normalize, openSelect, pickSelectOption, selectedText } from './helpers/antd'
 import { createMemoryHistory, createRouter } from 'vue-router'
+import { nextTick } from 'vue'
 
 import { BusinessError, ErrorCode } from '../src/api/errors'
 import GenerateView from '../src/views/site/GenerateView.vue'
@@ -109,9 +110,10 @@ describe('前置检查', () => {
   it('草稿齐备时直接亮出配置区,空间按户型里的唯一空间预选', async () => {
     const { wrapper } = await mountView()
 
-    const selects = wrapper.findAll('select')
-    expect(selects.length).toBe(3)
-    expect((selects[0].element as HTMLSelectElement).value).toBe('bathroom')
+    // ⚠️ antd `Select` **不是 `<select>`**(§72.6)—— 数出来的是 `.ant-select`,
+    //    选中项要读文案而不是 `element.value`。
+    expect(wrapper.findAll('.ant-select').length).toBe(3)
+    expect(selectedText(wrapper.find('.space-select'))).toBe('卫生间')
   })
 })
 
@@ -282,10 +284,14 @@ describe('多角度图片', () => {
     })
     const { wrapper } = await mountView()
 
-    vi.useFakeTimers()
     // 张数改成 2 —— 张数 = 角度数,不是 +1
-    const angleSelect = wrapper.findAll('select')[2]
-    await angleSelect.setValue('2')
+    // ⚠️ **必须在 `vi.useFakeTimers()` 之前**改:antd 的 `Select` 下拉要靠真实的
+    //    定时 / 动画帧才渲染得出来,假定时器下**点不开**(§72.6)。
+    await openSelect(wrapper.find('.angle-select'))
+    pickSelectOption('2 张')
+    await nextTick()
+
+    vi.useFakeTimers()
     await startGeneration(wrapper)
 
     expect(submitGenerate).toHaveBeenCalledWith(

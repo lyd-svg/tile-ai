@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { Alert, Button } from 'ant-design-vue'
+import { Alert, Button, Select } from 'ant-design-vue'
 import { computed, onBeforeUnmount, onMounted, ref } from 'vue'
 
 import { getGenerateProgress, submitGenerate } from '@/api/c/generate'
@@ -318,31 +318,41 @@ onBeforeUnmount(cancelPolling)
       <div class="panel">
         <h2>生成设置</h2>
 
+        <!-- ⚠️ 三个下拉已迁 antd `Select`(§72.6)。**选项在模板里现算**(`map`),
+             不新增展示用常量 —— 这样 `<script>` 除 import 外**一个字节没动**。
+             `v-model` → `v-model:value`;张数那一项的值仍是**数字**(`v-model.number` 不再需要,
+             因为 antd 传的就是选项对象里的 `value`)。 -->
         <label>
           空间
-          <select v-model="space">
-            <option value="">请选择</option>
-            <option v-for="option in spaceOptions" :key="option.key" :value="option.key">
-              {{ option.label }}
-            </option>
-          </select>
+          <Select
+            v-model:value="space"
+            class="space-select"
+            :options="[
+              { value: '', label: '请选择' },
+              ...spaceOptions.map((option) => ({ value: option.key, label: option.label })),
+            ]"
+          />
         </label>
 
         <label>
           风格(可选)
-          <select v-model="style">
-            <option value="">不限</option>
-            <option v-for="option in styleOptions" :key="option.key" :value="option.key">
-              {{ option.label }}
-            </option>
-          </select>
+          <Select
+            v-model:value="style"
+            class="style-select"
+            :options="[
+              { value: '', label: '不限' },
+              ...styleOptions.map((option) => ({ value: option.key, label: option.label })),
+            ]"
+          />
         </label>
 
         <label>
           出图张数
-          <select v-model.number="angles">
-            <option v-for="count in ANGLE_CHOICES" :key="count" :value="count">{{ count }} 张</option>
-          </select>
+          <Select
+            v-model:value="angles"
+            class="angle-select"
+            :options="ANGLE_CHOICES.map((count) => ({ value: count, label: `${count} 张` }))"
+          />
           <small>每张一个视角(正面 + 各角度),不是在此之上再加一张。</small>
         </label>
       </div>
@@ -503,21 +513,9 @@ h2 {
   color: var(--color-text-secondary);
 }
 
-.panel select {
-  padding: var(--space-2) var(--space-3);
-  border: 1px solid var(--color-border-strong);
-  border-radius: var(--radius-sm);
-  background: var(--color-surface);
-  color: var(--color-text);
-  font: inherit;
-  font-size: var(--text-sm);
-}
-
-.panel select:focus-visible {
-  outline: 2px solid var(--color-focus);
-  outline-offset: 1px;
-  border-color: var(--color-primary);
-}
+/* 三个下拉已迁 antd `Select`(§72.6)—— 外观由主题令牌管,不再自己写样式。
+   `.panel select` 那条已删:antd 渲染出来的是 `<div class="ant-select">`,不是 `<select>`,
+   留着就是死样式。 */
 
 .panel small,
 .note {

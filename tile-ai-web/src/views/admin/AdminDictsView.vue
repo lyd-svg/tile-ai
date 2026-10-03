@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { Alert, Button, Skeleton, Table } from 'ant-design-vue'
+import { Alert, Button, Select, Skeleton, Table } from 'ant-design-vue'
 import { computed, onMounted, reactive, ref } from 'vue'
 
 import { createDict, deleteDict, listAdminDicts, updateDict } from '@/api/admin/dicts'
@@ -240,10 +240,15 @@ onMounted(load)
       <label>
         类别
         <!-- 编辑时只读:把已被引用的键挪到另一个命名空间很容易出事(界面守卫,不是服务端规则) -->
-        <select v-model="form.type" :disabled="isEditing">
-          <option value="space">空间</option>
-          <option value="style">风格</option>
-        </select>
+        <Select
+          v-model:value="form.type"
+          class="type-select"
+          :disabled="isEditing"
+          :options="[
+            { value: 'space', label: '空间' },
+            { value: 'style', label: '风格' },
+          ]"
+        />
       </label>
 
       <label>
@@ -263,10 +268,14 @@ onMounted(load)
 
       <label>
         状态
-        <select v-model="form.status">
-          <option value="enabled">启用</option>
-          <option value="disabled">停用</option>
-        </select>
+        <Select
+          v-model:value="form.status"
+          class="status-select"
+          :options="[
+            { value: 'enabled', label: '启用' },
+            { value: 'disabled', label: '停用' },
+          ]"
+        />
       </label>
 
       <div class="actions">
@@ -419,28 +428,13 @@ label {
 }
 
 input,
-select {
-  height: var(--control-height);
-  padding: 0 var(--space-3);
-  border: 1px solid var(--color-border-strong);
-  border-radius: var(--radius-sm);
-  background: var(--color-surface);
-  color: var(--color-text);
-  font: inherit;
-  font-size: var(--text-sm);
-}
-
-input:focus-visible,
-select:focus-visible {
+input:focus-visible {
   outline: 2px solid var(--color-focus);
   outline-offset: 1px;
   border-color: var(--color-primary);
 }
 
-select:disabled {
-  background: var(--color-surface-sunken);
-  color: var(--color-text-muted);
-  cursor: not-allowed;
-}
+/* 两个下拉已迁 antd `Select`(§72.6)—— 外观由主题管,
+   原来那几条裸 `select` 规则(含 `:disabled` 的浅底)已删,避免与库打架。 */
 
 </style>

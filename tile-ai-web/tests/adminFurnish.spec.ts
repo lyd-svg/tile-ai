@@ -20,7 +20,7 @@ import { load } from 'js-yaml'
 import { createPinia, setActivePinia } from 'pinia'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 
-import { normalize } from './helpers/antd'
+import { normalize, selectedText } from './helpers/antd'
 import { createMemoryHistory, createRouter } from 'vue-router'
 
 import * as furnishApi from '../src/api/admin/furnish'
@@ -247,9 +247,10 @@ describe('编辑', () => {
     expect(form.findAll('input[type="text"]')).toHaveLength(1) // 只有展示图 URL
     expect(form.findAll('textarea')).toHaveLength(1)
     // 唯一的 select 是"状态",不是空间/风格选择器
-    const selects = form.findAll('select')
+    // ⚠️ antd `Select` 不是 `<select>`(§72.6)—— 数 `.ant-select`,选中项读**文案**
+    const selects = form.findAll('.ant-select')
     expect(selects).toHaveLength(1)
-    expect((selects[0].element as HTMLSelectElement).value).toBe('on_sale')
+    expect(selectedText(selects[0]!)).toBe('上架')
   })
 
   it('**同一格再保存一次就是更新**(调 upsert,space/style 与首次逐字相同)', async () => {

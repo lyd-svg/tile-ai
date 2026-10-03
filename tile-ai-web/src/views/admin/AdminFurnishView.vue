@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { Alert, Button, Skeleton } from 'ant-design-vue'
+import { Alert, Button, Select, Skeleton } from 'ant-design-vue'
 import { computed, onMounted, reactive, ref } from 'vue'
 
 import { listAdminDicts } from '@/api/admin/dicts'
@@ -283,10 +283,15 @@ onMounted(load)
 
         <label>
           状态
-          <select v-model="form.status" :disabled="!canWrite">
-            <option value="on_sale">上架</option>
-            <option value="off_sale">下架</option>
-          </select>
+          <Select
+            v-model:value="form.status"
+            class="status-select"
+            :disabled="!canWrite"
+            :options="[
+              { value: 'on_sale', label: '上架' },
+              { value: 'off_sale', label: '下架' },
+            ]"
+          />
         </label>
 
         <div class="actions">
@@ -476,9 +481,11 @@ label {
   color: var(--color-text-secondary);
 }
 
-input,
-textarea,
-select {
+/* ⚠️ 表单里的输入框**仍是原生的**(只有"状态"迁了 antd),但**同一个容器里现在有
+   antd `Select`** —— 它内部会渲染一个 `<input class="ant-select-selection-search-input">`,
+   裸 `input` 会**照样命中它**(§5.6 的坑)。所以这里显式把库的元素排除掉。 */
+.panel input:not([class*='ant-']),
+textarea {
   padding: var(--space-2) var(--space-3);
   border: 1px solid var(--color-border-strong);
   border-radius: var(--radius-sm);
@@ -488,8 +495,7 @@ select {
   font-size: var(--text-sm);
 }
 
-input,
-select {
+.panel input:not([class*='ant-']) {
   height: var(--control-height);
 }
 
@@ -497,9 +503,8 @@ textarea {
   resize: vertical;
 }
 
-input:focus-visible,
-textarea:focus-visible,
-select:focus-visible {
+.panel input:not([class*='ant-']):focus-visible,
+textarea:focus-visible {
   outline: 2px solid var(--color-focus);
   outline-offset: 1px;
   border-color: var(--color-primary);

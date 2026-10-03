@@ -49,6 +49,18 @@ export function openedSelectOptionTexts(): string[] {
   )
 }
 
+/**
+ * 读一个 `Select` **当前选中的文案**。
+ *
+ * ⚠️ antd `Select` **不是 `<select>`** —— 没有 `element.value` 可读
+ * (原生的 `(el as HTMLSelectElement).value` 断言迁到 antd 后**必然失效**)。
+ * 选中的东西渲染成 `.ant-select-selection-item` 的文字,读那个。
+ */
+export function selectedText(select: DOMWrapper<Element>): string {
+  const node = select.find('.ant-select-selection-item')
+  return node.exists() ? normalize(node.text()) : ''
+}
+
 /** 点中下拉里的某一项(按文案精确匹配)。须先 `openSelect()`。 */
 export async function pickSelectOption(text: string): Promise<void> {
   const target = Array.from(document.querySelectorAll('.ant-select-item-option-content')).find(

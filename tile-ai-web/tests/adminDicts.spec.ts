@@ -180,7 +180,9 @@ describe('行为', () => {
     createDict.mockResolvedValue({ id: 9 })
 
     const wrapper = await mountAs('super_admin')
-    const inputs = wrapper.findAll('form input')
+    // ⚠️ antd `Select` 内部会渲染 `<input class="ant-select-selection-search-input">` ——
+    //    它会**混进 `findAll('input')` 的下标里**(§72.6)。只取本页自己的输入框。
+    const inputs = wrapper.findAll("form input:not([class*='ant-'])")
     await inputs[0].setValue('  study  ')
     await inputs[1].setValue('  书房  ')
     await wrapper.find('form').trigger('submit')
@@ -201,8 +203,9 @@ describe('行为', () => {
     await buttonWith(wrapper, '编辑')!.trigger('click')
     await flushPromises()
 
-    const typeSelect = wrapper.find('form select')
-    expect(typeSelect.attributes('disabled')).toBeDefined()
+    // ⚠️ antd `Select` **不是 `<select>`**(§72.6)—— 没有 `disabled` 属性可读,
+    //    禁用渲染成 `.ant-select-disabled` 这个类。断言强度不变。
+    expect(wrapper.find('.type-select').classes()).toContain('ant-select-disabled')
 
     await wrapper.find('form').trigger('submit')
     await flushPromises()
