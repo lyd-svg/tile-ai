@@ -179,13 +179,11 @@ onMounted(load)
             </span>
           </td>
           <td class="actions">
-            <button v-if="canWrite" type="button" @click="edit(row)">编辑</button>
-            <button v-if="canPublish" type="button" @click="toggleStatus(row)">
+            <Button v-if="canWrite" @click="edit(row)">编辑</Button>
+            <Button v-if="canPublish" @click="toggleStatus(row)">
               {{ row.status === 'on_sale' ? '下架' : '上架' }}
-            </button>
-            <button v-if="canDelete" type="button" class="danger" @click="remove(row)">
-              删除
-            </button>
+            </Button>
+            <Button v-if="canDelete" danger @click="remove(row)">删除</Button>
           </td>
         </tr>
       </tbody>
@@ -253,48 +251,12 @@ h1 {
   width: 100%;
 }
 
-/* ── 表格里的操作按钮**仍是原生的** ────────────────────────────────────────
-   ⚠️ 它们**暂时不能迁 antd**:测试按文案找它们(`toContain('编辑')`),
-   而测试**不挂 `App.vue`**、拿不到"两个汉字不插空格"那条设置
-   ⇒ antd 会渲染成「编 辑」,断言**直接红**。
-   要迁就得先让那些测试**归一化空白**。
-   ⇒ 所以样式**收窄到 `.actions`**,不波及其他按钮。 */
-.actions button {
-  height: var(--control-height);
-  padding: 0 var(--space-3);
-  border: 1px solid var(--color-border-strong);
-  border-radius: var(--radius-sm);
-  background: var(--color-surface);
-  color: var(--color-text);
-  font: inherit;
-  font-size: var(--text-sm);
-  cursor: pointer;
-  transition:
-    border-color var(--dur-fast) var(--ease-standard),
-    background var(--dur-fast) var(--ease-standard);
-}
-
-.actions button:hover:not(:disabled) {
-  border-color: var(--color-primary);
-  color: var(--color-primary);
-}
-
-.actions button:disabled {
-  opacity: 0.45;
-  cursor: default;
-}
-
-/* 删除是危险操作 —— 危险色 + 明确的文字,不靠图标暗示 */
-.danger {
-  border-color: var(--color-danger);
-  color: var(--color-danger);
-}
-
-.danger:hover:not(:disabled) {
-  background: var(--color-danger-soft);
-  border-color: var(--color-danger);
-  color: var(--color-danger);
-}
+/* ── 表格里的操作按钮**已迁 antd**(2026-10-03)────────────────────────────
+   原先它们不能迁:antd 会给「两个汉字」的按钮插空格(「编辑」→「编 辑」),
+   而测试不挂 `App.vue`、拿不到那条设置 ⇒ **按文案找按钮的断言会静默失败**。
+   现在测试侧的比对**统一归一化空白**了(`tests/helpers/antd.ts` 的 `normalize`),
+   这道坎没了 —— 所以**不再给它们写样式**,外观交给 antd 与主题令牌。
+   见 `openapi-verification.md` §70.9。 */
 
 /* ── 表格 ───────────────────────────────────────────────────────────────── */
 table {
