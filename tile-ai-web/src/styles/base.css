@@ -38,3 +38,28 @@ body {
 #app {
   min-height: 100vh;
 }
+
+/* =============================================================================
+ * 动效降级(无障碍底线)—— 规则见 `tile-ai-design.md` §3.11
+ *
+ * 系统打开「减少动态效果」时,所有动效必须降级。有些人对动效会眩晕 / 不适,
+ * 这是他们的系统开关,不是偏好设置。
+ *
+ * ⚠️ **刻意用「极短时长」而不是 `animation: none` / `transition: none`:**
+ *    `none` 会把**骨架屏的微光一并干掉** —— 加载态于是变成"页面卡住了",
+ *    **比有动效更糟**。
+ *    要保的是「状态」,要去的是「运动」:极短时长让动画**瞬间完成**,状态照常到达。
+ *
+ * ⚠️ **antd 组件的动效也应当被这条压住** —— 它用 CSS-in-JS 生成样式,
+ *    理论上会被下面的 `*` 选择器覆盖,**但必须实测**(见 `openapi-verification.md` §68.5)。
+ * ========================================================================== */
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+    scroll-behavior: auto !important;
+  }
+}
