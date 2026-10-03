@@ -596,6 +596,12 @@ components:
       properties:
         id: { type: integer }
         adminId: { type: integer }
+        adminUsername:
+          type: string
+          nullable: true
+          description: |
+            操作人用户名 —— **读时按 adminId 富化,表里不存**(§8.1)。
+            账号已被删除时为 null,前端兜底显示"已删除账号 #N"。
         action: { type: string }
         targetType: { type: string }
         targetId: { type: string }

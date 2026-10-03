@@ -473,10 +473,20 @@ class ContractImplDiffComparerTest {
     void realGapRegistryIsWellFormed() {
         GapRegistry gaps = GapRegistry.load();
 
-        assertFalse(gaps.knownGaps().isEmpty());
+        // 2026-10-03 起由"非空"改成"恰为空"。
+        //
+        // 原断言防的是"把挂账清单清空让比对变绿"这种最安静的失效。F-0.2 落地后,
+        // 原本挂着的 5 条(admin accounts 的 GET/POST/PUT/DELETE 与 logs 的 GET)
+        // 全部销账,清单**合法地**空了。
+        //
+        // 那个滥用场景仍被兜住,而且兜得更紧:契约里有、实现里没有的端点会落进
+        // `unexpectedMissing`,而它在 ContractImplDiff 里**直接判红**(§36)。
+        // ⇒ 清空清单只会让比对更红,不会更绿。
+        // 保留一条同向的绊索:将来真挂了新缺口,这里会红,提醒去看是"补上了"还是"漏了"。
+        assertEquals(0, gaps.knownGaps().size(),
+                "本次已全部销账;若又挂上新缺口,应连同本断言与 §58 一起更新");
         assertFalse(gaps.canaries().isEmpty());
-        // load() 里已经校验过 source/reason/锚点格式;这里再钉一遍数量不为零,
-        // 防的是"清单被清空"这种最安静的失效
+        // load() 里已经校验过 source/reason/锚点格式;这里再钉一遍豁免与锚点的行为
         assertNotNull(gaps.ignoreReason("/error"), "/error 应被豁免");
         assertNull(gaps.ignoreReason("/api/v1/products"), "正常路由不该被豁免");
     }

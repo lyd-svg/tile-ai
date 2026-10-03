@@ -185,8 +185,13 @@ public class AuthService {
      *
      * <p>抛的是 <b>20004</b> 而不是 {@code @Size} 会带来的 10001 ——
      * 契约对注册/改密接口声明的密码格式错误码就是 20004。见 {@code AuthRequests} 的说明。
+     *
+     * <p><b>{@code public} 是为了让后台建号复用同一套规则</b>
+     * ({@code com.tileai.admin.AdminAccountAdminService})。密码长度是**业务规则**,
+     * 不是 C 端的私有实现 —— 两处各写一份迟早会分叉,而分叉的表现是
+     * "C 端能注册、后台建不了"这种谁也想不到的差异(2026-10-03,F-0.2)。
      */
-    private static void validatePasswordFormat(String rawPassword) {
+    public static void validatePasswordFormat(String rawPassword) {
         if (rawPassword == null
                 || rawPassword.length() < PASSWORD_MIN
                 || rawPassword.length() > PASSWORD_MAX) {

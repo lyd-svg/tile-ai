@@ -388,6 +388,11 @@ EmbeddingGateway
 
 **t_operation_log(操作日志)**:`id`、`admin_id`、`action`、`target_type`、`target_id`、`detail`(JSON)、`ip`、`created_at`。
 
+> 表里**只存操作人 id**,不存用户名。**日志接口为展示额外返回 `adminUsername`**(读时按 `admin_id` 富化;
+> **账号已删除时为 `null`**,前端兜底显示"已删除账号 #N")。
+> 为什么富化放服务端而不是前端自己查:`log:read` 属于**运营**,而运营**没有** `account:manage`,
+> 前端根本查不了账号列表(2026-10-03 评审,裁决见 `openapi-verification.md` §58)。
+
 ### 8.2 产品库与搭配
 
 **t_product(SKU)**:`id`、`sku_code`(唯一编号)、`name`、`spec`(规格,如 750×1500mm)、`material`(材质:抛光砖/釉面砖/仿古砖/岩板…)、`surface`(光泽度)、`color_pattern`(花色/纹理描述)、`price_per_sqm`(元/㎡)、`applicable_spaces`(JSON 数组)、`style_tags`(JSON 数组)、`status`(上下架)、`cover_image`、`created_at`、`updated_at`。

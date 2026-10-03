@@ -22,6 +22,9 @@ canaries:
   - GET /api/v1/dicts
   - POST /api/v1/admin/auth/login
   - GET /api/v1/admin/products
+  # F-0.2 落地后新增(2026-10-03):两侧都在,当锚点用
+  - GET /api/v1/admin/accounts
+  - GET /api/v1/admin/logs
   - GET /internal/products/{sku}
   - POST /api/v1/agent/chat
   - GET /api/v1/agent/chat/sessions
@@ -31,27 +34,12 @@ ignoredImplPaths:
     reason: Spring 内置错误页(BasicErrorController)会被注册进路由表,不属于对外契约
 
 # 已知未开工。source 一栏是「出处」—— 任务号 T-x.y 或需求条目。
-knownGaps:
-  - method: GET
-    path: /api/v1/admin/accounts
-    source: PRD §10.3 未展开字段(见 tile-ai-tasks.md:934)
-    note: 后台账号列表未开工
-  - method: POST
-    path: /api/v1/admin/accounts
-    source: PRD §10.3 未展开字段(见 tile-ai-tasks.md:934)
-    note: 新增后台账号未开工
-  - method: PUT
-    path: /api/v1/admin/accounts/{id}
-    source: PRD §10.3 未展开字段(见 tile-ai-tasks.md:934)
-    note: 编辑账号 / 分配角色未开工
-  - method: DELETE
-    path: /api/v1/admin/accounts/{id}
-    source: PRD §10.3 未展开字段(见 tile-ai-tasks.md:934)
-    note: 删除账号未开工
-  - method: GET
-    path: /api/v1/admin/logs
-    source: PRD §10.3 未展开字段(见 tile-ai-tasks.md:934)
-    note: 操作日志列表未开工
+#
+# 2026-10-03:原挂在这里的 5 条(accounts 的 GET/POST/PUT/DELETE 与 logs 的 GET)
+# 已随 F-0.2 全部落地并销账,裁决见 openapi-verification.md §58。
+# ⚠️ 注意原 source 引的「PRD §10.3」是一处**失效引用**:PRD 没有 §10.3,
+# 真正的出处是架构 §10.3(且那里只给了资源前缀)。
+knownGaps: []
 
 # 字段级挂账:端点两侧都在,但这一处字段在某个维度上确实不一致。
 # 每条必须带 source(出处);本次已经一致了会被判「挂账已过期」并直接红。

@@ -791,7 +791,11 @@ paths:
     get:
       tags: [accounts]
       summary: 后台账号列表
-      description: 权限点 account:manage(仅 super_admin)。
+      description: |
+        权限点 account:manage(仅 super_admin)。
+        ⚠️ **本组的路径 / 方法 / 字段是推断项**:架构 §10.3 只给了资源前缀(`accounts`),
+        方法、子路径与字段由契约作者按 RESTful CRUD 展开。
+        **2026-10-03 随 F-0.2 落地时评审确认** —— 逐条裁决见 `openapi-verification.md` §58。
       parameters:
         - { $ref: './openapi-common.yaml#/components/parameters/PageParam' }
         - { $ref: './openapi-common.yaml#/components/parameters/SizeParam' }
@@ -816,7 +820,9 @@ paths:
     post:
       tags: [accounts]
       summary: 新增后台账号
-      description: 权限点 account:manage。§4.4
+      description: |
+        权限点 account:manage。§4.4
+        失败码:20003(用户名已注册)、20004(密码格式不合规;新增时 **password 必填**)。
       requestBody:
         required: true
         content:
@@ -841,7 +847,11 @@ paths:
     put:
       tags: [accounts]
       summary: 编辑账号 / 分配角色
-      description: 权限点 account:manage。§4.4
+      description: |
+        权限点 account:manage。§4.4
+        `password` **留空(或不传)= 不修改密码**,不会覆盖成空。
+        失败码:30001(账号不存在)、20003、20004、**30002**(不能停用自己;
+        或该操作会让"启用的超级管理员"归零 —— 含**改角色降级**,见 `openapi-verification.md` §58)。
       parameters:
         - { name: id, in: path, required: true, schema: { type: integer } }
       requestBody:
@@ -858,7 +868,10 @@ paths:
     delete:
       tags: [accounts]
       summary: 删除账号
-      description: 权限点 account:manage。
+      description: |
+        权限点 account:manage。**真删除**(物理删该行)。
+        ⚠️ 删掉后,它写过的历史操作日志里 `adminUsername` 会变成 null(前端显示"已删除账号 #N")。
+        失败码:30001(账号不存在)、**30002**(不能删除自己;或会让启用的超管归零)。
       parameters:
         - { name: id, in: path, required: true, schema: { type: integer } }
       responses:
@@ -875,7 +888,12 @@ paths:
     get:
       tags: [logs]
       summary: 操作日志列表
-      description: 权限点 log:read(super_admin/operator)。§4.4
+      description: |
+        权限点 log:read(super_admin/operator)。§4.4。**只读** —— 日志没有写接口。
+        ⚠️ **本组的路径 / 查询参数 / 字段是推断项**:架构 §10.3 只给了资源前缀(`logs`),
+        查询参数与字段由契约作者展开。**2026-10-03 随 F-0.2 落地时评审确认** ——
+        逐条裁决见 `openapi-verification.md` §58。
+        `from` / `to` 收 date-time;传纯日期时按当日 00:00:00 / 23:59:59 解释。
       parameters:
         - { name: adminId, in: query, required: false, schema: { type: integer } }
         - { name: action, in: query, required: false, schema: { type: string } }
