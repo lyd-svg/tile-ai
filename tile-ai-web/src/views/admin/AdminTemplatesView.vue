@@ -126,7 +126,7 @@ onMounted(load)
         户型结构
         <input v-model="structure" type="text" placeholder="如 三室两厅(精确匹配)" />
       </label>
-      <button type="submit">查询</button>
+      <Button html-type="submit">查询</Button>
     </form>
 
     <p v-if="errorText" class="error" role="alert">{{ errorText }}</p>
@@ -326,8 +326,7 @@ tbody tr:hover {
 
 /* ⚠️ **行内操作按钮与表头「新增模板」已迁 antd** —— 不再给它们写样式(§70.9)。
    下面保留的是**仍是原生**的两组:分页按钮、筛选区的「查询」。 */
-.pager button,
-.filters button {
+.pager button {
   height: var(--control-height);
   padding: 0 var(--space-3);
   border: 1px solid var(--color-border-strong);
@@ -340,8 +339,7 @@ tbody tr:hover {
   transition: border-color var(--dur-fast) var(--ease-standard);
 }
 
-.pager button:hover:not(:disabled),
-.filters button:hover:not(:disabled) {
+.pager button:hover:not(:disabled) {
   border-color: var(--color-primary);
   color: var(--color-primary);
 }

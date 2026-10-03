@@ -9,6 +9,8 @@
 import { mount } from '@vue/test-utils'
 import { createPinia, setActivePinia } from 'pinia'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
+
+import { normalize } from './helpers/antd'
 import { createMemoryHistory, createRouter } from 'vue-router'
 
 import { BusinessError, ErrorCode } from '../src/api/errors'
@@ -115,7 +117,8 @@ describe('登录失败', () => {
     await submit(wrapper)
 
     expect(auth.loading).toBe(false)
-    expect(wrapper.find('button').text()).toBe('登录')
+    // 归一化空白:antd 会把「登录」渲染成「登 录」(测试不挂 App.vue,拿不到那条设置)
+    expect(normalize(wrapper.find('button').text())).toBe('登录')
   })
 
   it('网络类错误也给出可读提示,而不是抛到控制台没人管', async () => {

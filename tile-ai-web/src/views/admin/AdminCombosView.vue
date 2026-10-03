@@ -162,7 +162,7 @@ onMounted(async () => {
           </Select.Option>
         </Select>
       </label>
-      <button type="submit">查询</button>
+      <Button html-type="submit">查询</Button>
     </form>
 
     <p v-if="errorText" class="error" role="alert">{{ errorText }}</p>
@@ -356,8 +356,7 @@ tbody tr:hover {
 /* ⚠️ **行内操作按钮(编辑 / 删除)与表头「新增搭配」已迁 antd** ——
    不再给它们写样式,外观交给库与主题令牌(见 `openapi-verification.md` §70.9)。
    下面保留的是**仍然是原生**的那两组:**分页按钮**、筛选区的**「查询」**。 */
-.pager button,
-.filters button {
+.pager button {
   height: var(--control-height);
   padding: 0 var(--space-3);
   border: 1px solid var(--color-border-strong);
@@ -370,8 +369,7 @@ tbody tr:hover {
   transition: border-color var(--dur-fast) var(--ease-standard);
 }
 
-.pager button:hover:not(:disabled),
-.filters button:hover:not(:disabled) {
+.pager button:hover:not(:disabled) {
   border-color: var(--color-primary);
   color: var(--color-primary);
 }
