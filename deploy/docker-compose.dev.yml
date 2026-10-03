@@ -53,6 +53,13 @@ services:
   rabbitmq:
     image: rabbitmq:4-management-alpine
     container_name: tile-ai-rabbitmq
+    # ⚠️ **主机名必须钉死**(2026-10-03 踩到,见 openapi-verification.md §63)。
+    #
+    # 原因:RabbitMQ 的节点名默认取容器主机名(不钉就是容器 ID),而**数据目录按节点名分开**。
+    # 于是 `docker compose up` 重建容器(改个环境变量就会重建)会换掉节点身份 ——
+    # 新节点看到一个空目录,**队列与消息"凭空消失"**,旧数据其实还躺在卷里认不出来。
+    # 实测:一次重建让 durable 队列与其中 65 条消息全部"不见了"。
+    hostname: tile-ai-rabbitmq
     ports:
       - "5672:5672"     # AMQP
       - "15672:15672"   # 管理台,便于排查队列积压与 DLQ
@@ -60,6 +67,17 @@ services:
       # 口令走环境变量,默认值仅供本地开发;生产必须另行注入(架构 §13.6)
       RABBITMQ_DEFAULT_USER: ${RABBITMQ_USER:-tileai}
       RABBITMQ_DEFAULT_PASS: ${RABBITMQ_PASS:-tileai}
+      # ⚠️ 心跳从默认的 60 秒放宽到 900 秒(2026-10-03,见 openapi-verification.md §63)。
+      #
+      # 为什么:消费端是**同步阻塞**的 —— 它在等模型出图的那几分钟里发不出心跳
+      # (最长 600 秒),broker 于是把它当死连接掐掉 ⇒ 消息被重投 ⇒ **同一单跑两遍、
+      # 白花一次模型调用**。实测:一次 4 角度的任务跑了 4 分 44 秒,连接就是那么断的。
+      #
+      # ⚠️ 心跳是**协商值**,取 min(客户端, 服务端):这里改的是服务端,
+      # 客户端(消费端)在 tile-ai-agent 的 `rabbitmq_heartbeat_seconds`。
+      # **只改一边等于没改。** Java 侧不用动 —— 它提的是 60 秒,取 min 后仍是 60,
+      # 而它的调用都是短操作。
+      RABBITMQ_SERVER_ADDITIONAL_ERL_ARGS: "-rabbit heartbeat 900"
     volumes:
       - rabbitmq-data:/var/lib/rabbitmq
     healthcheck:

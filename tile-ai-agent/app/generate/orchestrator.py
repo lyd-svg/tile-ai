@@ -104,7 +104,8 @@ class GenerateOutcome:
 
     task_id: str
     images: tuple[GeneratedRef, ...]
-    #: 实际交给图像网关的参考图(= 所选瓷砖的照片 URL,去重后保序)
+    #: **第 1 张图**用的参考图(= 所选瓷砖的照片 URL,去重后保序)。
+    #: 多角度且启用基准图时,第 2 张起改用首张产出图,不在此列(§64)。
     ref_images: tuple[str, ...]
     missing_skus: tuple[str, ...]
     furnish_configured: bool
@@ -117,10 +118,15 @@ def run_generate_task(
     image_gateway: ImageGenGateway,
     callback: CallbackPort,
     furnish_source: FurnishSource | None = None,
+    anchor_first_view: bool = True,
 ) -> GenerateOutcome:
     """跑完一条生成任务。
 
     `payload` 是契约 `GenerateTaskPayload` 的形状(Java 发来的原样 JSON)。
+
+    `anchor_first_view`(2026-10-03,§64):多角度时**把第一张的产出图当作后面几张的
+    参考图**。默认开(与 `settings.image_anchor_first_view` 一致),关掉即回退到
+    "每次都发瓷砖切片、各画各的"。
 
     :raises TaskGoneError: Java 已无此任务(40003),不该重试
     :raises Exception: 其余失败,**已先回调 failed 再抛出**
@@ -139,6 +145,9 @@ def run_generate_task(
         raise ValueError("生成任务缺少 taskId,无法处理")
 
     try:
+        # ⚠️ 参考图必须先算:提示词里要写明"第几张参考图对应哪个部位",
+        # 而那个编号就是**这些图在请求里的顺序**(2026-10-03,见 §61)。
+        ref_images = _ref_images_of(parts, sku_source)
         prepared = prepare_prompts(
             space=space,
             style=style,
@@ -146,8 +155,10 @@ def run_generate_task(
             sku_source=sku_source,
             furnish_source=furnish_source,
             angles=angles,
+            ref_index=_ref_index_of(parts, sku_source, ref_images),
+            room=_room_of(payload, space),
+            anchor_first_view=anchor_first_view,
         )
-        ref_images = _ref_images_of(parts, sku_source)
         if not ref_images:
             # 不是错误:没有参考图也能出图(退化成文生图),只是"贴近所选产品"
             # 这条约束失去了依据。§15.3 的底图本期还没有承载表(§35.7),
@@ -158,9 +169,21 @@ def run_generate_task(
 
         images: list[GeneratedRef] = []
         total = len(prepared.views)
+        #: 基准图 —— 第 1 张画出来之后才有值,第 2 个视角起改用它当参考图(§64)。
+        #: 单张(angles=1)时全程为空,行为与改动前完全一致。
+        anchor_images: list[str] = []
+        if anchor_first_view and total > 1:
+            logger.info(
+                "多角度出图启用基准图:第 2 张起以首张产出图为参考图"
+                "(taskId=%s, views=%d, 瓷砖切片=%d 张)",
+                task_id, total, len(ref_images),
+            )
         for index, view in enumerate(prepared.views):
+            # 有基准图就只发基准图 —— 它已自带砖的位置,再塞切片既没用又会顶满 4 张配额。
+            # 没有(第 1 张 / 关掉开关)就照旧发瓷砖切片。
+            refs = list(anchor_images) if anchor_images else list(ref_images)
             generated = image_gateway.generate(
-                prompt=view.prompt, ref_images=list(ref_images), n=1
+                prompt=view.prompt, ref_images=refs, n=1
             )
             if not generated.images:
                 # 网关返回 0 张图 = 这次生成没产出。当成失败 —— 继续往下走的话
@@ -177,6 +200,12 @@ def run_generate_task(
             images.append(GeneratedRef(
                 url=url, view=view.view, is_cover=view.view == DEFAULT_VIEW,
             ))
+            if anchor_first_view and not anchor_images:
+                # 第 1 张产出图即后面所有视角的基准图。**它已经过上面两道校验**
+                # (有图、有 URL),所以基准图一定是个可用地址 —— 不需要再加判断。
+                # ⚠️ 这一行让"四张必须同源"成立:第 2 张拿不到基准图的情形**不存在**,
+                # 因为第 1 张失败时上面已经 raise,整单就此失败(用户 2026-10-03 拍板)。
+                anchor_images = [url]
 
             done = index + 1
             if done < total:
@@ -229,6 +258,55 @@ def representative_photo_of(sku_data: Mapping[str, Any]) -> str:
         return cover
     photos = _photo_urls_of(sku_data)
     return photos[0] if photos else ""
+
+
+def ref_index_of(parts: Sequence[Mapping[str, Any]], sku_source: SkuSource,
+                 refs: Sequence[str]) -> dict[str, int]:
+    """部位 → 该部位的砖在参考图里排**第几张**(1-based)。
+
+    它决定提示词里那句"使用参考图 N 的瓷砖"写的是几 —— 也就是**部位与图片的对应关系**。
+    公开是给测试断言用的(同 `ref_images_of` 的理由)。
+
+    ⚠️ 同一块砖铺在多个部位时**共享同一个编号**:参考图按 URL 去重
+    (见 `_ref_images_of`),所以"地面与墙面是同一款砖"在提示词里表现为两行同一个 N
+    —— 这正是我们想让模型知道的事。
+    """
+    index: dict[str, int] = {}
+    for selection in parts:
+        part = str(selection.get("part") or "").strip()
+        sku = str(selection.get("sku") or "").strip()
+        if not part or not sku or part in index:
+            continue
+        data = sku_source.get(sku)
+        if data is None:
+            continue
+        url = representative_photo_of(data)
+        if url and url in refs:
+            index[part] = list(refs).index(url) + 1
+    return index
+
+
+def _ref_index_of(parts: Sequence[Mapping[str, Any]], sku_source: SkuSource,
+                  refs: Sequence[str]) -> dict[str, int]:
+    """`ref_index_of` 的内部别名 —— 与 `_ref_images_of` 保持同一套命名习惯。"""
+    return ref_index_of(parts, sku_source, refs)
+
+
+def _room_of(payload: Mapping[str, Any], space: str) -> Mapping[str, Any] | None:
+    """从消息体的户型快照里挑出**本次要拍的那个空间**。
+
+    优先取 `type` 等于本次 `space` 的那间;挑不到就退回第一间(户型只有一间时
+    两者本来一样)。都没有就返回 `None` —— 提示词随之**不写尺寸**,不编数字。
+    """
+    layout = payload.get("layout")
+    spaces = layout.get("spaces") if isinstance(layout, Mapping) else None
+    if not isinstance(spaces, list) or not spaces:
+        return None
+    for candidate in spaces:
+        if isinstance(candidate, Mapping) and str(candidate.get("type") or "") == space:
+            return candidate
+    first = spaces[0]
+    return first if isinstance(first, Mapping) else None
 
 
 def _ref_images_of(parts: Sequence[Mapping[str, Any]], sku_source: SkuSource) -> tuple[str, ...]:

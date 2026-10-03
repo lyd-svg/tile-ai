@@ -58,9 +58,14 @@ class IndexSyncConsumer:
             except pika.exceptions.AMQPError:
                 logger.exception("与 RabbitMQ 的连接中断,%.1f 秒后重连", RETRY_DELAY_SECONDS)
                 time.sleep(RETRY_DELAY_SECONDS)
+            except Exception:  # noqa: BLE001 —— 与生成消费端同因,见那边的说明(§62)
+                logger.exception("索引消费者异常退出本轮消费,%.1f 秒后重连", RETRY_DELAY_SECONDS)
+                time.sleep(RETRY_DELAY_SECONDS)
 
     def _consume(self) -> None:
         parameters = pika.URLParameters(settings.rabbitmq_url)
+        # ⚠️ 同生成消费端:显式心跳,别让默认的 60 秒把长任务的连接掐掉(§63)。
+        parameters.heartbeat = settings.rabbitmq_heartbeat_seconds
         connection = pika.BlockingConnection(parameters)
         try:
             channel = connection.channel()
@@ -105,17 +110,28 @@ class IndexSyncConsumer:
 
         # 重投 + ACK 原消息:不这样做的话,requeue=True 会立刻被再次投递,
         # 形成热循环且没有退避的余地。
-        channel.basic_publish(
-            exchange=EXCHANGE,
-            routing_key=QUEUE_INDEX_SYNC,
-            body=body,
-            properties=pika.BasicProperties(
-                content_type=properties.content_type or "application/json",
-                delivery_mode=2,  # 持久化,与 Java 声明队列时的口径一致
-                headers=headers,
-            ),
-        )
-        channel.basic_ack(delivery_tag=method.delivery_tag)
+        #
+        # ⚠️ 连接已经断掉时 `basic_publish` 会抛 `ChannelWrongStateError`,
+        # 原先它会一路冒出、把消费者线程带走(2026-10-03 在生成消费端实测到,
+        # 这份骨架是同一份,故一并修,见 §62)。消息不 ACK 即可 ——
+        # 连接恢复后 broker 会重投。
+        try:
+            channel.basic_publish(
+                exchange=EXCHANGE,
+                routing_key=QUEUE_INDEX_SYNC,
+                body=body,
+                properties=pika.BasicProperties(
+                    content_type=properties.content_type or "application/json",
+                    delivery_mode=2,  # 持久化,与 Java 声明队列时的口径一致
+                    headers=headers,
+                ),
+            )
+            channel.basic_ack(delivery_tag=method.delivery_tag)
+        except pika.exceptions.AMQPError as publish_error:
+            logger.warning(
+                "重投失败(连接已断),本条**不 ACK** —— 等连接恢复后由 broker 重投:"
+                "eventId=%s 原因=%s", _event_id_of(body), type(publish_error).__name__,
+            )
 
 
 def _event_id_of(body: bytes) -> str:

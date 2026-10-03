@@ -16,9 +16,11 @@ from __future__ import annotations
 import json
 import logging
 
+import pika
 import pytest
 
 from app.agent.prompt import FurnishConfig
+from app.agent.prompt import REF_BINDING_CLAUSE
 from app.generate.consumer import MAX_RETRY, GenerateConsumer
 from app.generate.orchestrator import (
     CODE_GENERATE_FAILED,
@@ -156,7 +158,8 @@ def payload_of(*, task_id: str = "g_test1", angles: int = 1, style: str = "moder
     }
 
 
-def run(payload: dict, *, gateway=None, callback=None, sku_source=None):
+def run(payload: dict, *, gateway=None, callback=None, sku_source=None,
+        anchor_first_view: bool = True):
     gateway = gateway if gateway is not None else FakeImageGateway()
     callback = callback if callback is not None else FakeCallback()
     sku_source = sku_source if sku_source is not None else FakeSkuSource()
@@ -166,8 +169,16 @@ def run(payload: dict, *, gateway=None, callback=None, sku_source=None):
         furnish_source=FakeFurnishSource(),
         image_gateway=gateway,
         callback=callback,
+        anchor_first_view=anchor_first_view,
     )
     return outcome, gateway, callback
+
+
+#: 默认 payload 的瓷砖切片参考图(floor / wall 各一张,封面优先、去重保序)
+TILE_REFS = [
+    "https://oss.test/tiles/TL-2043-cover.jpg",
+    "https://oss.test/tiles/TL-3012-cover.jpg",
+]
 
 
 # ======================================================================
@@ -212,6 +223,61 @@ def test_only_default_view_is_cover() -> None:
     images = callback.bodies[-1]["imageUrls"]
     assert [image["isCover"] for image in images] == [True, False, False]
     assert sum(1 for image in images if image["isCover"]) == 1
+
+
+# ======================================================================
+# 基准图(§64):多角度时,第 2 张起改用**首张产出图**当参考图
+# ======================================================================
+
+def test_multi_angle_later_views_use_first_image_as_reference() -> None:
+    """★ 本次改动的核心:第 1 张发瓷砖切片,第 2/3 张改发**首张产出图**。"""
+    _, gateway, _ = run(payload_of(angles=3))
+
+    assert gateway.calls[0]["ref_images"] == TILE_REFS
+    first_url = "https://oss.test/out/1-0.png"  # FakeImageGateway 第 1 次返回的图
+    assert gateway.calls[1]["ref_images"] == [first_url]
+    assert gateway.calls[2]["ref_images"] == [first_url]
+
+
+def test_anchor_is_the_image_the_gateway_actually_returned() -> None:
+    """基准图必须**就是**第 1 次调用返回的那个 URL —— 防"发了个貌似对的东西"。"""
+    _, gateway, _ = run(payload_of(angles=2))
+
+    assert gateway.calls[1]["ref_images"] == ["https://oss.test/out/1-0.png"], \
+        "基准图形态**只发 1 张**;发了切片就会顶满 4 张配额"
+
+
+def test_single_angle_is_unaffected_by_anchor() -> None:
+    """angles=1 没有"后面几张",行为必须与改动前**完全一致**(回归)。"""
+    _, gateway, _ = run(payload_of(angles=1))
+
+    assert gateway.calls[0]["ref_images"] == TILE_REFS
+
+
+def test_anchor_can_be_switched_off() -> None:
+    """关掉开关 ⇒ 退回"每次都发瓷砖切片、各画各的" —— 回退路径也要有测试。"""
+    _, gateway, _ = run(payload_of(angles=3), anchor_first_view=False)
+
+    assert [call["ref_images"] for call in gateway.calls] == [TILE_REFS] * 3
+
+
+def test_later_views_prompt_drops_ref_binding_and_carries_anchor_clause() -> None:
+    """提示词必须**跟着分形态** —— 否则会留下一句假话(§64 最容易"改错了不报错"处)。
+
+    参考图清单从"瓷砖切片"变成"一整张房间图"之后,提示词里
+    「铺贴参考图 N 的瓷砖」就不再成立:参考图 1 现在是整间房,不是地面砖。
+    """
+    _, gateway, _ = run(payload_of(angles=2))
+
+    first, later = gateway.calls[0]["prompt"], gateway.calls[1]["prompt"]
+    # 第 1 张:切片形态 —— 有编号绑定,没有基准句
+    assert "铺贴参考图 1 的" in first
+    assert "基准图" not in first
+    # 第 2 张:基准图形态 —— 绑定说法消失,换成基准句
+    assert "铺贴参考图" not in later
+    assert "基准图" in later
+    # 但**材质描述必须还在** —— 丢的只是编号,不是"铺的是什么砖"
+    assert "抛光砖" in later, "瓷砖材质描述不该跟着编号一起丢失"
 
 
 def test_trace_id_rides_every_callback() -> None:
@@ -291,6 +357,51 @@ def test_reference_images_are_deduplicated() -> None:
 
     assert refs == ("https://oss.test/tiles/TL-2043-cover.jpg",), \
         "重复的参考图不会让模型更「看见」它,只是白花一次视觉 token"
+
+
+def test_prompt_binds_each_part_to_its_reference_image() -> None:
+    """**整条链路**:部位 ↔ 参考图的编号真的写进了交给模型的提示词。
+
+    这是"砖被画到错误部位"的解药 —— 编排层算出"第几张图属于哪个部位",
+    提示词里必须出现;否则模型手上只有一堆图和一串文字,对应关系只能靠猜。
+    """
+    _, gateway, _ = run(payload_of(angles=1))
+
+    prompt = gateway.calls[0]["prompt"]
+    assert "地面：铺贴参考图 1 的瓷砖（" in prompt
+    assert "墙面：铺贴参考图 2 的瓷砖（" in prompt
+    assert REF_BINDING_CLAUSE in prompt
+
+
+def test_shared_tile_writes_the_same_reference_number_on_both_parts() -> None:
+    """同一块砖铺两个部位 ⇒ 参考图只有一张,两行写**同一个编号**。
+
+    这正是要告诉模型的:"这两处是同一种砖",而不是"有两块不同的砖"。
+    """
+    parts = [
+        {"part": "floor", "sku": "TL-2043"},
+        {"part": "wall", "sku": "TL-2043"},
+    ]
+    _, gateway, _ = run(payload_of(parts=parts, angles=1))
+
+    prompt = gateway.calls[0]["prompt"]
+    assert "地面：铺贴参考图 1 的瓷砖（" in prompt
+    assert "墙面：铺贴参考图 1 的瓷砖（" in prompt
+    assert len(gateway.calls[0]["ref_images"]) == 1, "两处同款砖只发一张图"
+
+
+def test_prompt_carries_the_room_dimensions() -> None:
+    """户型尺寸进提示词 —— 否则约束里那句"空间结构与尺寸一致"无从兑现。"""
+    payload = payload_of(angles=1)
+    payload["layout"] = {
+        "spaces": [
+            {"type": "bathroom", "name": "主卫", "length": 2, "width": 1.8, "height": 2.4},
+        ]
+    }
+
+    _, gateway, _ = run(payload)
+
+    assert "长约 2 米，宽 1.8 米，层高 2.4 米" in gateway.calls[0]["prompt"]
 
 
 def test_unknown_sku_is_skipped_but_generation_continues() -> None:
@@ -454,6 +565,7 @@ class FakeMethod:
 class FakeChannel:
     """记录 ACK / NACK / 重投。"""
 
+
     def __init__(self) -> None:
         self.acked: list[int] = []
         self.nacked: list[tuple[int, bool]] = []
@@ -553,3 +665,123 @@ def test_dead_letter_notification_survives_unparsable_body() -> None:
 
     assert channel.nacked == [(5, False)]
     assert api.bodies == []
+
+
+# ======================================================================
+# 消费者线程必须活着(2026-10-03,§62)
+# ======================================================================
+
+class DeadChannel(FakeChannel):
+    """连接已断:任何 AMQP 动作都抛 `ChannelWrongStateError`。
+
+    真实场景:长调用期间消费端没机会发心跳 ⇒ broker 把连接掐了 ⇒
+    之后所有 channel 操作都长这样。
+    """
+
+    def basic_publish(self, **kwargs) -> None:
+        raise pika.exceptions.ChannelWrongStateError("Channel is closed.")
+
+    def basic_ack(self, delivery_tag: int) -> None:
+        raise pika.exceptions.ChannelWrongStateError("Channel is closed.")
+
+    def basic_nack(self, delivery_tag: int, requeue: bool) -> None:
+        raise pika.exceptions.ChannelWrongStateError("Channel is closed.")
+
+
+def test_consumer_survives_republish_on_a_dead_channel() -> None:
+    """**回归(2026-10-03)**:连接断了之后重投会失败,而那**不能**带走消费者线程。
+
+    实测链路:断线 → 重投抛 `ChannelWrongStateError` → 异常冒出 `_on_message`
+    → 消费者线程死掉 → 但进程还活着、`/health` 照样 200 ⇒
+    **服务看起来正常,却一个任务都不再处理**(用户看到"生成服务长时间无响应")。
+
+    正确的行为是:**什么也别做**。消息没 ACK,连接恢复后 broker 会重投它。
+    """
+    api = FakeCallback()
+    consumer = consumer_with(api=api, gateway=FakeImageGateway(error=RuntimeError("炸")))
+
+    # 这里**不能抛** —— 抛了就等于消费者死了
+    consumer._on_message(
+        DeadChannel(), FakeMethod(tag=1),
+        FakeProperties(headers={"x-generate-retry": 0}),
+        json.dumps(payload_of()).encode(),
+    )
+
+
+def test_consumer_survives_ack_failure_after_success() -> None:
+    """出图成功但 ACK 失败(连接断)同样不能带走线程 —— 消息会被 broker 重投。
+
+    这正是实测里那条 `StreamLostError`:任务跑完了,回报 ACK 时连接已经没了。
+    重投会让同一单再跑一遍(幂等挡住了重复入库),但**线程必须活着**。
+    """
+    api = FakeCallback()
+    consumer = consumer_with(api=api)
+
+    consumer._on_message(
+        DeadChannel(), FakeMethod(tag=9), FakeProperties(),
+        json.dumps(payload_of()).encode(),
+    )
+
+    assert api.statuses[-1] == "success", "图是真出了的"
+
+
+def test_run_forever_keeps_going_after_a_non_amqp_error(monkeypatch) -> None:
+    """**非 AMQP 的异常也不能让消费者线程退出。**
+
+    原先 `run_forever` 只接 `pika.exceptions.AMQPError` —— 别的异常直接终结循环,
+    而 daemon 线程的死亡**不会**影响进程,所以外面一点征兆都没有。
+    """
+    consumer = consumer_with(api=FakeCallback())
+    rounds: list[int] = []
+
+    def fake_consume() -> None:
+        rounds.append(1)
+        if len(rounds) == 1:
+            raise RuntimeError("一个与 AMQP 无关的异常")
+        # 用 BaseException 收尾:`run_forever` 只吃 Exception,故它能穿出去、让循环停下
+        raise SystemExit
+
+    monkeypatch.setattr(consumer, "_consume", fake_consume)
+    monkeypatch.setattr("time.sleep", lambda _seconds: None)
+
+    with pytest.raises(SystemExit):
+        consumer.run_forever()
+
+    assert len(rounds) == 2, "第一次异常之后必须进入下一轮,而不是退出循环"
+
+
+def test_consumer_asks_for_a_heartbeat_longer_than_the_longest_model_call(monkeypatch) -> None:
+    """**回归(§63)**:心跳必须**长于**单次模型调用的最长阻塞时间。
+
+    默认协商出来是 60 秒,而一次调用最长可阻塞 600 秒 —— 那期间消费端发不出心跳,
+    broker 会把连接当死的掐掉 ⇒ 消息被重投 ⇒ **同一单跑两遍、白花一次模型调用**。
+    实测:一次 4 角度任务跑了 4 分 44 秒,连接就是那么断的。
+
+    这条把"心跳 > 单次调用上限"写成了断言 —— 两个数字以后各改各的,这里会红。
+    """
+    from app.core.config import settings
+
+    captured: dict = {}
+
+    class FakeParams:
+        heartbeat = None
+
+    monkeypatch.setattr(
+        "app.generate.consumer.pika.URLParameters", lambda _url: FakeParams()
+    )
+
+    def fake_blocking_connection(parameters):
+        captured["heartbeat"] = parameters.heartbeat
+        raise SystemExit  # 只验参数,不真连
+
+    monkeypatch.setattr(
+        "app.generate.consumer.pika.BlockingConnection", fake_blocking_connection
+    )
+
+    with pytest.raises(SystemExit):
+        consumer_with(api=FakeCallback())._consume()
+
+    assert captured["heartbeat"] == settings.rabbitmq_heartbeat_seconds
+    assert captured["heartbeat"] > settings.gateway_image_timeout_seconds, (
+        "心跳必须长于单次模型调用的上限,否则连接会在长任务中途被 broker 掐掉"
+    )

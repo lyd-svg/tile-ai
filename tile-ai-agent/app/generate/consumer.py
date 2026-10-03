@@ -77,6 +77,12 @@ class GenerateConsumer:
         """阻塞消费。**不声明拓扑** —— 队列、交换机、DLX 由 Java 声明
         (`RabbitTopologyConfig`),两边都声明很容易因参数不一致报
         `PRECONDITION_FAILED`(同 `app/index/consumer.py` 的理由)。
+
+        ⚠️ **这里必须吃掉任何异常,不能只吃 AMQPError。** 2026-10-03 实测:
+        一次连接中断之后,处理路径里又抛了别的异常,消费者线程**当场死掉** ——
+        而进程还活着、`/health` 照样 200,于是表现成"服务好好的,但一个任务都不处理"
+        (见 `openapi-verification.md` §62)。消费端是**长期跑的循环**,
+        它的第一职责是"活着",任何异常都该换来一次重连而不是一次退出。
         """
         while True:
             try:
@@ -84,9 +90,15 @@ class GenerateConsumer:
             except pika.exceptions.AMQPError:
                 logger.exception("与 RabbitMQ 的连接中断,%.1f 秒后重连", RETRY_DELAY_SECONDS)
                 time.sleep(RETRY_DELAY_SECONDS)
+            except Exception:  # noqa: BLE001 —— 见上面那段:异常不能带走消费者线程
+                logger.exception("生成消费者异常退出本轮消费,%.1f 秒后重连", RETRY_DELAY_SECONDS)
+                time.sleep(RETRY_DELAY_SECONDS)
 
     def _consume(self) -> None:
         parameters = pika.URLParameters(settings.rabbitmq_url)
+        # ⚠️ 显式设心跳:默认协商出来是 60 秒,而一次模型调用最长可阻塞 600 秒 ——
+        # 那期间消费端发不出心跳,broker 会把连接掐掉、消息被重投(§63)。
+        parameters.heartbeat = settings.rabbitmq_heartbeat_seconds
         connection = pika.BlockingConnection(parameters)
         try:
             channel = connection.channel()
@@ -125,6 +137,7 @@ class GenerateConsumer:
             furnish_source=furnish_source,
             image_gateway=self._image_gateway,
             callback=self._api,
+            anchor_first_view=settings.image_anchor_first_view,
         )
 
     def _retry_or_dead_letter(self, channel: Any, method: Any, properties: Any,
@@ -144,17 +157,31 @@ class GenerateConsumer:
 
         # 重投 + ACK 原消息:不这样做的话 requeue=True 会立刻被再次投递,
         # 形成热循环且没有退避的余地(同索引消费端)。
-        channel.basic_publish(
-            exchange=EXCHANGE,
-            routing_key=QUEUE_GENERATE,
-            body=body,
-            properties=pika.BasicProperties(
-                content_type=properties.content_type or "application/json",
-                delivery_mode=2,  # 持久化,与 Java 声明队列时的口径一致
-                headers=headers,
-            ),
-        )
-        channel.basic_ack(delivery_tag=method.delivery_tag)
+        #
+        # ⚠️ **整段必须能容忍"连接已经断了"。** 走到这里的常见原因**就是**连接断了
+        # (长调用期间没发心跳被 broker 掐掉)—— 那时 channel 已关,
+        # `basic_publish` 会抛 `ChannelWrongStateError`,而它原先会一路冒出
+        # `_on_message`,把消费者线程带走(2026-10-03 实测,§62)。
+        #
+        # 正确做法是**什么也别做**:消息没被 ACK,连接恢复后 broker 会把它重投,
+        # 那正是我们要的语义 —— 比"假装重投成功"更安全。
+        try:
+            channel.basic_publish(
+                exchange=EXCHANGE,
+                routing_key=QUEUE_GENERATE,
+                body=body,
+                properties=pika.BasicProperties(
+                    content_type=properties.content_type or "application/json",
+                    delivery_mode=2,  # 持久化,与 Java 声明队列时的口径一致
+                    headers=headers,
+                ),
+            )
+            channel.basic_ack(delivery_tag=method.delivery_tag)
+        except pika.exceptions.AMQPError as publish_error:
+            logger.warning(
+                "重投失败(连接已断),本条**不 ACK** —— 等连接恢复后由 broker 重投:"
+                "taskId=%s 原因=%s", _task_id_of(body), type(publish_error).__name__,
+            )
 
     def _notify_dead_letter(self, body: bytes, error: Exception) -> None:
         """进 DLQ 之前,把失败告诉 Java —— 否则用户只能干等到补偿扫描接管。

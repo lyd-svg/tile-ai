@@ -86,9 +86,17 @@ STYLE_LABELS: Mapping[str, str] = {
 #: 约束段(§7.3 后半)。§7.3 在这一项里还写了「要求生成 ≤60s/图」——
 #: 那是对**模型调用**的时限要求(配置见 `gateway_image_timeout_seconds`),
 #: 不是给模型看的句子,故不进提示词。
+#:
+#: ⚠️ 2026-10-03 扩写。原来的两条只说了"贴近所选产品""与给定尺寸一致" ——
+#: 两句都**太软,而且第二句当时根本兑现不了**(尺寸从来没写进提示词,
+#: 模型无从知道)。实测反馈的两个症状是:**砖不按部位铺**(常常被画成一排样品图
+#: 或拼贴)与**每次生成像不同的房间**。故补上"一个完整房间""不要拼贴"
+#: "多角度必须是同一间房"这三条**可执行**的约束。
 CONSTRAINTS: tuple[str, ...] = (
     "瓷砖的纹理与颜色贴近所选产品",
-    "空间结构与给定户型尺寸一致",
+    "空间结构与上面给出的尺寸一致",
+    "整张图是一个完整连续的室内空间,不要拼接、不要分屏、不要多个画面",
+    "同一个房间在不同角度下必须完全一致",
 )
 
 #: 单视角的视角名 —— 与契约 `PlanImage.view` 的 `example: default` 一致。
@@ -125,7 +133,37 @@ ANGLE_FALLBACK_PHRASE = "换一个拍摄角度"
 MAX_ANGLES = 4
 
 #: 多角度时附加的不变量:多张图必须像"同一张照片的不同角度"。
-MULTI_ANGLE_CLAUSE = "同一空间的同一组瓷砖,仅拍摄角度不同"
+#:
+#: ⚠️ 2026-10-03 加强:原句"同一空间的同一组瓷砖,仅拍摄角度不同"只说了**是什么**,
+#: 没把"哪些东西不许变"列出来。实测反馈"每张图像不同的房间",故逐项点名。
+MULTI_ANGLE_CLAUSE = (
+    "这是同一个房间、同一组瓷砖,本次只改变拍摄角度 —— "
+    "房间形状与尺寸、陈设摆设、每块砖所处的部位与外观,都必须与其它角度完全一致"
+)
+
+#: 部位 → 参考图的绑定说明。**只在拿得到参考图编号时才拼**。
+#:
+#: 为什么需要它:我们一次发 N 张参考图,而提示词原先只按文字罗列各部位的砖 ——
+#: **没有任何一句把"第几张图"和"哪个部位"连起来**。模型于是常常把砖画成一排
+#: 样品/拼贴,或者把地面的砖画到墙上。这是"不按描述画在对应位置"的直接原因。
+#:
+#: 没有编号时**不拼** —— 写一句"以参考图为准"而参考图根本没有对应关系,
+#: 是一句模型无法执行的指令。
+REF_BINDING_CLAUSE = (
+    "瓷砖必须严格按上面「部位 → 参考图 N」的对应关系铺贴到对应位置,"
+    "不得互换、不得混用;不要把瓷砖画成样品图、贴图或拼贴"
+)
+
+#: **基准图形态**的绑定说明(2026-10-03,§64)。此时参考图只有 1 张 ——
+#: 就是上一次生成的那张房间图,它已经**自带了砖的位置**,所以不再谈"第几张图对应哪个部位"。
+#:
+#: ⚠️ 两种形态**必须互斥**:基准图形态下若还留着「铺贴参考图 1 的瓷砖」,
+#: 那句就成了假话(参考图 1 现在是整间房,不是地面砖)—— **不会报错,只会画得更乱**。
+#: `assemble_prompt(base_image=True)` 负责把部位行里的编号与 `REF_BINDING_CLAUSE` 一起去掉。
+BASE_IMAGE_CLAUSE = (
+    "以参考图 1 为该空间的基准图 —— 房间形状与尺寸、陈设摆设、每块砖所处的部位与外观,"
+    "都必须与它完全一致,本次只改变拍摄角度"
+)
 
 
 # ----------------------------------------------------------------------
@@ -170,7 +208,16 @@ class PartMaterial:
     sku: str
     phrases: MaterialPhrase = MaterialPhrase()
 
+    #: 产品名(如"思路雪影")。**只进提示词,不进契约** —— `to_contract()` 里没有它。
+    #:
+    #: 为什么要它:部位行原先只有材质属性,而**两款砖的属性可以完全一样**
+    #: (同规格同材质同花色,只有名字不同)。那时两行文字一模一样,
+    #: 模型没有任何依据把"哪一块"对应到"哪个部位" —— 2026-10-03 实测
+    #: 就遇到过地面与墙面两行完全相同的情形。名字给模型一个可区分的记号。
+    name: str = ""
+
     def to_contract(self) -> dict[str, Any]:
+        """对外形状**保持不变**:`name` 是提示词专用的内部字段,不发出去。"""
         return {"part": self.part, "sku": self.sku, "phrases": self.phrases.to_contract()}
 
 
@@ -291,7 +338,10 @@ def _map_parts(
                 logger.warning("取不到 SKU %s 的详情:该部位将没有材质描述", sku)
                 mapped.append(PartMaterial(part=part, sku=sku))
                 continue
-            mapped.append(PartMaterial(part=part, sku=sku, phrases=map_material(data)))
+            mapped.append(PartMaterial(
+                part=part, sku=sku, phrases=map_material(data),
+                name=_text(data.get("name")),
+            ))
 
     known = {p for p in PARTS}
     for selection in selections:
@@ -325,6 +375,61 @@ def views_for_angles(angles: int) -> tuple[str, ...]:
     )
 
 
+def _num(value: Any) -> str:
+    """尺寸数值 → 提示词里的写法。整数不带小数点(`2` 而不是 `2.0`),非法/非正数返回空串。"""
+    if value is None:
+        return ""
+    try:
+        number = float(value)
+    except (TypeError, ValueError):
+        return ""
+    if number <= 0:
+        return ""
+    return str(int(number)) if number == int(number) else str(number)
+
+
+def _scene_line(room: Mapping[str, Any] | None) -> str:
+    """场景锚点句 —— **把尺寸写出来**,这是"每次像不同房间"的主要解药。
+
+    ⚠️ 原先只在约束里写"空间结构与给定户型尺寸一致",但**尺寸从来没进过提示词**
+    —— 模型看不到 `layout`,那句约束等于没给。没有尺寸时退化成只说"一个房间",
+    不编数字。
+    """
+    measured = [
+        f"{label} {value} 米"
+        for key, label, value in (
+            ("length", "长约", _num(room.get("length") if room else None)),
+            ("width", "宽", _num(room.get("width") if room else None)),
+            ("height", "层高", _num(room.get("height") if room else None)),
+        )
+        if value
+    ]
+    where = "一个完整连续的室内空间"
+    if measured:
+        where = f"{where}（{'，'.join(measured)}）"
+    return (
+        f"场景：{where}；整张图只拍这一个房间，"
+        "不要拼接、不要分屏、不要多个画面。"
+    )
+
+
+def _part_line(material: PartMaterial, ref_index: Mapping[str, int] | None) -> str:
+    """一个部位一行。**拿到编号就写明"第几张参考图"** —— 这是部位绑定的关键。"""
+    label = PART_LABELS.get(material.part, material.part)
+    number = (ref_index or {}).get(material.part)
+    head = f"铺贴参考图 {number} 的" if number else "铺贴"
+    if material.phrases.text:
+        # 产品名放在最前:它是**区分两块属性完全相同的砖**的唯一记号
+        described = "，".join(
+            text for text in (material.name, material.phrases.text) if text
+        )
+        tail = f"瓷砖（{described}）"
+    else:
+        # 有部位、没描述 —— 说清楚缺什么,不假装描述过
+        tail = f"产品 {material.sku}（材质信息缺失）"
+    return f"{label}：{head}{tail}。"
+
+
 def assemble_prompt(
     *,
     space: str,
@@ -333,6 +438,9 @@ def assemble_prompt(
     furnish: FurnishConfig | None = None,
     view: str = DEFAULT_VIEW,
     multi_angle: bool = False,
+    ref_index: Mapping[str, int] | None = None,
+    room: Mapping[str, Any] | None = None,
+    base_image: bool = False,
 ) -> str:
     """按 §7.3 的公式组装一条提示词:
 
@@ -343,27 +451,49 @@ def assemble_prompt(
     `multi_angle=True`(本次请求出多张)时,视角段后附 `MULTI_ANGLE_CLAUSE`
     —— 多张图要像"同一张照片的不同角度",这条不变量得让模型看见。
     单张时不附(没有"不同的角度"可比)。
+
+    `ref_index`(部位 → 第几张参考图,**1-based**)与 `room`(户型里的那个空间)
+    都是可选增强,**不改变 §7.3 的成分与顺序**:
+
+    - `ref_index` 补上"第几张图对应哪个部位" —— 没有它,模型得自己猜;
+    - `room` 补上尺寸 —— 没有它,约束里那句"与尺寸一致"无从兑现。
+
+    两者都拿不到时,输出退化成扩写前的形状(只是措辞更强)。
+
+    `base_image=True` 走**基准图形态**(2026-10-03,§64):此时参考图**只有一张**
+    —— 上一次生成的那张房间图(它已自带砖的位置)。故**不谈「第几张图对应哪个部位」**:
+    部位行去掉「铺贴参考图 N 的」前缀,绑定句换成 `BASE_IMAGE_CLAUSE`。
+    与 `ref_index` **互斥**,`base_image` 优先 —— 两者同时给,编号会被忽略。
     """
     space_label = _label(SPACE_LABELS, space)
     style_label = _label(STYLE_LABELS, style)
     lines = [f"{space_label}空间的{style_label}风格装修效果图。"]
+    # 场景锚点紧跟在主句之后 —— 它是对"空间类型"这一项的展开,不是新成分
+    lines.append(_scene_line(room))
 
     for material in parts:
-        label = PART_LABELS.get(material.part, material.part)
-        if material.phrases.text:
-            lines.append(f"{label}：铺贴{material.phrases.text}。")
-        else:
-            # 有部位、没描述 —— 说清楚缺什么,不假装描述过
-            lines.append(f"{label}：铺贴产品 {material.sku}（材质信息缺失）。")
+        # 基准图形态**不报编号** —— 那张参考图是整间房,不是某个部位的砖。
+        # 报了就是把一句假话交给模型(且不会报错),见 BASE_IMAGE_CLAUSE。
+        lines.append(_part_line(material, None if base_image else ref_index))
 
     if furnish is not None and furnish.configured and furnish.prompt.strip():
         lines.append(f"陈设：{furnish.prompt.strip()}。")
 
     phrase = view_phrase(view)
     if phrase:
-        clause = f"（{MULTI_ANGLE_CLAUSE}）" if multi_angle else ""
-        lines.append(f"视角：{phrase}{clause}。")
+        lines.append(f"视角：{phrase}。")
+    if multi_angle:
+        # **单独一行**,不塞进视角句的括号里 —— 它约束的是整张图(房间、陈设、
+        # 每块砖的位置),不是机位。贴着"视角"写,容易被读成只对机位生效。
+        lines.append(f"多角度一致性：{MULTI_ANGLE_CLAUSE}。")
 
+    # 绑定句与约束句收口放在最后:前面已经把"哪个部位、第几张图、什么材质"交代完,
+    # 这里压成一句可执行的禁令。没有参考图编号时不写绑定句 —— 见 REF_BINDING_CLAUSE。
+    # ⚠️ 两种形态**互斥**:基准图形态下参考图 1 是整间房,再写"参考图 N → 部位"就是假话。
+    if base_image:
+        lines.append(f"{BASE_IMAGE_CLAUSE}。")
+    elif ref_index:
+        lines.append(f"{REF_BINDING_CLAUSE}。")
     lines.append(f"{'；'.join(CONSTRAINTS)}。")
     return "\n".join(lines)
 
@@ -376,11 +506,20 @@ def build_prompts(
     furnish: FurnishConfig | None = None,
     angles: int = 1,
     missing_skus: Sequence[str] = (),
+    ref_index: Mapping[str, int] | None = None,
+    room: Mapping[str, Any] | None = None,
+    anchor_first_view: bool = False,
 ) -> AssembledPrompts:
     """`assemble_prompt` 的多视角版本 —— 一个视角一条,其余成分完全相同。
 
     未配置陈设的 WARN **只在这里记一次**;若放进 `assemble_prompt`,
     N 个视角会刷 N 条同样的日志。
+
+    `ref_index` / `room` 原样透传(见 `assemble_prompt` 的说明)。
+
+    `anchor_first_view=True`(2026-10-03,§64):**只有第一个视角用切片形态**,
+    其余视角改用**基准图形态** —— 调用方(编排层)会拿第一张的产出图当它们的参考图。
+    `angles=1` 时两者等价(没有"其余视角"),故本参数对单张是空操作。
     """
     configured = bool(furnish is not None and furnish.configured)
     if not configured:
@@ -397,9 +536,11 @@ def build_prompts(
     views = tuple(
         ViewPrompt(view=view, prompt=assemble_prompt(
             space=space, style=style, parts=parts, furnish=furnish, view=view,
-            multi_angle=multi_angle,
+            multi_angle=multi_angle, ref_index=ref_index, room=room,
+            # 第 1 张是基准图的**来源**,故仍按切片形态出图;第 2 张起才有基准图可依。
+            base_image=anchor_first_view and index > 0,
         ))
-        for view in view_names
+        for index, view in enumerate(view_names)
     )
     return AssembledPrompts(
         views=views,
@@ -417,11 +558,17 @@ def prepare_prompts(
     sku_source: SkuSource,
     furnish_source: FurnishSource | None = None,
     angles: int = 1,
+    ref_index: Mapping[str, int] | None = None,
+    room: Mapping[str, Any] | None = None,
+    anchor_first_view: bool = False,
 ) -> AssembledPrompts:
     """取数 + 映射 + 组装一条龙 —— T-1.11 消费端的入口。
 
     取陈设失败**不抛异常**:`furnish_source` 为 None 或它自己降级,都走
     `FurnishConfig.missing()`(§13.3)。
+
+    `ref_index` / `room` 由调用方(编排层)算好传进来 —— 本模块**不取数**这条边界
+    不破:参考图顺序只有编排层知道,户型尺寸在消息体里。
     """
     mapped, missing = _map_parts(selections, sku_source)
     furnish = FurnishConfig.missing()
@@ -434,6 +581,9 @@ def prepare_prompts(
         furnish=furnish,
         angles=angles,
         missing_skus=missing,
+        ref_index=ref_index,
+        room=room,
+        anchor_first_view=anchor_first_view,
     )
 
 

@@ -17,12 +17,14 @@ import pytest
 
 from app.agent.prompt import (
     ANGLE_FALLBACK_PHRASE,
+    BASE_IMAGE_CLAUSE,
     CONSTRAINTS,
     DEFAULT_VIEW,
     MAX_ANGLES,
     MULTI_ANGLE_CLAUSE,
     PARTS,
     PART_LABELS,
+    REF_BINDING_CLAUSE,
     SPACE_LABELS,
     STYLE_LABELS,
     VIEW_PHRASES,
@@ -222,11 +224,171 @@ def test_assembly_follows_the_section_7_3_formula():
     )
     body = prompt.splitlines()
     assert body[0] == "卫生间空间的现代风格装修效果图。"
-    assert body[1].startswith("地面：铺贴釉面砖，柔光，浅灰细石纹，750×1500mm。")
-    assert body[2].startswith("墙面：铺贴抛光砖，亮光，米白大理石纹，600×1200mm。")
-    assert body[3] == "陈设：马桶、洗手台、淋浴房。"
-    assert body[4].startswith("视角：")
-    assert body[5] == f"{'；'.join(CONSTRAINTS)}。"
+    # ⚠️ 2026-10-03 起多两段:**场景锚点**(紧跟主句,是对"空间类型"的展开)
+    # 与**收口句**(参考图绑定 + 约束)。成分与顺序不变,只是每一项说得更死。
+    assert body[1].startswith("场景：一个完整连续的室内空间")
+    # 部位行带上产品名 —— 它是"两款属性完全相同的砖"之间唯一的记号
+    assert body[2] == "地面：铺贴瓷砖（雅灰石纹，釉面砖，柔光，浅灰细石纹，750×1500mm）。"
+    assert body[3] == "墙面：铺贴瓷砖（米白大理石，抛光砖，亮光，米白大理石纹，600×1200mm）。"
+    assert body[4] == "陈设：马桶、洗手台、淋浴房。"
+    assert body[5].startswith("视角：")
+    # 没有参考图编号 ⇒ 不写绑定句(见下一条用例),约束句直接收口
+    assert body[6] == f"{'；'.join(CONSTRAINTS)}。"
+
+
+# ----------------------------------------------------------------------
+# 2026-10-03:部位绑定与场景锚点 —— 治"砖铺错部位"与"每次像不同房间"
+# ----------------------------------------------------------------------
+
+def test_reference_index_is_written_into_the_part_line():
+    """**第几张参考图铺哪个部位,必须写进提示词。**
+
+    这是"砖被画到错误部位"的直接解药:原先提示词里**没有任何一句**
+    把"第几张参考图"和"哪个部位"连起来,模型只能猜。
+    """
+    parts = map_parts(
+        [a_selection("floor", "TL-2043"), a_selection("wall", "TL-3012")],
+        FakeSkuSource(),
+    )
+    prompt = assemble_prompt(
+        space="bathroom", style="modern", parts=parts,
+        ref_index={"floor": 1, "wall": 2},
+    )
+
+    assert "地面：铺贴参考图 1 的瓷砖（" in prompt
+    assert "墙面：铺贴参考图 2 的瓷砖（" in prompt
+    assert REF_BINDING_CLAUSE in prompt
+
+
+def test_without_reference_index_no_binding_clause():
+    """拿不到编号时**不写**绑定句 —— 一句无法执行的"以参考图为准"只会稀释指令。"""
+    parts = map_parts([a_selection("floor", "TL-2043")], FakeSkuSource())
+
+    prompt = assemble_prompt(space="bathroom", style="modern", parts=parts)
+
+    assert "参考图" not in prompt
+    assert REF_BINDING_CLAUSE not in prompt
+
+
+def test_base_image_form_drops_reference_index_and_binding_clause():
+    """基准图形态:**参考图只有一张房间图**,故不能再写「参考图 N = 某个部位」(§64)。
+
+    ⚠️ 这是本次最危险的一处 —— 参考图清单变了而提示词没跟着变,**不会报错**,
+    只会把一句假话喂给模型(参考图 1 现在是整间房,不是地面砖)。
+    """
+    parts = map_parts(
+        [a_selection("floor", "TL-2043"), a_selection("wall", "TL-3012")],
+        FakeSkuSource(),
+    )
+    prompt = assemble_prompt(
+        space="bathroom", style="modern", parts=parts,
+        ref_index={"floor": 1, "wall": 2},  # 传了也**必须被忽略**
+        base_image=True,
+    )
+
+    assert "铺贴参考图 1 的" not in prompt
+    assert "铺贴参考图 2 的" not in prompt
+    assert REF_BINDING_CLAUSE not in prompt
+    assert BASE_IMAGE_CLAUSE in prompt
+    assert "地面：铺贴瓷砖（" in prompt, "部位行还在,只是不再报编号"
+
+
+def test_base_image_form_keeps_material_and_product_name():
+    """丢的只是**编号**,不是"铺的是什么砖" —— 产品名与材质短语必须原样保留。"""
+    parts = map_parts([a_selection("floor", "TL-2043")], FakeSkuSource())
+
+    prompt = assemble_prompt(
+        space="bathroom", style="modern", parts=parts, base_image=True,
+    )
+
+    assert "雅灰石纹" in prompt, "产品名是区分两块同款属性砖的唯一记号,不能丢"
+    assert "釉面砖" in prompt
+
+
+def test_anchor_first_view_gives_only_the_first_view_the_slice_form():
+    """★ 只有第 1 张走切片形态,第 2 张起走基准图形态。"""
+    parts = map_parts(
+        [a_selection("floor", "TL-2043"), a_selection("wall", "TL-3012")],
+        FakeSkuSource(),
+    )
+    result = build_prompts(
+        space="bathroom", style="modern", parts=parts, angles=3,
+        ref_index={"floor": 1, "wall": 2}, anchor_first_view=True,
+    )
+
+    first, *later = [view.prompt for view in result.views]
+    assert "铺贴参考图 1 的" in first
+    assert "基准图" not in first, "第 1 张是基准图的来源,此时还没有基准图可依"
+    assert later, "angles=3 应当有后续视角"
+    for text in later:
+        assert "铺贴参考图" not in text
+        assert "基准图" in text
+
+
+def test_anchor_first_view_is_a_noop_for_a_single_angle():
+    """angles=1 时 `anchor_first_view` 必须**什么都不改变**(回归)。"""
+    parts = map_parts([a_selection("floor", "TL-2043")], FakeSkuSource())
+    kwargs = dict(
+        space="bathroom", style="modern", parts=parts, angles=1,
+        ref_index={"floor": 1},
+    )
+
+    on = build_prompts(**kwargs, anchor_first_view=True).views[0].prompt
+    off = build_prompts(**kwargs, anchor_first_view=False).views[0].prompt
+
+    assert on == off
+
+
+def test_room_dimensions_are_spelled_out():
+    """尺寸必须**写出来**:模型看不到 `layout`,只写"与给定尺寸一致"等于没给。"""
+    prompt = assemble_prompt(
+        space="bathroom", style="modern", parts=(),
+        room={"type": "bathroom", "length": 2, "width": 1.8, "height": 2.4},
+    )
+
+    assert "长约 2 米，宽 1.8 米，层高 2.4 米" in prompt
+
+
+def test_missing_room_does_not_invent_numbers():
+    """拿不到户型 ⇒ 只说"一个房间",**不编尺寸**。"""
+    prompt = assemble_prompt(space="bathroom", style="modern", parts=())
+
+    scene = prompt.splitlines()[1]
+    assert scene.startswith("场景：一个完整连续的室内空间；")
+    assert "米" not in scene
+
+
+def test_identical_tiles_are_distinguished_by_name():
+    """两款**属性完全相同**的砖,靠产品名区分。
+
+    2026-10-03 实测踩到过:地面与墙面两行的材质短语一模一样,
+    提示词层面根本没有信息能说明"哪块砖铺哪里"。
+    """
+    same = {
+        "material": "釉面砖", "surface": "柔光",
+        "colorPattern": "浅灰细石纹", "spec": "750×1500mm",
+    }
+    skus = {
+        "TL-A": {"sku": "TL-A", "name": "思路雪影", **same},
+        "TL-B": {"sku": "TL-B", "name": "白雪", **same},
+    }
+    parts = map_parts(
+        [a_selection("floor", "TL-A"), a_selection("wall", "TL-B")],
+        FakeSkuSource(skus),
+    )
+    prompt = assemble_prompt(space="bathroom", style="modern", parts=parts)
+    floor_line, wall_line = prompt.splitlines()[2], prompt.splitlines()[3]
+
+    assert "思路雪影" in floor_line and "白雪" in wall_line
+    assert floor_line != wall_line, "两行必须不同 —— 否则模型无从区分"
+
+
+def test_product_name_is_not_exposed_to_the_contract():
+    """`name` 只进提示词,**不进 material-map 的契约响应**(不给契约加字段)。"""
+    parts = map_parts([a_selection("floor", "TL-2043")], FakeSkuSource())
+
+    assert parts[0].name == "雅灰石纹"
+    assert "name" not in parts[0].to_contract()
 
 
 def test_furnish_text_is_used_verbatim():
