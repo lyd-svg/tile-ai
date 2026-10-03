@@ -14,6 +14,8 @@
 import { flushPromises, mount } from '@vue/test-utils'
 import { createPinia, setActivePinia } from 'pinia'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
+
+import { normalize } from './helpers/antd'
 import { createMemoryHistory, createRouter } from 'vue-router'
 
 import { BusinessError, ErrorCode } from '../src/api/errors'
@@ -72,7 +74,9 @@ async function mountView(withDraft = true) {
 }
 
 async function startGeneration(wrapper: Awaited<ReturnType<typeof mountView>>['wrapper']) {
-  const button = wrapper.findAll('button').find((item) => item.text().includes('开始生成'))
+  const button = wrapper
+    .findAll('button')
+    .find((item) => normalize(item.text()).includes(normalize('开始生成')))
   await button?.trigger('click')
   await flushPromises()
 }

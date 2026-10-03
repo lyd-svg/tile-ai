@@ -16,6 +16,8 @@
 
 import { flushPromises, mount } from '@vue/test-utils'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
+
+import { normalize } from './helpers/antd'
 import { createMemoryHistory, createRouter } from 'vue-router'
 
 import { BusinessError, ErrorCode } from '../src/api/errors'
@@ -185,7 +187,9 @@ describe('渲染', () => {
     expect(wrapper.find('.stale').text()).toContain('当时的价')
     // 不该有「重算」入口(看的人没有账号,重算要登录)。
     // 注意口径:缩略图也是 button,但那是**切换视角**,不算管理动作 —— 见下面那条。
-    expect(wrapper.findAll('button').some((item) => item.text().includes('重算'))).toBe(false)
+    expect(
+      wrapper.findAll('button').some((item) => normalize(item.text()).includes(normalize('重算'))),
+    ).toBe(false)
   })
 
   it('字典接口失败 ⇒ 照常渲染方案,只退化成显示 key', async () => {

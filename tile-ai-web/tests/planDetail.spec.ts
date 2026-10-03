@@ -485,7 +485,7 @@ describe('分享(F-1.10)', () => {
     expect(sharePlan).toHaveBeenCalledWith(7)
     expect(shareLinkValue(wrapper)).toBe('https://tile.example.com/share/AbC-_123')
     // 生成完按钮换成「复制链接 / 废除链接」,不能再给一个「生成」入口
-    expect(wrapper.findAll('button').some((item) => item.text().includes('生成分享链接'))).toBe(
+    expect(wrapper.findAll('button').some((item) => normalize(item.text()).includes(normalize('生成分享链接')))).toBe(
       false,
     )
   })

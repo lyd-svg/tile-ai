@@ -17,6 +17,8 @@ import { flushPromises, mount } from '@vue/test-utils'
 import { load } from 'js-yaml'
 import { createPinia, setActivePinia } from 'pinia'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
+
+import { normalize } from './helpers/antd'
 import { createMemoryHistory, createRouter } from 'vue-router'
 
 import { BusinessError, ErrorCode } from '../src/api/errors'
@@ -94,7 +96,7 @@ async function mountAs(role: Role) {
 }
 
 function saveButton(wrapper: Awaited<ReturnType<typeof mountAs>>) {
-  return wrapper.findAll('button').find((button) => button.text().includes('保存'))
+  return wrapper.findAll('button').find((button) => normalize(button.text()).includes(normalize('保存')))
 }
 
 beforeEach(() => {

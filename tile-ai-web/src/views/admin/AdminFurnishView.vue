@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { Skeleton } from 'ant-design-vue'
+import { Button, Skeleton } from 'ant-design-vue'
 import { computed, onMounted, reactive, ref } from 'vue'
 
 import { listAdminDicts } from '@/api/admin/dicts'
@@ -290,18 +290,11 @@ onMounted(load)
         </label>
 
         <div class="actions">
-          <button v-if="canWrite" type="submit" class="primary" :disabled="saving">
-            {{ saving ? '保存中…' : '保存' }}
-          </button>
-          <button
-            v-if="canDelete && selectedConfig?.id !== undefined"
-            type="button"
-            class="danger"
-            @click="remove"
-          >
+          <Button v-if="canWrite" type="primary" html-type="submit" :loading="saving">保存</Button>
+          <Button v-if="canDelete && selectedConfig?.id !== undefined" danger @click="remove">
             删除这条配置
-          </button>
-          <button type="button" @click="selected = null">关闭</button>
+          </Button>
+          <Button @click="selected = null">关闭</Button>
         </div>
       </form>
     </template>
@@ -544,51 +537,7 @@ textarea[readonly] {
   gap: var(--space-2);
 }
 
-.actions button {
-  height: var(--control-height);
-  padding: 0 var(--space-4);
-  border: 1px solid var(--color-border-strong);
-  border-radius: var(--radius-sm);
-  background: var(--color-surface);
-  color: var(--color-text);
-  font: inherit;
-  font-size: var(--text-sm);
-  cursor: pointer;
-  transition: border-color var(--dur-fast) var(--ease-standard);
-}
-
-.actions button:hover:not(:disabled) {
-  border-color: var(--color-primary);
-  color: var(--color-primary);
-}
-
-button.primary {
-  border-color: var(--color-primary);
-  background: var(--color-primary);
-  color: var(--color-on-primary);
-  font-weight: 600;
-}
-
-button.primary:hover:not(:disabled) {
-  background: var(--color-primary-hover);
-  border-color: var(--color-primary-hover);
-  color: var(--color-on-primary);
-}
-
-button.primary:disabled {
-  opacity: 0.45;
-  cursor: not-allowed;
-}
-
-/* 删除是危险操作 —— 危险色 + 明确的文字 */
-button.danger {
-  border-color: var(--color-danger);
-  color: var(--color-danger);
-}
-
-button.danger:hover:not(:disabled) {
-  background: var(--color-danger-soft);
-  border-color: var(--color-danger);
-  color: var(--color-danger);
-}
+/* ⚠️ **表单里那三个按钮(保存 / 删除这条配置 / 关闭)已迁 antd** —— 不再写样式(§70.9)。
+   ⚠️ 上面那条 **`.cell button` 故意留着**:矩阵格子是**自定义交互元素**
+   —— 它要**铺满整格、无边框**,不是普通按钮。硬套 antd `Button` 会跟设计打架。 */
 </style>

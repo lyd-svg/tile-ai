@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { Skeleton } from 'ant-design-vue'
+import { Button, Skeleton } from 'ant-design-vue'
 import { computed, onMounted, ref } from 'vue'
 
 import { listQuoteParams, upsertQuoteParam } from '@/api/admin/quoteParams'
@@ -192,14 +192,9 @@ onMounted(load)
           </td>
           <td class="hint">{{ row.hint }}</td>
           <td>
-            <button
-              v-if="canWrite"
-              type="button"
-              :disabled="savingKey === row.key"
-              @click="save(row)"
-            >
-              {{ savingKey === row.key ? '保存中…' : '保存' }}
-            </button>
+            <Button v-if="canWrite" :loading="savingKey === row.key" @click="save(row)">
+              保存
+            </Button>
           </td>
         </tr>
       </tbody>
@@ -344,26 +339,7 @@ td input:focus-visible {
   font-weight: 600;
 }
 
-button {
-  height: var(--control-height);
-  padding: 0 var(--space-4);
-  border: 1px solid var(--color-border-strong);
-  border-radius: var(--radius-sm);
-  background: var(--color-surface);
-  color: var(--color-text);
-  font: inherit;
-  font-size: var(--text-sm);
-  cursor: pointer;
-  transition: border-color var(--dur-fast) var(--ease-standard);
-}
-
-button:hover:not(:disabled) {
-  border-color: var(--color-primary);
-  color: var(--color-primary);
-}
-
-button:disabled {
-  opacity: 0.45;
-  cursor: not-allowed;
-}
+/* ⚠️ **每行那个「保存」已迁 antd** —— 不再写样式(§70.9)。
+   原来这里是**裸 `button {}`** —— 那会照样命中 antd 渲染出的 `<button class="ant-btn">`,
+   所以**整块删掉**(这正是 `tile-ai-design.md` §5.6 说的陷阱)。 */
 </style>

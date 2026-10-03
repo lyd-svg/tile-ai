@@ -14,6 +14,8 @@
 import { flushPromises, mount } from '@vue/test-utils'
 import { createPinia, setActivePinia } from 'pinia'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
+
+import { normalize } from './helpers/antd'
 import { createMemoryHistory, createRouter } from 'vue-router'
 
 import { BusinessError, ErrorCode } from '../src/api/errors'
@@ -193,7 +195,7 @@ describe('下一步', () => {
   it('没选砖时"去生成"进不去,并提示先选砖', async () => {
     const { wrapper } = await mountView(false)
 
-    const cta = wrapper.findAll('button').find((item) => item.text().includes('去生成'))
+    const cta = wrapper.findAll('button').find((item) => normalize(item.text()).includes(normalize('去生成')))
     // 还没解析出户型,结果区根本不在 —— 先确认有回选砖的链接
     expect(wrapper.text()).toContain('还没有选砖')
     expect(cta).toBeUndefined()
@@ -206,7 +208,7 @@ describe('下一步', () => {
     await card?.trigger('click')
     await flushPromises()
 
-    const cta = wrapper.findAll('button').find((item) => item.text().includes('去生成'))
+    const cta = wrapper.findAll('button').find((item) => normalize(item.text()).includes(normalize('去生成')))
     expect(cta?.attributes('disabled')).toBeUndefined()
     await cta?.trigger('click')
     await flushPromises()

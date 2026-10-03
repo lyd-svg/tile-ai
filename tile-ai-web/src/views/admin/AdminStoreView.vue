@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { Skeleton } from 'ant-design-vue'
+import { Button, Skeleton } from 'ant-design-vue'
 import { computed, onMounted, reactive, ref } from 'vue'
 
 import { getAdminStore, updateStore } from '@/api/admin/store'
@@ -139,9 +139,7 @@ onMounted(load)
       </label>
 
       <div class="actions">
-        <button v-if="canWrite" type="submit" class="primary" :disabled="saving">
-          {{ saving ? '保存中…' : '保存' }}
-        </button>
+        <Button v-if="canWrite" type="primary" html-type="submit" :loading="saving">保存</Button>
         <span v-else class="hint">当前账号没有修改门店信息的权限。</span>
       </div>
     </form>
@@ -245,26 +243,5 @@ input[readonly] {
   gap: var(--space-3);
 }
 
-button.primary {
-  height: var(--control-height);
-  padding: 0 var(--space-4);
-  border: 1px solid var(--color-primary);
-  border-radius: var(--radius-sm);
-  background: var(--color-primary);
-  color: var(--color-on-primary);
-  font: inherit;
-  font-size: var(--text-sm);
-  font-weight: 600;
-  cursor: pointer;
-}
-
-button.primary:hover:not(:disabled) {
-  background: var(--color-primary-hover);
-  border-color: var(--color-primary-hover);
-}
-
-button.primary:disabled {
-  opacity: 0.45;
-  cursor: not-allowed;
-}
+/* ⚠️ **「保存」已迁 antd** —— 不再写样式(§70.9)。 */
 </style>

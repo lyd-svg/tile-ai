@@ -11,6 +11,8 @@
 import { flushPromises, mount } from '@vue/test-utils'
 import { createPinia, setActivePinia } from 'pinia'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
+
+import { normalize } from './helpers/antd'
 import { createMemoryHistory, createRouter } from 'vue-router'
 
 import ProductDetailView from '../src/views/site/ProductDetailView.vue'
@@ -106,7 +108,7 @@ describe('去录户型', () => {
   it('一块砖都没选时进不去,并说明原因', async () => {
     const { wrapper } = await mountDetail()
 
-    const cta = wrapper.findAll('button').find((item) => item.text().includes('去录户型'))
+    const cta = wrapper.findAll('button').find((item) => normalize(item.text()).includes(normalize('去录户型')))
     expect(cta?.attributes('disabled')).toBeDefined()
   })
 
@@ -114,7 +116,7 @@ describe('去录户型', () => {
     const { wrapper, router } = await mountDetail()
 
     await partButton(wrapper, '地面').trigger('click')
-    const cta = wrapper.findAll('button').find((item) => item.text().includes('去录户型'))
+    const cta = wrapper.findAll('button').find((item) => normalize(item.text()).includes(normalize('去录户型')))
     await cta?.trigger('click')
     await flushPromises()
 

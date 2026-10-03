@@ -19,6 +19,8 @@ import { flushPromises, mount } from '@vue/test-utils'
 import { load } from 'js-yaml'
 import { createPinia, setActivePinia } from 'pinia'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
+
+import { normalize } from './helpers/antd'
 import { createMemoryHistory, createRouter } from 'vue-router'
 
 import * as quoteParamsApi from '../src/api/admin/quoteParams'
@@ -212,6 +214,8 @@ describe('行为', () => {
 
     const wrapper = await mountAs('operator')
 
-    expect(wrapper.findAll('button').some((button) => button.text().includes('保存'))).toBe(false)
+    expect(
+      wrapper.findAll('button').some((button) => normalize(button.text()).includes(normalize('保存'))),
+    ).toBe(false)
   })
 })

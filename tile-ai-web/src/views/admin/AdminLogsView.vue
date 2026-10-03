@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { Skeleton } from 'ant-design-vue'
+import { Button, Skeleton } from 'ant-design-vue'
 import { computed, onMounted, ref } from 'vue'
 
 import { listLogs } from '@/api/admin/logs'
@@ -133,7 +133,7 @@ onMounted(load)
         结束日期
         <input v-model="toDate" type="date" />
       </label>
-      <button type="submit">查询</button>
+      <Button html-type="submit">查询</Button>
     </form>
 
     <p v-if="errorText" class="error" role="alert">{{ errorText }}</p>
@@ -237,7 +237,10 @@ select:focus-visible {
 }
 
 /* ── 按钮 ───────────────────────────────────────────────────────────────── */
-button {
+/* ⚠️ **筛选区的「查询」已迁 antd** —— 下面**只剩分页按钮**是原生的。
+   原来是裸 `button {}`,那会**照样命中 antd 的 `<button class="ant-btn">`**
+   ⇒ **必须收窄到 `.pager`**(`tile-ai-design.md` §5.6)。 */
+.pager button {
   height: var(--control-height);
   padding: 0 var(--space-4);
   border: 1px solid var(--color-border-strong);
@@ -250,12 +253,12 @@ button {
   transition: border-color var(--dur-fast) var(--ease-standard);
 }
 
-button:hover:not(:disabled) {
+.pager button:hover:not(:disabled) {
   border-color: var(--color-primary);
   color: var(--color-primary);
 }
 
-button:disabled {
+.pager button:disabled {
   opacity: 0.45;
   cursor: default;
 }
