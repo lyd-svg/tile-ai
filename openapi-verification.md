@@ -7351,5 +7351,76 @@ dry-run 时明明已把它标成"变体",是 apply 版为了覆盖率放开了�
 (这块形态上确实是 `<p v-if=... class="notice">`,但语义上根本不是状态块)。
 **dry-run 里被标成"需要人工"的,apply 时就不该自动放过。**
 
+---
+
+## 72. 表格 → antd `Table`:**只迁后台列表页**(2026-10-03,用户拍板)
+
+> **决策**:试点做完后由用户选"**折中**" —— **后台 8 个列表表格迁 antd;
+> C 端报价单 / 部位表保持原生;陈设矩阵不迁。**
+> 依据是下面第 2 条实测:`Table` 的外观在这个版本里**改不动**,
+> 而 C 端那两张表是按报价单版式细调过列宽对齐的。
+
+### 72.1 ⭐ 三条实测结论(不是推断)
+
+| # | 结论 | 证据 |
+| --- | --- | --- |
+| 1 | ✅ **`Table` 渲染的是真 `<table>/<thead>/<tbody>/<tr>/<td>`** | 与 `Select`(没有 `<select>`)、`Modal`(没有 `<dialog>`)完全不同 ⇒ 原来按行列找元素的断言**结构上照样能用**。**8 页全部零测试改动**;最"贴结构"的账号页用例是 `findAll('tbody tr')[行号].findAll('button')`,照样过 —— 顺带证明 **tbody 里没有插入"测量行"**(否则 `[0]` 会取到空行) |
+| 2 | ⚠️ **这个版本的表头等外观改不动** | 见下 72.2 —— **实测** |
+| 3 | ✅ **`rowKey` 传函数时会收到 `(record, index)`** | 源码 `vc-table/Table.js:55`、`Body/index.js:69` ⇒ 复合行键(如 `` `${行号}-${序号}` ``)可原样表达 |
+
+### 72.2 ⭐⭐ 新的静默陷阱:`components.Table` 令牌**完全不生效**(**已实测**)
+
+antd-vue **4.2.6** 的 `Table` **没有暴露 `headerBg` / `rowHoverBg` 这类组件级令牌** ——
+`es/table/style/index.js` 里根本没有这些键;表头底色 / 边框 / 悬停色全部由
+**seed / alias 令牌**(`colorFillAlter`、`colorBorderSecondary`、`colorTextHeading`…)
+**推导**出来,并在样式函数里用 `mergeToken` 重算。
+
+**实测方式**(对照探针,用完已删):同一个 `ConfigProvider` 里同时给
+① seed 令牌 `colorPrimary: '#00FF00'` ② `components: { Table: { headerBg: '#FF0000' } }`,
+然后扫 `document.head` 里 antd 注入的 CSS:
+
+```
+PROBE seedGreen=true componentRed=false
+```
+
+⇒ **seed 令牌的绿色出现了,组件级令牌的红色没出现。**
+⚠️ 与 §2.3 的"逗号撕裂"、§5.8 的"间距被静默覆盖"**同一类**:不报错、不生效、看不出来。
+
+**后果(这才是"只迁后台"的理由)**:迁到 `Table` 就等于**放弃手调的表格外观**
+(暖色表头、无竖分隔线、悬停用米色),换成库推导出来的样子 —— 差异不大(主色已喂给它),
+但**不再受我们精确控制**。后台列表是规整数据网格,这个交换划算;
+**C 端报价单不是**,所以不迁。
+
+### 72.3 范围与"不迁"的清单
+
+| | |
+| --- | --- |
+| **已迁** | 后台 **8 个列表表格**:日志 · 户型模板 · 推荐搭配 · 账号与权限 · 产品库 · 字典 · 报价参数 · 批量导入。提交:`3e6f566` · `b1fd347` · `3d5e420` |
+| **不迁(按决定)** | **C 端 `PlanDetailView` / `ShareView` 的 `.part-table` / `.quote-table`** —— 报价单版式,列宽对齐要精确控制 |
+| **不迁(一贯口径)** | **`AdminFurnishView` 的 `<table class="matrix">`** —— 图块式自定义交互元素(§71.4 同一口径) |
+| 结果 | `src` 下剩余的原生 `<table>` **只有上述 3 处**(两页 C 端 + 矩阵),且都是**刻意的** |
+
+### 72.4 每迁一页必须做的清场(§5.6 的又一次实战)
+
+- **删掉裸 `table` / `th` / `td` / `tbody tr:hover`** —— antd 渲染出来的**正是**这些标签,
+  留着必命中。8 页全删了。
+- **`.num` 的语义变了**:原来是"按列序号右对齐"(`td:first-child` / `td:nth-child(3)`),
+  迁后**列顺序不再对应** ⇒ 对齐改由列的 `align="right"` 负责,
+  `.num` 只保留"等宽数字"(或"禁止换行")。
+- **`td input` → `.param-table input`**(报价参数页):`td` 现在由**库**渲染,
+  `td input` 等于在改库的元素。
+
+### 72.5 模板里的类型断言(`<script>` 一律零改动)
+
+antd 把 `#bodyCell` 的行标成 `Record<string, any>`,而页面上的函数收的是具体类型。
+**断言只写在模板里**,8 页的 `<script>` **只多了一行 import**:
+
+- `record as Dict` / `Sku` / `Combo` / `UnitTemplate` / `AdminUserView` / `RowState`
+- `record.role as Role`(索引 `Record<Role, string>` 需要)
+- ⚠️ **报价参数页刻意断言最少**:`record.value` / `record.input` 用 `any` 正好绕开
+  "`v-else` 无法给 `number | null` 做窄化"的麻烦 —— 只有喂 `save()` 那一处断言。
+
+**验证**:`npm run build` ✓ / **389 测试全绿(8 页零改动)**。
+
 
 
