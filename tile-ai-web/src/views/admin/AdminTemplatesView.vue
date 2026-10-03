@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { Alert, Button, Skeleton } from 'ant-design-vue'
+import { Alert, Button, Skeleton, Table } from 'ant-design-vue'
 import { computed, onMounted, ref } from 'vue'
 import { useRouter } from 'vue-router'
 
@@ -134,36 +134,44 @@ onMounted(load)
 
     <Skeleton v-if="loading" active :paragraph="{ rows: 4 }" />
 
-    <table v-else-if="rows.length">
-      <thead>
-        <tr>
-          <th>名称</th>
-          <th class="num">居室数</th>
-          <th>面积区间</th>
-          <th>结构</th>
-          <th>状态</th>
-          <th>操作</th>
-        </tr>
-      </thead>
-      <tbody>
-        <tr v-for="row in rows" :key="row.id">
-          <td>{{ row.name }}</td>
-          <td class="num">{{ row.roomCount ?? '—' }}</td>
-          <td>{{ row.areaRange || '—' }}</td>
-          <td>{{ row.structure || '—' }}</td>
-          <td>
-            <span v-if="!row.status" class="hint">—</span>
-            <span v-else :class="['tag', row.status === 'on_sale' ? 'tag--on' : 'tag--off']">
-              {{ row.status === 'on_sale' ? '已上架' : '已下架' }}
-            </span>
-          </td>
-          <td class="actions">
-            <Button v-if="canWrite" @click="edit(row)">编辑</Button>
-            <Button v-if="canDelete" danger @click="remove(row)">删除</Button>
-          </td>
-        </tr>
-      </tbody>
-    </table>
+    <Table
+      v-else-if="rows.length"
+      class="template-table"
+      size="small"
+      :data-source="rows"
+      :pagination="false"
+      row-key="id"
+    >
+      <Table.Column title="名称" key="name" />
+      <Table.Column title="居室数" key="roomCount" align="right" />
+      <Table.Column title="面积区间" key="areaRange" />
+      <Table.Column title="结构" key="structure" />
+      <Table.Column title="状态" key="status" />
+      <Table.Column title="操作" key="actions" />
+
+      <!-- ⚠️ `record as UnitTemplate`:antd 把 `bodyCell` 的行标成 `Record<string, any>`,
+           而 `edit` / `remove` 收的是 `UnitTemplate`。断言只写在模板里,`<script>` 不动。 -->
+      <template #bodyCell="{ column, record }">
+        <template v-if="column.key === 'name'">{{ record.name }}</template>
+        <template v-else-if="column.key === 'roomCount'">
+          <span class="num">{{ record.roomCount ?? '—' }}</span>
+        </template>
+        <template v-else-if="column.key === 'areaRange'">{{ record.areaRange || '—' }}</template>
+        <template v-else-if="column.key === 'structure'">{{ record.structure || '—' }}</template>
+        <template v-else-if="column.key === 'status'">
+          <span v-if="!record.status" class="hint">—</span>
+          <span v-else :class="['tag', record.status === 'on_sale' ? 'tag--on' : 'tag--off']">
+            {{ record.status === 'on_sale' ? '已上架' : '已下架' }}
+          </span>
+        </template>
+        <template v-else-if="column.key === 'actions'">
+          <div class="actions">
+            <Button v-if="canWrite" @click="edit(record as UnitTemplate)">编辑</Button>
+            <Button v-if="canDelete" danger @click="remove(record as UnitTemplate)">删除</Button>
+          </div>
+        </template>
+      </template>
+    </Table>
 
     <p v-else class="hint">没有符合条件的户型模板。</p>
 
@@ -246,38 +254,13 @@ onMounted(load)
 
 
 /* ── 表格 ───────────────────────────────────────────────────────────────── */
-table {
-  width: 100%;
-  border-collapse: collapse;
-  border: 1px solid var(--color-border);
-  border-radius: var(--radius-md);
-  overflow: hidden;
-  font-size: var(--text-sm);
-  font-variant-numeric: tabular-nums;
-}
+/* ⚠️ 已迁 antd `Table`(§72)。原来那套裸 `table` / `th` / `td` / `tbody tr:hover`
+   必须删掉 —— antd 渲染出来的**正是**这些标签(§5.6 同一个坑)。 */
 
-th,
-td {
-  padding: var(--space-2) var(--space-3);
-  border-bottom: 1px solid var(--color-border);
-  text-align: left;
-}
-
-th {
-  background: var(--color-surface-sunken);
-  color: var(--color-text-secondary);
-  font-size: var(--text-xs);
-  font-weight: 600;
-  white-space: nowrap;
-}
-
-tbody tr:hover {
-  background: var(--color-bg);
-}
-
-/* 居室数右对齐 —— 数字要能竖着比 */
+/* 居室数右对齐 —— 数字要能竖着比。对齐本身由列的 `align="right"` 负责,
+   这里只保留"数字等宽"(原来挂在裸 `table` 上,现在收窄到这一列)。 */
 .num {
-  text-align: right;
+  font-variant-numeric: tabular-nums;
 }
 
 /* 状态标签:上架=暖绿、下架=中性灰。**下架不是错误,不用红色** */

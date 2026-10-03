@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { Alert, Button, Select, Skeleton } from 'ant-design-vue'
+import { Alert, Button, Select, Skeleton, Table } from 'ant-design-vue'
 import { computed, onMounted, ref } from 'vue'
 
 import { createAccount, deleteAccount, listAccounts, updateAccount } from '@/api/admin/accounts'
@@ -209,44 +209,52 @@ onMounted(load)
 
     <Skeleton v-if="loading" active :paragraph="{ rows: 4 }" />
 
-    <table v-else-if="rows.length">
-      <thead>
-        <tr>
-          <th>用户名</th>
-          <th>角色</th>
-          <th>状态</th>
-          <th>创建时间</th>
-          <th>操作</th>
-        </tr>
-      </thead>
-      <tbody>
-        <tr v-for="row in rows" :key="row.id">
-          <td>
-            {{ row.username }}
-            <span v-if="row.id === myId" class="hint">(你自己)</span>
-          </td>
-          <td>{{ ROLE_LABELS[row.role] ?? row.role }}</td>
-          <td>
-            <span :class="['tag', row.status === 'disabled' ? 'tag--off' : 'tag--on']">
-              {{ row.status === 'disabled' ? '已停用' : '启用中' }}
-            </span>
-          </td>
-          <td>{{ timeOf(row.createdAt) }}</td>
-          <td class="actions">
-            <Button v-if="canManage" @click="startEdit(row)">编辑</Button>
+    <Table
+      v-else-if="rows.length"
+      class="account-table"
+      size="small"
+      :data-source="rows"
+      :pagination="false"
+      row-key="id"
+    >
+      <Table.Column title="用户名" key="username" />
+      <Table.Column title="角色" key="role" />
+      <Table.Column title="状态" key="status" />
+      <Table.Column title="创建时间" key="createdAt" />
+      <Table.Column title="操作" key="actions" />
+
+      <!-- ⚠️ `record as AdminUserView` —— `bodyCell` 的行是 `Record<string, any>`,
+           而 `startEdit` / `remove` 收的是 `AdminUserView`。断言只写在模板里。 -->
+      <template #bodyCell="{ column, record }">
+        <template v-if="column.key === 'username'">
+          {{ record.username }}
+          <span v-if="record.id === myId" class="hint">(你自己)</span>
+        </template>
+        <template v-else-if="column.key === 'role'">
+          {{ ROLE_LABELS[record.role as Role] ?? record.role }}
+        </template>
+        <template v-else-if="column.key === 'status'">
+          <span :class="['tag', record.status === 'disabled' ? 'tag--off' : 'tag--on']">
+            {{ record.status === 'disabled' ? '已停用' : '启用中' }}
+          </span>
+        </template>
+        <template v-else-if="column.key === 'createdAt'">{{ timeOf(record.createdAt) }}</template>
+        <template v-else-if="column.key === 'actions'">
+          <div class="actions">
+            <Button v-if="canManage" @click="startEdit(record as AdminUserView)">编辑</Button>
             <Button
               v-if="canManage"
               danger
-              :disabled="row.id === myId"
-              :title="row.id === myId ? '不能删除自己' : ''"
-              @click="remove(row)"
+              :disabled="record.id === myId"
+              :title="record.id === myId ? '不能删除自己' : ''"
+              @click="remove(record as AdminUserView)"
             >
               删除
             </Button>
-          </td>
-        </tr>
-      </tbody>
-    </table>
+          </div>
+        </template>
+      </template>
+    </Table>
 
     <p v-else class="hint">还没有后台账号。</p>
 
@@ -381,33 +389,8 @@ select:focus-visible {
 }
 
 /* ── 账号表 ─────────────────────────────────────────────────────────────── */
-table {
-  width: 100%;
-  border-collapse: collapse;
-  border: 1px solid var(--color-border);
-  border-radius: var(--radius-md);
-  overflow: hidden;
-  font-size: var(--text-sm);
-}
-
-th,
-td {
-  padding: var(--space-2) var(--space-3);
-  border-bottom: 1px solid var(--color-border);
-  text-align: left;
-}
-
-th {
-  background: var(--color-surface-sunken);
-  color: var(--color-text-secondary);
-  font-size: var(--text-xs);
-  font-weight: 600;
-  white-space: nowrap;
-}
-
-tbody tr:hover {
-  background: var(--color-bg);
-}
+/* ⚠️ 已迁 antd `Table`(§72)。原来那套裸 `table` / `th` / `td` / `tbody tr:hover`
+   必须删掉 —— antd 渲染出来的**正是**这些标签(§5.6 同一个坑)。 */
 
 .actions {
   display: flex;

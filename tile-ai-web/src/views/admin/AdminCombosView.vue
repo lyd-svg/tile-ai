@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { Alert, Button, Select, Skeleton } from 'ant-design-vue'
+import { Alert, Button, Select, Skeleton, Table } from 'ant-design-vue'
 import { computed, onMounted, ref } from 'vue'
 import { useRouter } from 'vue-router'
 
@@ -170,36 +170,48 @@ onMounted(async () => {
 
     <Skeleton v-if="loading" active :paragraph="{ rows: 4 }" />
 
-    <table v-else-if="rows.length">
-      <thead>
-        <tr>
-          <th>名称</th>
-          <th>空间</th>
-          <th>风格</th>
-          <th>参考价区间(元)</th>
-          <th>状态</th>
-          <th>操作</th>
-        </tr>
-      </thead>
-      <tbody>
-        <tr v-for="row in rows" :key="row.id">
-          <td>{{ row.name }}</td>
-          <td>{{ labelOf(spaceLabels, row.space) }}</td>
-          <td>{{ labelOf(styleLabels, row.style) }}</td>
-          <td class="num">{{ priceRangeOf(row) }}</td>
-          <td>
-            <span v-if="!row.status" class="hint">—</span>
-            <span v-else :class="['tag', row.status === 'on_sale' ? 'tag--on' : 'tag--off']">
-              {{ row.status === 'on_sale' ? '已上架' : '已下架' }}
-            </span>
-          </td>
-          <td class="actions">
-            <Button v-if="canWrite" @click="edit(row)">编辑</Button>
-            <Button v-if="canDelete" danger @click="remove(row)">删除</Button>
-          </td>
-        </tr>
-      </tbody>
-    </table>
+    <Table
+      v-else-if="rows.length"
+      class="combo-table"
+      size="small"
+      :data-source="rows"
+      :pagination="false"
+      row-key="id"
+    >
+      <Table.Column title="名称" key="name" />
+      <Table.Column title="空间" key="space" />
+      <Table.Column title="风格" key="style" />
+      <Table.Column title="参考价区间(元)" key="price" align="right" />
+      <Table.Column title="状态" key="status" />
+      <Table.Column title="操作" key="actions" />
+
+      <!-- ⚠️ `record as Combo` —— `bodyCell` 的行是 `Record<string, any>`,
+           而下面这些函数收的是 `Combo`。断言只写在模板里,`<script>` 不动。 -->
+      <template #bodyCell="{ column, record }">
+        <template v-if="column.key === 'name'">{{ record.name }}</template>
+        <template v-else-if="column.key === 'space'">
+          {{ labelOf(spaceLabels, record.space) }}
+        </template>
+        <template v-else-if="column.key === 'style'">
+          {{ labelOf(styleLabels, record.style) }}
+        </template>
+        <template v-else-if="column.key === 'price'">
+          <span class="num">{{ priceRangeOf(record as Combo) }}</span>
+        </template>
+        <template v-else-if="column.key === 'status'">
+          <span v-if="!record.status" class="hint">—</span>
+          <span v-else :class="['tag', record.status === 'on_sale' ? 'tag--on' : 'tag--off']">
+            {{ record.status === 'on_sale' ? '已上架' : '已下架' }}
+          </span>
+        </template>
+        <template v-else-if="column.key === 'actions'">
+          <div class="actions">
+            <Button v-if="canWrite" @click="edit(record as Combo)">编辑</Button>
+            <Button v-if="canDelete" danger @click="remove(record as Combo)">删除</Button>
+          </div>
+        </template>
+      </template>
+    </Table>
 
     <p v-else class="hint">没有符合条件的搭配。</p>
 
@@ -275,38 +287,12 @@ onMounted(async () => {
 
 
 /* ── 表格 ───────────────────────────────────────────────────────────────── */
-table {
-  width: 100%;
-  border-collapse: collapse;
-  border: 1px solid var(--color-border);
-  border-radius: var(--radius-md);
-  overflow: hidden;
-  font-size: var(--text-sm);
-  font-variant-numeric: tabular-nums;
-}
+/* ⚠️ 已迁 antd `Table`(§72)。原来那套裸 `table` / `th` / `td` / `tbody tr:hover`
+   必须删掉 —— antd 渲染出来的**正是**这些标签(§5.6 同一个坑)。 */
 
-th,
-td {
-  padding: var(--space-2) var(--space-3);
-  border-bottom: 1px solid var(--color-border);
-  text-align: left;
-}
-
-th {
-  background: var(--color-surface-sunken);
-  color: var(--color-text-secondary);
-  font-size: var(--text-xs);
-  font-weight: 600;
-  white-space: nowrap;
-}
-
-tbody tr:hover {
-  background: var(--color-bg);
-}
-
-/* 参考价区间右对齐 —— 数字要能竖着比 */
+/* 参考价区间右对齐 —— 对齐由列的 `align="right"` 负责,这里只留"数字等宽" */
 .num {
-  text-align: right;
+  font-variant-numeric: tabular-nums;
 }
 
 /* 状态标签:上架=暖绿、下架=中性灰。**下架不是错误,不用红色** */
