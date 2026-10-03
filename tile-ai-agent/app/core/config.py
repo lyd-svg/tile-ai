@@ -74,6 +74,13 @@ class Settings(BaseSettings):
     model_image_api_key: SecretStr = SecretStr("")
     model_image_base_url: str = ""
     model_image_model: str = ""
+    #: 硅基流动专用的图像密钥。
+    #:
+    #: **为什么要单开一个而不是共用 `model_image_api_key`**:厂商不同、密钥不同,
+    #: 而"两个都留着、靠 `MODEL_IMAGE_PROVIDER` 切"是明确的使用方式
+    #: (演示用硅基流动、答辩用万相)。共用一个变量就得来回改写、还会把另一个密钥
+    #: 覆盖掉。留空时**回退到 `model_image_api_key`**,所以只配一个也能跑。
+    model_image_api_key_siliconflow: SecretStr = SecretStr("")
 
     model_embedding_provider: str = ""
     model_embedding_api_key: SecretStr = SecretStr("")

@@ -25,6 +25,7 @@ from app.gateway.errors import GatewayConfigError
 from app.gateway.dashscope_image import DashScopeImageGen
 from app.gateway.openai_compat import OpenAICompatibleLLM
 from app.gateway.ports import EmbeddingGateway, ImageGenGateway, LLMGateway
+from app.gateway.siliconflow_image import SiliconFlowImageGen
 from app.gateway.resilience import (
     CallGuard,
     CircuitBreaker,
@@ -63,6 +64,10 @@ _IMAGE_PRESETS: dict[str, ProviderPreset] = {
     # ⚠️ **不是** OpenAI 兼容入口(`/compatible-mode/v1`)—— 图像走 DashScope 原生协议。
     # 2026-09-29 用真实密钥实测确认,详见 app/gateway/dashscope_image.py。
     "dashscope": ProviderPreset("https://dashscope.aliyuncs.com", "wan2.7-image-pro"),
+    # 硅基流动。端点路径是 OpenAI images 风格的 `/v1/images/generations`,
+    # 但**参数是它自己的扩展**(参考图字段叫 `image` / `image2` …,**不是** `imageUpload`)
+    # —— 2026-10-02 用真实密钥实测确认,详见 app/gateway/siliconflow_image.py。
+    "siliconflow": ProviderPreset("https://api.siliconflow.cn", "Qwen/Qwen-Image-Edit-2509"),
 }
 
 #: Embedding 的预置。
@@ -196,13 +201,10 @@ def build_image_gateway(
             f"未知的图像 provider:{provider}。已支持:{sorted(_IMAGE_PRESETS)}"
         )
 
-    adapter = DashScopeImageGen(
+    adapter = _build_image_adapter(
         provider=provider,
-        base_url=config.model_image_base_url or preset.base_url,
-        model=config.model_image_model or preset.default_model,
-        api_key=_secret(config.model_image_api_key),
-        # 图像单图 ≤60s 是架构 §7.3 / §13.1 的硬指标
-        timeout_seconds=config.gateway_image_timeout_seconds,
+        preset=preset,
+        config=config,
         client=client,
     )
     return ResilientImageGenGateway(
@@ -218,6 +220,39 @@ def build_image_gateway(
         provider=provider,
         meter=meter if meter is not None else CostMeter(config.gateway_model_prices),
     )
+
+
+def _build_image_adapter(
+    *,
+    provider: str,
+    preset: ProviderPreset,
+    config: Any,
+    client: Any = None,
+) -> Any:
+    """按 provider 选真实的图像适配器。
+
+    密钥**按 provider 取**:硅基流动优先用 `MODEL_IMAGE_API_KEY_SILICONFLOW`,
+    留空则回退到通用的 `MODEL_IMAGE_API_KEY`。
+
+    这样"演示用硅基流动、答辩用万相"时,两个密钥可以**同时留在 .env 里**,
+    靠 `MODEL_IMAGE_PROVIDER` 切 —— 不用来回改写,也不会把另一个覆盖掉。
+    """
+    api_key = _secret(config.model_image_api_key)
+    if provider == "siliconflow":
+        api_key = _secret(config.model_image_api_key_siliconflow) or api_key
+
+    common: dict[str, Any] = {
+        "provider": provider,
+        "base_url": config.model_image_base_url or preset.base_url,
+        "model": config.model_image_model or preset.default_model,
+        "api_key": api_key,
+        # 图像单图 ≤60s 是架构 §7.3 / §13.1 的硬指标
+        "timeout_seconds": config.gateway_image_timeout_seconds,
+        "client": client,
+    }
+    if provider == "siliconflow":
+        return SiliconFlowImageGen(**common)
+    return DashScopeImageGen(**common)
 
 
 def build_embedding_gateway(settings: Any = None) -> EmbeddingGateway:
