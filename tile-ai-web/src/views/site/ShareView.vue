@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import { Skeleton } from 'ant-design-vue'
 import { computed, onMounted, ref, watch } from 'vue'
 import { useRoute } from 'vue-router'
 
@@ -166,7 +167,7 @@ const metaText = computed(() =>
 
 <template>
   <main class="share">
-    <p v-if="loading" class="hint">加载中…</p>
+    <Skeleton v-if="loading" active :paragraph="{ rows: 4 }" />
 
     <template v-else-if="plan">
       <p class="banner">

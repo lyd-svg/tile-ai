@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import { Skeleton } from 'ant-design-vue'
 import { computed, onMounted, ref } from 'vue'
 import { useRouter } from 'vue-router'
 
@@ -223,7 +224,7 @@ onMounted(async () => {
 
     <!-- ============================ 模板 ============================ -->
     <div v-if="mode === 'template'" class="panel">
-      <p v-if="templatesLoading" class="hint">加载中…</p>
+      <Skeleton v-if="templatesLoading" active :paragraph="{ rows: 4 }" />
       <p v-else-if="templatesError" class="error" role="alert">{{ templatesError }}</p>
 
       <p v-else-if="!templates.length" class="hint">还没有可用的户型模板,请改用手动录入。</p>

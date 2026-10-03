@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import { Skeleton } from 'ant-design-vue'
 import { computed, onMounted, reactive, ref } from 'vue'
 
 import { listProducts } from '@/api/c/catalog'
@@ -157,7 +158,7 @@ onMounted(async () => {
     </form>
 
     <p v-if="errorText" class="error" role="alert">{{ errorText }}</p>
-    <p v-if="loading" class="hint">加载中…</p>
+    <Skeleton v-if="loading" active :paragraph="{ rows: 4 }" />
 
     <template v-else-if="rows.length">
       <p class="count">共 {{ total }} 款</p>

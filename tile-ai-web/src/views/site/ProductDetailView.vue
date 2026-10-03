@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import { Skeleton } from 'ant-design-vue'
 import { computed, onMounted, ref } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 
@@ -116,7 +117,7 @@ onMounted(async () => {
   <section>
     <button type="button" class="back" @click="router.back()">← 返回</button>
 
-    <p v-if="loading" class="hint">加载中…</p>
+    <Skeleton v-if="loading" active :paragraph="{ rows: 4 }" />
     <p v-else-if="errorText" class="error" role="alert">{{ errorText }}</p>
 
     <article v-else-if="product" class="detail">

@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import { Skeleton } from 'ant-design-vue'
 import { computed, onMounted, ref, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 
@@ -419,7 +420,7 @@ async function revokeShareLink() {
 
 <template>
   <section>
-    <p v-if="loading" class="hint">加载中…</p>
+    <Skeleton v-if="loading" active :paragraph="{ rows: 4 }" />
 
     <p v-else-if="errorText && !plan" class="error" role="alert">{{ errorText }}</p>
 

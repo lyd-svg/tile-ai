@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import { Skeleton } from 'ant-design-vue'
 import { computed, onMounted, ref } from 'vue'
 
 import { listLogs } from '@/api/admin/logs'
@@ -137,7 +138,7 @@ onMounted(load)
 
     <p v-if="errorText" class="error" role="alert">{{ errorText }}</p>
 
-    <p v-if="loading" class="hint">加载中…</p>
+    <Skeleton v-if="loading" active :paragraph="{ rows: 4 }" />
 
     <table v-else-if="rows.length">
       <thead>

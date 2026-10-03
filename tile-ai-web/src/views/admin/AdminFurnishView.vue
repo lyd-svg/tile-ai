@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import { Skeleton } from 'ant-design-vue'
 import { computed, onMounted, reactive, ref } from 'vue'
 
 import { listAdminDicts } from '@/api/admin/dicts'
@@ -225,7 +226,7 @@ onMounted(load)
       <li v-for="item in fieldErrors" :key="item">{{ item }}</li>
     </ul>
 
-    <p v-if="loading" class="hint">加载中…</p>
+    <Skeleton v-if="loading" active :paragraph="{ rows: 4 }" />
 
     <template v-else-if="spaces.length && styles.length">
       <table class="matrix">

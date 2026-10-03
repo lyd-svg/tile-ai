@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { Select } from 'ant-design-vue'
+import { Select, Skeleton } from 'ant-design-vue'
 import { computed, onMounted, reactive, ref } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 
@@ -231,7 +231,7 @@ onMounted(async () => {
       <li v-for="item in fieldErrors" :key="item">{{ item }}</li>
     </ul>
 
-    <p v-if="loading" class="hint">加载中…</p>
+    <Skeleton v-if="loading" active :paragraph="{ rows: 6 }" />
 
     <form v-else class="panel" @submit.prevent="submit">
       <label>

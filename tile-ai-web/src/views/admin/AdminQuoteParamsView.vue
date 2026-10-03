@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import { Skeleton } from 'ant-design-vue'
 import { computed, onMounted, ref } from 'vue'
 
 import { listQuoteParams, upsertQuoteParam } from '@/api/admin/quoteParams'
@@ -158,7 +159,7 @@ onMounted(load)
       <li v-for="item in fieldErrors" :key="item">{{ item }}</li>
     </ul>
 
-    <p v-if="loading" class="hint">加载中…</p>
+    <Skeleton v-if="loading" active :paragraph="{ rows: 4 }" />
 
     <table v-else>
       <thead>
