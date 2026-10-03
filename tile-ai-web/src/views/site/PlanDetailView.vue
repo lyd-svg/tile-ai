@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { Skeleton } from 'ant-design-vue'
+import { Button, Skeleton } from 'ant-design-vue'
 import { computed, onMounted, ref, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 
@@ -505,9 +505,7 @@ async function revokeShareLink() {
       <section class="block">
         <header class="quote-head">
           <h2>报价</h2>
-          <button type="button" :disabled="recalculating" @click="recalc">
-            {{ recalculating ? '重算中…' : '按当前价重算' }}
-          </button>
+          <Button :loading="recalculating" @click="recalc">按当前价重算</Button>
         </header>
 
         <p v-if="plan.quoteExpired" class="stale">
@@ -567,18 +565,14 @@ async function revokeShareLink() {
             <!-- readonly 而不是 disabled:disabled 的输入框选不中文本,
                  用户想手动复制时就抓瞎了 -->
             <input class="share-link" type="text" readonly :value="shareLink" />
-            <button type="button" @click="copyShareLink">复制链接</button>
-            <button type="button" class="danger" :disabled="revoking" @click="revokeShareLink">
-              {{ revoking ? '废除中…' : '废除链接' }}
-            </button>
+            <Button @click="copyShareLink">复制链接</Button>
+            <Button danger :loading="revoking" @click="revokeShareLink">废除链接</Button>
           </div>
         </template>
 
         <template v-else>
           <p class="hint">把这份方案发给家人或设计师 —— 他们不用注册就能打开看。</p>
-          <button type="button" class="primary" :disabled="sharing" @click="createShare">
-            {{ sharing ? '生成中…' : '生成分享链接' }}
-          </button>
+          <Button type="primary" :loading="sharing" @click="createShare">生成分享链接</Button>
         </template>
       </section>
 
@@ -594,12 +588,12 @@ async function revokeShareLink() {
             方案名
             <input v-model="nameDraft" type="text" />
           </label>
-          <button type="submit" class="primary" :disabled="!canSaveName">保存</button>
+          <Button type="primary" html-type="submit" :disabled="!canSaveName">保存</Button>
         </form>
 
         <div class="actions">
-          <button type="button" :disabled="busy" @click="copyAsNew">另存为</button>
-          <button type="button" class="danger" :disabled="busy" @click="remove">删除</button>
+          <Button :disabled="busy" @click="copyAsNew">另存为</Button>
+          <Button danger :disabled="busy" @click="remove">删除</Button>
         </div>
       </section>
     </template>
@@ -874,54 +868,10 @@ th {
 }
 
 /* ── 按钮 ───────────────────────────────────────────────────────────────── */
-button {
-  padding: var(--space-2) var(--space-4);
-  border: 1px solid var(--color-border-strong);
-  border-radius: var(--radius-sm);
-  background: var(--color-surface);
-  color: var(--color-text);
-  font: inherit;
-  font-size: var(--text-sm);
-  cursor: pointer;
-  transition:
-    border-color var(--dur-fast) var(--ease-standard),
-    background var(--dur-fast) var(--ease-standard);
-}
-
-button:hover:not(:disabled) {
-  border-color: var(--color-primary);
-  color: var(--color-primary);
-}
-
-button:disabled {
-  opacity: 0.45;
-  cursor: default;
-}
-
-.primary {
-  border-color: var(--color-primary);
-  background: var(--color-primary);
-  color: var(--color-on-primary);
-  font-weight: 600;
-}
-
-.primary:hover:not(:disabled) {
-  background: var(--color-primary-hover);
-  border-color: var(--color-primary-hover);
-  color: var(--color-on-primary);
-}
-
-/* 危险操作:危险色 + 明确的文字("删除" / "废除"),不靠图标暗示 */
-.danger {
-  border-color: var(--color-danger);
-  color: var(--color-danger);
-}
-
-.danger:hover:not(:disabled) {
-  background: var(--color-danger-soft);
-  color: var(--color-danger);
-  border-color: var(--color-danger);
-}
+/* ⚠️ **本页 7 个常规按钮已全部迁 antd**(按当前价重算 / 复制链接 / 废除链接 /
+   生成分享链接 / 保存 / 另存为 / 删除)—— 不再写样式(§70.9)。
+   原来这里是**裸 `button {}`**,会照样命中 antd 的 `<button class="ant-btn">`。
+   ⚠️ 但上面的 **`.thumb`(多角度缩略图)是自定义交互元素**,刻意保留、**不迁**。 */
 
 /* ── 状态 ───────────────────────────────────────────────────────────────── */
 .errors {
