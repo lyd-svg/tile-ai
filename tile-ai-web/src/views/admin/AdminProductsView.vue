@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { Skeleton } from 'ant-design-vue'
+import { Button, Input, Select, Skeleton } from 'ant-design-vue'
 import { computed, onMounted, ref } from 'vue'
 import { useRouter } from 'vue-router'
 
@@ -131,23 +131,22 @@ onMounted(load)
   <section>
     <header class="head">
       <h1>产品库</h1>
-      <button v-if="canWrite" type="button" class="primary" @click="createNew">新增 SKU</button>
+      <Button v-if="canWrite" type="primary" @click="createNew">新增 SKU</Button>
     </header>
 
     <form class="filters" @submit.prevent="search">
       <label>
         关键词
-        <input v-model="keyword" type="text" placeholder="名称或编号" />
+        <Input v-model:value="keyword" placeholder="名称或编号" />
       </label>
       <label>
         状态
-        <select v-model="status">
-          <option value="">全部</option>
-          <option value="on_sale">已上架</option>
-          <option value="off_sale">已下架</option>
-        </select>
+        <Select v-model:value="status" placeholder="全部" allow-clear>
+          <Select.Option value="on_sale">已上架</Select.Option>
+          <Select.Option value="off_sale">已下架</Select.Option>
+        </Select>
       </label>
-      <button type="submit">查询</button>
+      <Button html-type="submit">查询</Button>
     </form>
 
     <p v-if="errorText" class="error" role="alert">{{ errorText }}</p>
@@ -246,27 +245,21 @@ h1 {
   color: var(--color-text-secondary);
 }
 
-input,
-select {
-  height: var(--control-height);
-  padding: 0 var(--space-3);
-  border: 1px solid var(--color-border-strong);
-  border-radius: var(--radius-sm);
-  background: var(--color-surface);
-  color: var(--color-text);
-  font: inherit;
-  font-size: var(--text-sm);
+/* ⚠️ 筛选区的输入框 / 下拉 / 按钮**交给 antd** —— 见 `tile-ai-design.md` §5.6。
+   裸元素选择器(`input` / `select` / `button`)会**照样命中 antd 渲染出的元素**,
+   所以这里只留排版。 */
+.filters :deep(.ant-input),
+.filters :deep(.ant-select) {
+  width: 100%;
 }
 
-input:focus-visible,
-select:focus-visible {
-  outline: 2px solid var(--color-focus);
-  outline-offset: 1px;
-  border-color: var(--color-primary);
-}
-
-/* ── 按钮 ───────────────────────────────────────────────────────────────── */
-button {
+/* ── 表格里的操作按钮**仍是原生的** ────────────────────────────────────────
+   ⚠️ 它们**暂时不能迁 antd**:测试按文案找它们(`toContain('编辑')`),
+   而测试**不挂 `App.vue`**、拿不到"两个汉字不插空格"那条设置
+   ⇒ antd 会渲染成「编 辑」,断言**直接红**。
+   要迁就得先让那些测试**归一化空白**。
+   ⇒ 所以样式**收窄到 `.actions`**,不波及其他按钮。 */
+.actions button {
   height: var(--control-height);
   padding: 0 var(--space-3);
   border: 1px solid var(--color-border-strong);
@@ -281,27 +274,14 @@ button {
     background var(--dur-fast) var(--ease-standard);
 }
 
-button:hover:not(:disabled) {
+.actions button:hover:not(:disabled) {
   border-color: var(--color-primary);
   color: var(--color-primary);
 }
 
-button:disabled {
+.actions button:disabled {
   opacity: 0.45;
   cursor: default;
-}
-
-.primary {
-  border-color: var(--color-primary);
-  background: var(--color-primary);
-  color: var(--color-on-primary);
-  font-weight: 600;
-}
-
-.primary:hover:not(:disabled) {
-  background: var(--color-primary-hover);
-  border-color: var(--color-primary-hover);
-  color: var(--color-on-primary);
 }
 
 /* 删除是危险操作 —— 危险色 + 明确的文字,不靠图标暗示 */
