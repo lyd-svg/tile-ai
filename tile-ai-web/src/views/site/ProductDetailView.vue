@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { Skeleton } from 'ant-design-vue'
+import { Button, Skeleton } from 'ant-design-vue'
 import { computed, onMounted, ref } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 
@@ -115,7 +115,7 @@ onMounted(async () => {
 
 <template>
   <section>
-    <button type="button" class="back" @click="router.back()">← 返回</button>
+    <Button class="back" @click="router.back()">← 返回</Button>
 
     <Skeleton v-if="loading" active :paragraph="{ rows: 4 }" />
     <p v-else-if="errorText" class="error" role="alert">{{ errorText }}</p>
@@ -197,7 +197,7 @@ onMounted(async () => {
           <ul>
             <li v-for="item in draft.parts" :key="item.part">
               <span>{{ PART_LABELS[item.part] }} · {{ item.name || item.sku }}</span>
-              <button type="button" class="remove" @click="draft.removePart(item.part)">移除</button>
+              <Button type="link" danger size="small" @click="draft.removePart(item.part)">移除</Button>
             </li>
           </ul>
         </div>
@@ -205,14 +205,13 @@ onMounted(async () => {
         <p class="notice">选好砖后进入户型录入,再生成效果图。</p>
 
         <div class="cta">
-          <button
-            type="button"
-            class="primary"
+          <Button
+            type="primary"
             :disabled="!draft.hasParts"
             @click="router.push({ name: 'layout' })"
           >
             去录户型 →
-          </button>
+          </Button>
           <RouterLink class="cta__alt" to="/products">继续选砖</RouterLink>
         </div>
       </div>
@@ -224,16 +223,10 @@ onMounted(async () => {
 /* 样式一律走设计令牌(`src/styles/tokens.css`)—— 本文件不出现任何十六进制。
    ⚠️ 元素、class 名与绑定**一个没动**:`button.part` 等被测试依赖的选择器保持原样。 */
 
+/* ⚠️ 返回 / 移除 / 去录户型 **已迁 antd**(§70.9)—— 这里**只剩排版**,不改外观。
+   `.back` 只是一个"往下的间距",外观交给 antd。 */
 .back {
   margin-bottom: var(--space-4);
-  padding: var(--space-1) var(--space-3);
-  border: 1px solid var(--color-border-strong);
-  border-radius: var(--radius-sm);
-  background: var(--color-surface);
-  color: var(--color-text-secondary);
-  font: inherit;
-  font-size: var(--text-sm);
-  cursor: pointer;
 }
 
 .back:hover {
@@ -459,20 +452,7 @@ onMounted(async () => {
   padding: var(--space-1) 0;
 }
 
-/* 移除是危险操作 —— 用危险色,不靠图标暗示 */
-.remove {
-  padding: 0;
-  border: none;
-  background: none;
-  color: var(--color-danger);
-  cursor: pointer;
-  font: inherit;
-  font-size: var(--text-xs);
-}
-
-.remove:hover {
-  text-decoration: underline;
-}
+/* 「移除」已迁 antd(`type="link" danger` —— 原来就是个无边框的危险色文字链)。 */
 
 .notice {
   margin: 0 0 var(--space-4);
@@ -493,27 +473,7 @@ onMounted(async () => {
   margin-top: var(--space-5);
 }
 
-button.primary {
-  padding: var(--space-3) var(--space-5);
-  border: 1px solid var(--color-primary);
-  border-radius: var(--radius-sm);
-  background: var(--color-primary);
-  color: var(--color-on-primary);
-  font: inherit;
-  font-size: var(--text-base);
-  font-weight: 600;
-  cursor: pointer;
-}
-
-button.primary:hover:not(:disabled) {
-  background: var(--color-primary-hover);
-  border-color: var(--color-primary-hover);
-}
-
-button.primary:disabled {
-  opacity: 0.45;
-  cursor: not-allowed;
-}
+/* 「去录户型」已迁 antd。⚠️ 本页的 **缩略图与部位胶囊刻意不迁**(自定义交互元素)。 */
 
 .cta__alt {
   color: var(--color-primary);

@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import { Button } from 'ant-design-vue'
 import { computed, ref } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 
@@ -79,9 +80,7 @@ async function submit() {
 
       <p v-if="errorText" class="error" role="alert">{{ errorText }}</p>
 
-      <button type="submit" class="primary" :disabled="auth.loading">
-        {{ auth.loading ? '处理中…' : title }}
-      </button>
+      <Button type="primary" html-type="submit" :loading="auth.loading">{{ title }}</Button>
 
       <p class="switch">
         {{ isRegister ? '已经有账号?' : '还没有账号?' }}
@@ -156,28 +155,8 @@ input:focus-visible {
   border-color: var(--color-primary);
 }
 
-button {
-  padding: var(--space-3) var(--space-4);
-  border: 1px solid var(--color-primary);
-  border-radius: var(--radius-sm);
-  background: var(--color-primary);
-  color: var(--color-on-primary);
-  font: inherit;
-  font-size: var(--text-sm);
-  font-weight: 600;
-  cursor: pointer;
-  transition: background var(--dur-fast) var(--ease-standard);
-}
-
-button:hover:not(:disabled) {
-  background: var(--color-primary-hover);
-  border-color: var(--color-primary-hover);
-}
-
-button:disabled {
-  opacity: 0.5;
-  cursor: not-allowed;
-}
+/* ⚠️ **「登录 / 注册」按钮已迁 antd** —— 不再写样式(§70.9)。
+   原来这里是**裸 `button {}`**,会照样命中 antd 的 `<button class="ant-btn">`。 */
 
 .switch {
   margin: 0;
