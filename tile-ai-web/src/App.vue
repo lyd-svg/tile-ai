@@ -51,10 +51,40 @@ const theme = computed(() => themeFor(themeName.value))
 watchEffect(() => {
   document.documentElement.dataset.theme = themeName.value
 })
+
+/**
+ * ⚠️ **一处未决的架构岔路:静态 `Modal` 进不了应用上下文。**
+ *
+ * 起因:阶段 G2 要给 8 个页面把 `window.confirm` 换成 antd 的确认框。
+ * 实测发现,antd 的**静态方法**(`Modal.confirm` / `message` / `notification`)
+ * 是**脱离应用上下文**渲染的(自建根、挂到 body),于是有两个后果:
+ *
+ *   ① **主题可能拿不到** ⇒ 确认框的按钮会渲染成 **antd 默认蓝**,直接违反铁律 2;
+ *   ② `<ConfigProvider>` 上的 `:auto-insert-space-in-button="false"` **管不到它**
+ *      ⇒ 按钮文案是「确 定」(带空格),页面其它 antd 按钮是「确定」。
+ *
+ * 试过**全局配置**这条路(`ConfigProvider.config({ theme })`),**撞墙**:
+ * 它的 `Theme` 类型与组件 prop 的**不是同一个**(`vue-tsc` 报「no properties in common」);
+ * 而 ② 那个开关**在全局配置里根本没有**(`GlobalConfigProviderProps` 只有
+ * `prefixCls` / `iconPrefixCls` / `getPopupContainer` / `theme`)。
+ *
+ * ⇒ **岔路(未决,见 `openapi-verification.md` §70)**:
+ *   - **A. 自建声明式确认框**:用 `<Modal>` 组件(不是静态方法)+ 一个挂在根上的宿主,
+ *     这样它**进得去上下文**,主题与空格两个问题**一起解决**。工程量约一个组件。
+ *   - **B. 放弃 Modal**,确认框继续用别的做法。
+ *   在定下来之前,`src/components/base/AppConfirm.ts` **不接入任何页面**。
+ */
 </script>
 
 <template>
-  <ConfigProvider :theme="theme">
+  <!-- `:auto-insert-space-in-button="false"`(2026-10-03 加):
+       antd **默认会在"两个汉字"的按钮里自动插一个空格** —— 「确定」渲染成「确 定」。
+       两个后果,第二个更坏:
+         ① 跟本站其它按钮的文案不一致;
+         ② **按文案找按钮的测试会静默失败**(实测踩到,见 `openapi-verification.md` §70)——
+            不报错、不提示,只是 `querySelector` 找不到。
+       ⇒ 关掉它,全站按钮文案统一。 -->
+  <ConfigProvider :theme="theme" :auto-insert-space-in-button="false">
     <RouterView />
   </ConfigProvider>
 </template>

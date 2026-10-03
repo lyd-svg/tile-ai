@@ -7119,5 +7119,44 @@ C8 当初把控件迁移推迟,理由是「**无测试覆盖 ⇒ 不可验证**�
 **G2**:逐页迁**有测试的**页面,每页同步重写受影响的测试。
 配方已就位(70.2),但**每页仍要单独验收** —— 因为每页测试钉的东西不同。
 
+### 70.6 ⚠️ G2 第一块硬骨头:**静态 `Modal` 进不了应用上下文**(实测,2026-10-03)
+
+G2 开工第一件事,是把 8 个页面的 `window.confirm` 换成 antd 确认框。
+为守住「页面不得直接 import antd」,先做了包装层
+`src/components/base/AppConfirm.ts` —— 把 `Modal.confirm` 包成 `Promise<boolean>`,
+于是调用处只需 `window.confirm(` → `await appConfirm({`,**其余一行不动**。
+
+**✅ 好消息:实测确认 `Modal.confirm` 在 happy-dom 里跑得起来。**
+完整渲染到 portal(`.ant-modal-root` / `.ant-modal-confirm` / `.ant-modal-confirm-btns`),
+两条包装层用例(确定 → `true` / 取消 → `false`)**已绿**(测试总数 384 → **386**)。
+
+**❌ 坏消息,两处,都是实测:**
+
+1. **antd 默认给"两个汉字"的按钮**插**一个空格** —— 「确定」渲染成「确 定」。
+   它**不报错、不提示**,只是 `querySelector` **静默找不到** —— 我的第一版测试就栽在这里。
+   (已用**空白归一化**兜住;`<ConfigProvider>` 上也关了这个开关,但见第 2 条。)
+
+2. **静态方法脱离应用上下文**(自建根、挂 body)⇒
+   - **主题可能拿不到** ⇒ 确认框的按钮会渲染成 **antd 默认蓝**,**违反铁律 2**;
+   - `<ConfigProvider :auto-insert-space-in-button="false">` **管不到它**。
+
+**试过全局配置这条路(`ConfigProvider.config`),撞墙 —— 也是一次实测:**
+- 它要的 `Theme` 与组件 prop 的**不是同一个类型**(`vue-tsc`:`no properties in common`);
+- `autoInsertSpaceInButton` **在 `GlobalConfigProviderProps` 里根本不存在**
+  (该类型只有 `prefixCls` / `iconPrefixCls` / `getPopupContainer` / `theme`)。
+
+⇒ **岔路(未决)**
+
+| | 做法 | 代价 |
+| --- | --- | --- |
+| **A** | **自建声明式确认框** —— 用 `<Modal>` **组件**(不是静态方法)+ 一个挂在根上的宿主,这样它**进得去上下文** | 约一个组件的工程量;**主题与空格两个问题一起解决** |
+| **B** | 放弃 Modal,确认框另想办法 | — |
+
+**当前状态**:`AppConfirm.ts` 与 `appConfirm.spec.ts` **已写、未接入任何页面**
+—— 所以**没有任何东西是坏的**。**决定之前不动。**
+
+**教训(与 70.2 同源)**:antd 的「**组件**」与「**静态方法**」是**两套上下文行为**,
+在同一个库里的表现**不一样** —— 不能"看着像组件就当组件用"。
+
 
 
