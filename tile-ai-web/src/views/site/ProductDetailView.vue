@@ -202,7 +202,12 @@ onMounted(async () => {
           </ul>
         </div>
 
-        <p class="notice">选好砖后进入户型录入,再生成效果图。</p>
+        <Alert
+          class="alert-gap"
+          type="warning"
+          message="选好砖后进入户型录入,再生成效果图。"
+          show-icon
+        />
 
         <div class="cta">
           <Button
@@ -454,16 +459,8 @@ onMounted(async () => {
 
 /* 「移除」已迁 antd(`type="link" danger` —— 原来就是个无边框的危险色文字链)。 */
 
-.notice {
-  margin: 0 0 var(--space-4);
-  padding: var(--space-3) var(--space-4);
-  border: 1px solid var(--color-warning);
-  border-radius: var(--radius-sm);
-  background: var(--color-warning-soft);
-  color: var(--color-text);
-  font-size: var(--text-sm);
-  line-height: var(--leading-sm);
-}
+/* 「选好砖后进入户型录入」的流程引导已迁 antd `Alert`(`type="warning"`,§71.3)
+   —— 保持原来的警示色调(它本来就不是普通说明,是"下一步该干什么")。 */
 
 /* ── 行动点 ─────────────────────────────────────────────────────────────── */
 .cta {

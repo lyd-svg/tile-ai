@@ -247,9 +247,13 @@ onMounted(async () => {
       </ul>
 
       <!-- 模板的 layout 在契约里是可选的,没配就得说清,而不是画一个空户型 -->
-      <p v-if="picked && !picked.layout" class="error" role="alert">
-        该模板尚未配置户型,请改用手动录入。
-      </p>
+      <Alert
+        v-if="picked && !picked.layout"
+        class="alert-gap"
+        type="error"
+        message="该模板尚未配置户型,请改用手动录入。"
+        show-icon
+      />
     </div>
 
     <!-- ========================== 手动录入 ========================== -->
@@ -653,15 +657,7 @@ onMounted(async () => {
 }
 
 /* ── 状态 ───────────────────────────────────────────────────────────────── */
-.error {
-  margin: var(--space-3) 0 0;
-  padding: var(--space-3) var(--space-4);
-  border: 1px solid var(--color-danger);
-  border-radius: var(--radius-sm);
-  background: var(--color-danger-soft);
-  color: var(--color-danger);
-  font-size: var(--text-sm);
-}
+/* 错误提示已全部迁 antd `Alert`(§71.3),间距走全局 `.alert-gap`,本页不再写样式 */
 
 .panel .error:first-child {
   margin-top: 0;

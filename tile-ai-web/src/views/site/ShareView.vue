@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { Skeleton } from 'ant-design-vue'
+import { Alert, Skeleton } from 'ant-design-vue'
 import { computed, onMounted, ref, watch } from 'vue'
 import { useRoute } from 'vue-router'
 
@@ -295,7 +295,7 @@ const metaText = computed(() =>
 
     <template v-else>
       <h1>打不开这个分享链接</h1>
-      <p class="error" role="alert">{{ errorText }}</p>
+      <Alert class="alert-gap" type="error" :message="errorText" show-icon />
       <p class="hint">
         可能链接被分享者废除了,或者地址没复制全。麻烦找分享给你的人要一条新的。
       </p>
@@ -525,15 +525,7 @@ th {
 }
 
 /* ── 状态 ───────────────────────────────────────────────────────────────── */
-.error {
-  margin: var(--space-3) 0;
-  padding: var(--space-3) var(--space-4);
-  border: 1px solid var(--color-danger);
-  border-radius: var(--radius-sm);
-  background: var(--color-danger-soft);
-  color: var(--color-danger);
-  font-size: var(--text-sm);
-}
+/* 打不开分享链接时的错误提示已迁 antd `Alert`(§71.3),间距走全局 `.alert-gap` */
 
 .hint {
   margin: var(--space-3) 0;

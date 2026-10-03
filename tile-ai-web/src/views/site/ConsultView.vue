@@ -313,7 +313,7 @@ onBeforeUnmount(interrupt)
                ⚠️ **这一块刻意不迁 antd `Alert`**(§71.3):它在聊天气泡**内部**,
                是"气泡里的一个注记",不是页级状态块;而且拒答不是成功(绿)也不是故障(红),
                任何 Alert 的语义色都是错的。 -->
-          <p v-if="item.status === 'rejected'" class="notice">{{ item.errorText }}</p>
+          <p v-if="item.status === 'rejected'" class="reject-note">{{ item.errorText }}</p>
           <p v-if="item.status === 'aborted'" class="note">(已停止)</p>
           <p v-if="item.status === 'interrupted'" class="note">(不完整,连接中断)</p>
 
@@ -488,7 +488,7 @@ h3 {
 }
 
 /* 拒答是**提示**,不是故障 —— 用中性色块,别用危险红(§71.3:故这块不迁 Alert) */
-.notice {
+.reject-note {
   margin: var(--space-3) 0 0;
   padding: var(--space-3) var(--space-4);
   border-left: 3px solid var(--color-accent);

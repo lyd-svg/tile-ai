@@ -87,7 +87,7 @@ async function submit() {
         <a href="#" @click.prevent="switchMode">{{ isRegister ? '去登录' : '去注册' }}</a>
       </p>
 
-      <p class="notice">浏览免登录;生成、保存、问 AI 才需要登录。</p>
+      <p class="footnote">浏览免登录;生成、保存、问 AI 才需要登录。</p>
     </form>
   </section>
 </template>
@@ -169,7 +169,10 @@ input:focus-visible {
   font-weight: 600;
 }
 
-.notice {
+/* ⚠️ **这块刻意不迁 `Alert`**(§71.3):它不是状态块,是表单底部的**小字说明**
+   (上边框 + 弱化文字),套成彩色告示会让登录页变吵。
+   类名从 `.notice` 改成 `.footnote` —— 名副其实,也让全库不再有"伪装成状态块的说明文字"。 */
+.footnote {
   margin: 0;
   padding-top: var(--space-3);
   border-top: 1px solid var(--color-border);

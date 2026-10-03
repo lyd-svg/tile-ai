@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { Button, Empty, Skeleton } from 'ant-design-vue'
+import { Alert, Button, Empty, Skeleton } from 'ant-design-vue'
 import { onMounted, ref } from 'vue'
 
 import { getStore } from '@/api/c/catalog'
@@ -48,7 +48,12 @@ onMounted(async () => {
       <Button v-if="store.mapUrl" type="primary" :href="store.mapUrl" target="_blank" rel="noopener">
         打开地图导航
       </Button>
-      <p class="notice">一期不支持线上下单与支付,请到店选购。</p>
+      <Alert
+        class="alert-gap"
+        type="info"
+        message="一期不支持线上下单与支付,请到店选购。"
+        show-icon
+      />
     </div>
 
     <div v-else class="empty">
@@ -131,16 +136,7 @@ onMounted(async () => {
    **不再自己写按钮样式**,见 `openapi-verification.md` §68。 */
 
 /* ── 边界说明 ───────────────────────────────────────────────────────────── */
-.notice {
-  margin: var(--space-4) 0 0;
-  padding: var(--space-3) var(--space-4);
-  border: 1px solid var(--color-border);
-  border-radius: var(--radius-sm);
-  background: var(--color-bg);
-  color: var(--color-text-secondary);
-  font-size: var(--text-xs);
-  line-height: var(--leading-xs);
-}
+/* 「一期不支持线上下单与支付」已迁 antd `Alert`(`type="info"`,§71.3)。 */
 
 /* ── 状态 ───────────────────────────────────────────────────────────────── */
 /* 空态:插图与文案由 antd 的 `Empty` 出,这里只给容器底色 */
