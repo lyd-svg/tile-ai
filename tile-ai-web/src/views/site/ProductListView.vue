@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { Skeleton } from 'ant-design-vue'
+import { Button, Input, InputNumber, Select, Skeleton } from 'ant-design-vue'
 import { computed, onMounted, reactive, ref } from 'vue'
 
 import { listProducts } from '@/api/c/catalog'
@@ -101,59 +101,55 @@ onMounted(async () => {
     <form class="filters" @submit.prevent="search">
       <label class="field">
         <span class="field__label">关键词</span>
-        <input v-model="filters.keyword" type="text" placeholder="名称或编号" />
+        <Input v-model:value="filters.keyword" placeholder="名称或编号" />
       </label>
       <label class="field">
         <span class="field__label">材质</span>
-        <input v-model="filters.material" type="text" placeholder="如 釉面砖" />
+        <Input v-model:value="filters.material" placeholder="如 釉面砖" />
       </label>
       <label class="field">
         <span class="field__label">规格</span>
-        <input v-model="filters.spec" type="text" placeholder="如 750×1500mm" />
+        <Input v-model:value="filters.spec" placeholder="如 750×1500mm" />
       </label>
       <label class="field">
         <span class="field__label">花色</span>
-        <input v-model="filters.colorPattern" type="text" placeholder="如 浅灰" />
+        <Input v-model:value="filters.colorPattern" placeholder="如 浅灰" />
       </label>
       <label class="field">
         <span class="field__label">空间</span>
-        <select v-model="filters.space">
-          <option value="">全部</option>
-          <option v-for="item in spaces" :key="item.key" :value="item.key">
+        <Select v-model:value="filters.space" placeholder="全部" allow-clear>
+          <Select.Option v-for="item in spaces" :key="item.key" :value="item.key">
             {{ item.label }}
-          </option>
-        </select>
+          </Select.Option>
+        </Select>
       </label>
       <label class="field">
         <span class="field__label">风格</span>
-        <select v-model="filters.style">
-          <option value="">全部</option>
-          <option v-for="item in styles" :key="item.key" :value="item.key">
+        <Select v-model:value="filters.style" placeholder="全部" allow-clear>
+          <Select.Option v-for="item in styles" :key="item.key" :value="item.key">
             {{ item.label }}
-          </option>
-        </select>
+          </Select.Option>
+        </Select>
       </label>
       <label class="field field--narrow">
         <span class="field__label">价格下限</span>
-        <input
+        <InputNumber
           :value="filters.priceMin"
-          type="number"
-          min="0"
-          @input="filters.priceMin = priceOf(($event.target as HTMLInputElement).value)"
+          :min="0"
+          @update:value="(v) => (filters.priceMin = priceOf(v ?? undefined))"
         />
       </label>
       <label class="field field--narrow">
         <span class="field__label">价格上限</span>
-        <input
+        <InputNumber
           :value="filters.priceMax"
-          type="number"
-          min="0"
-          @input="filters.priceMax = priceOf(($event.target as HTMLInputElement).value)"
+          :min="0"
+          @update:value="(v) => (filters.priceMax = priceOf(v ?? undefined))"
         />
       </label>
       <div class="actions">
-        <button type="submit" class="btn btn--primary">查询</button>
-        <button v-if="hasFilter" type="button" class="btn" @click="reset">清空</button>
+        <Button type="primary" html-type="submit">查询</Button>
+        <Button v-if="hasFilter" @click="reset">清空</Button>
       </div>
     </form>
 
@@ -252,65 +248,21 @@ onMounted(async () => {
   color: var(--color-text-secondary);
 }
 
-.field input,
-.field select {
-  height: var(--control-height);
-  padding: 0 var(--space-3);
-  border: 1px solid var(--color-border-strong);
-  border-radius: var(--radius-sm);
-  background: var(--color-surface);
-  color: var(--color-text);
-  font: inherit;
-  font-size: var(--text-sm);
-}
+/* ⚠️ 输入框 / 数字框 / 下拉 / 按钮**交给 antd** —— 这里不再自己写它们的样式。
+   尤其**不能留 `.field input` 这类选择器**:antd 的 `<Input>` 渲染出来的就是
+   `<input class="ant-input">`,那条规则会**照样命中它**,与 antd 自己的样式打架。
+   见 `openapi-verification.md` §68。
 
-.field input:focus-visible,
-.field select:focus-visible {
-  outline: 2px solid var(--color-focus);
-  outline-offset: 1px;
-  border-color: var(--color-primary);
+   这里只保留**排版**:让 antd 的控件在格子里铺满。 */
+.field :deep(.ant-input),
+.field :deep(.ant-input-number),
+.field :deep(.ant-select) {
+  width: 100%;
 }
 
 .actions {
   display: flex;
   gap: var(--space-2);
-}
-
-/* ── 按钮 ───────────────────────────────────────────────────────────────── */
-.btn {
-  height: var(--control-height);
-  padding: 0 var(--space-4);
-  border: 1px solid var(--color-border-strong);
-  border-radius: var(--radius-sm);
-  background: var(--color-surface);
-  color: var(--color-text);
-  font: inherit;
-  font-size: var(--text-sm);
-  cursor: pointer;
-  transition: background var(--dur-fast) var(--ease-standard);
-}
-
-.btn:hover:not(:disabled) {
-  border-color: var(--color-primary);
-  color: var(--color-primary);
-}
-
-.btn--primary {
-  background: var(--color-primary);
-  border-color: var(--color-primary);
-  color: var(--color-on-primary);
-  font-weight: 600;
-}
-
-.btn--primary:hover:not(:disabled) {
-  background: var(--color-primary-hover);
-  border-color: var(--color-primary-hover);
-  color: var(--color-on-primary);
-}
-
-.btn:disabled {
-  opacity: 0.45;
-  cursor: default;
 }
 
 /* ── 结果 ───────────────────────────────────────────────────────────────── */
