@@ -87,6 +87,23 @@ function queryParamNames(operation: Operation): string[] {
 // 契约一致性:请求参数与请求体
 // ----------------------------------------------------------------------
 
+/**
+ * 确认框 —— **这一层刻意 mock 掉**。
+ *
+ * 页面只负责两件事:**调它**、**尊重它的答案**;弹窗本身长什么样、点了会怎样,
+ * 由 `tests/appConfirm.spec.ts` **单独驱动真的 `Modal`** 去覆盖(4 条)。
+ * ⇒ 这里 mock 掉它,**页面测试的断言一条没删**(从"stub `window.confirm`"
+ *   换成"stub `appConfirm`",检的东西完全一样)。
+ * 见 `openapi-verification.md` §70.7。
+ */
+const appConfirm = vi.fn()
+vi.mock('@/components/base/AppConfirm', async () => {
+  const actual = await vi.importActual<typeof import('../src/components/base/AppConfirm')>(
+    '../src/components/base/AppConfirm',
+  )
+  return { ...actual, appConfirm: (...args: unknown[]) => appConfirm(...args) }
+})
+
 const listProducts = vi.fn()
 const createProduct = vi.fn()
 const getProduct = vi.fn()
@@ -251,7 +268,8 @@ function mountWithRows(role: 'super_admin' | 'operator' | 'editor') {
 beforeEach(() => {
   vi.clearAllMocks()
   listProducts.mockResolvedValue({ list: [], total: 0, page: 1, size: 10 })
-  window.confirm = vi.fn(() => true)
+  // 默认"点了确定" —— 与原来 `window.confirm = vi.fn(() => true)` 同义
+  appConfirm.mockResolvedValue(true)
 })
 
 afterEach(() => {
@@ -326,14 +344,15 @@ describe('错误提示', () => {
   })
 
   it('删除要先确认 —— 不可撤销的操作不该一点就走', async () => {
-    const confirmSpy = vi.fn(() => false)
-    window.confirm = confirmSpy
+    // 用户在确认框上点了"取消"
+    appConfirm.mockResolvedValue(false)
     const { wrapper } = await mountWithRows('operator')
 
     const removeButton = wrapper.findAll('button').find((button) => button.text() === '删除')
     await removeButton!.trigger('click')
+    await flushPromises()
 
-    expect(confirmSpy).toHaveBeenCalled()
+    expect(appConfirm).toHaveBeenCalled()
     expect(deleteProduct).not.toHaveBeenCalled()
   })
 })

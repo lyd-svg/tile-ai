@@ -414,6 +414,8 @@ C 端 12 页的清单按用户旅程排,但**顺序可以停在任何一步** �
 
 | **G1.5** | 2026-10-03 | **立 antd 测试样板** —— `AdminComboEditView` 的**部位下拉**迁 `Select`,并**改写**对应用例(断言强度未降);产出 **`tests/helpers/antd.ts`**(三条实测规则) | 未提交 | **29 / 384 全绿**(条数**未变** —— 是改写不是删) | 不适用(测试自身) | `AdminComboEditView.vue` · `tests/adminCombos.spec.ts` · **新增** `tests/helpers/antd.ts` | 构建通过 | ⚠️ **"`mount` 不挂 document"那条未实测**(写进 helper 注释里了);该页其余控件未迁 |
 
+| **G2-1** | 2026-10-03 | **产品库列表:删除改用 `appConfirm`** —— `window.confirm(...)` → `await appConfirm({...})`(机械替换);测试从"stub `window.confirm`"改为"**stub `appConfirm`**" | 未提交 | **30 / 388 全绿** | **待你在 `/admin/products` 点删除** | `AdminProductsView.vue` · `tests/adminProducts.spec.ts` | 构建通过;断言**一条未删** | 该页**其余控件未迁**;测试里 `appConfirm` 是 mock,真弹窗由 `appConfirm.spec.ts` 驱动 |
+
 **表怎么填(示例)**:
 
 | 字段 | 填什么 |

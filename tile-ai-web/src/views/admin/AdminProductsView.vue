@@ -7,6 +7,7 @@ import { deleteProduct, listProducts, setProductStatus } from '@/api/admin/produ
 import type { Sku } from '@/api/admin/products'
 import type { ProductStatus } from '@/api/types'
 import { useAdminAuthStore } from '@/stores/adminAuth'
+import { appConfirm } from '@/components/base/AppConfirm'
 
 /**
  * 产品库列表(F-0.3)。
@@ -89,7 +90,18 @@ async function toggleStatus(row: Sku) {
 
 async function remove(row: Sku) {
   if (row.id === undefined) return
-  if (!window.confirm(`确认删除 ${row.sku}?该操作不可撤销。`)) return
+  // ⚠️ **必须 `await`** —— 忘了的话拿到的是个恒真的 Promise,确认框还没点就删了
+  // (静默错误,不报错)。见 `components/base/AppConfirm.ts` 的文件头。
+  if (
+    !(await appConfirm({
+      title: '确认删除',
+      content: `确认删除 ${row.sku}?该操作不可撤销。`,
+      okText: '删除',
+      danger: true,
+    }))
+  ) {
+    return
+  }
 
   notice.value = ''
   errorText.value = ''
