@@ -5,6 +5,7 @@ import { createDict, deleteDict, listAdminDicts, updateDict } from '@/api/admin/
 import type { Dict, DictType, DictUpsert } from '@/api/admin/dicts'
 import { validationErrorsOf } from '@/api/errors'
 import { useAdminAuthStore } from '@/stores/adminAuth'
+import { appConfirm } from '@/components/base/AppConfirm'
 
 /**
  * 数据字典(F-0.8 下半)。空间类型与装修风格由这里维护,**前端不硬编码**
@@ -136,7 +137,16 @@ async function submit() {
 
 async function remove(row: Dict) {
   if (row.id === undefined) return
-  if (!window.confirm(`确认删除字典项「${row.label}」(${row.key})?该操作不可撤销。`)) return
+  if (
+    !(await appConfirm({
+      title: '确认删除字典项',
+      content: `确认删除「${row.label}」(${row.key})?该操作不可撤销。`,
+      okText: '删除',
+      danger: true,
+    }))
+  ) {
+    return
+  }
 
   notice.value = ''
   errorText.value = ''

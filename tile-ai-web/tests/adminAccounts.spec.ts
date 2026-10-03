@@ -196,10 +196,19 @@ function rowButtons(wrapper: ReturnType<typeof mount>, rowIndex: number) {
   return wrapper.findAll('tbody tr')[rowIndex].findAll('button')
 }
 
+// 确认框:页面只负责"调它 + 尊重答案";弹窗本身由 tests/appConfirm.spec.ts 驱动真 Modal 覆盖。
+const appConfirm = vi.fn()
+vi.mock('@/components/base/AppConfirm', async () => {
+  const actual = await vi.importActual<typeof import('../src/components/base/AppConfirm')>(
+    '../src/components/base/AppConfirm',
+  )
+  return { ...actual, appConfirm: (...args: unknown[]) => appConfirm(...args) }
+})
+
 beforeEach(() => {
   vi.clearAllMocks()
   listAccounts.mockResolvedValue({ list: [], total: 0, page: 1, size: 10 })
-  window.confirm = vi.fn(() => true)
+  appConfirm.mockResolvedValue(true)
 })
 
 afterEach(() => {

@@ -7,6 +7,7 @@ import { validationErrorsOf } from '@/api/errors'
 import type { ErrorItem } from '@/api/errors'
 import type { AdminUserView, Role } from '@/api/types'
 import { useAdminAuthStore } from '@/stores/adminAuth'
+import { appConfirm } from '@/components/base/AppConfirm'
 
 /**
  * 账号与权限(F-0.2)。后台里**权限最高的一个页面** —— 整组只有 `account:manage`。
@@ -161,7 +162,16 @@ async function save() {
 }
 
 async function remove(row: AdminUserView) {
-  if (!window.confirm(`确认删除账号 ${row.username}?该操作不可撤销。`)) return
+  if (
+    !(await appConfirm({
+      title: '确认删除账号',
+      content: `确认删除 ${row.username}?该操作不可撤销。`,
+      okText: '删除',
+      danger: true,
+    }))
+  ) {
+    return
+  }
 
   clearMessages()
   try {

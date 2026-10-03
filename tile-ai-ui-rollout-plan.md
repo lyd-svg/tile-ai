@@ -416,6 +416,8 @@ C 端 12 页的清单按用户旅程排,但**顺序可以停在任何一步** �
 
 | **G2-1** | 2026-10-03 | **产品库列表:删除改用 `appConfirm`** —— `window.confirm(...)` → `await appConfirm({...})`(机械替换);测试从"stub `window.confirm`"改为"**stub `appConfirm`**" | 未提交 | **30 / 388 全绿** | **待你在 `/admin/products` 点删除** | `AdminProductsView.vue` · `tests/adminProducts.spec.ts` | 构建通过;断言**一条未删** | 该页**其余控件未迁**;测试里 `appConfirm` 是 mock,真弹窗由 `appConfirm.spec.ts` 驱动 |
 
+| **G2-2~7** | 2026-10-03 | **剩下 6 个页面一次做完** —— 账号 / 搭配 / 字典 / 陈设 / 户型模板 / **方案详情(2 处:删方案 + 废除分享链接)** 全部改用 `appConfirm` | 未提交 | **30 / 388 全绿** | **待你浏览器验收** | 6 个 `.vue` + 6 个 `.spec.ts` | 构建通过;**测试断言一条未删**(只换 stub 的接缝) | ✅ **`window.confirm` 已从 `src` 与 `tests` 双双绝迹**(核对时已排除注释行) |
+
 **表怎么填(示例)**:
 
 | 字段 | 填什么 |

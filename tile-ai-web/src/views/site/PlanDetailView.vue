@@ -15,6 +15,7 @@ import { listDictsOfType } from '@/api/dicts'
 import { validationErrorsOf } from '@/api/errors'
 import type { ErrorItem } from '@/api/errors'
 import type { PlanDetail, PlanImage, QuoteResult } from '@/api/types'
+import { appConfirm } from '@/components/base/AppConfirm'
 
 /**
  * 方案详情(F-1.9 + F-1.8)。需登录。
@@ -298,7 +299,16 @@ async function copyAsNew() {
 async function remove() {
   if (planId.value === null) return
   // 二次确认在前端 —— 契约把这句话写在 DELETE 的 description 里(PRD §5.6)
-  if (!window.confirm(`确认删除「${plan.value?.name ?? ''}」?该操作不可撤销。`)) return
+  if (
+    !(await appConfirm({
+      title: '确认删除方案',
+      content: `确认删除「${plan.value?.name ?? ''}」?该操作不可撤销。`,
+      okText: '删除',
+      danger: true,
+    }))
+  ) {
+    return
+  }
 
   clearMessages()
   busy.value = true
@@ -378,7 +388,18 @@ async function copyShareLink() {
 async function revokeShareLink() {
   if (planId.value === null) return
   // 二次确认在前端:这个动作影响的是**已经在别人手里**的那条链接,不可撤销
-  if (!window.confirm('确认废除分享链接?已经在别人手里的那条链接会立刻打不开。')) return
+  // ⚠️ 这一句要**说清后果**:这个动作影响的是**已经在别人手里**的那条链接,
+  // 而且不可撤销 —— 所以正文里点明"立刻打不开",别让它看起来像个普通开关。
+  if (
+    !(await appConfirm({
+      title: '确认废除分享链接',
+      content: '已经在别人手里的那条链接会立刻打不开,且不可恢复。',
+      okText: '废除',
+      danger: true,
+    }))
+  ) {
+    return
+  }
 
   clearMessages()
   revoking.value = true

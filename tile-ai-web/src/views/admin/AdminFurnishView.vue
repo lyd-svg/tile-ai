@@ -6,6 +6,7 @@ import type { Dict } from '@/api/admin/dicts'
 import { deleteFurnishStyle, listFurnishStyles, upsertFurnishStyle } from '@/api/admin/furnish'
 import type { FurnishStyle } from '@/api/admin/furnish'
 import { useAdminAuthStore } from '@/stores/adminAuth'
+import { appConfirm } from '@/components/base/AppConfirm'
 import type { ProductStatus } from '@/api/types'
 
 /**
@@ -177,7 +178,16 @@ async function save() {
 async function remove() {
   const config = selectedConfig.value
   if (!config || config.id === undefined) return
-  if (!window.confirm('确认删除这条陈设配置?该操作不可撤销。')) return
+  if (
+    !(await appConfirm({
+      title: '确认删除陈设配置',
+      content: '确认删除这条陈设配置?该操作不可撤销。',
+      okText: '删除',
+      danger: true,
+    }))
+  ) {
+    return
+  }
 
   notice.value = ''
   errorText.value = ''

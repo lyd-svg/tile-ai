@@ -142,9 +142,18 @@ const TEMPLATE_WITH_AREAS = {
   },
 }
 
+// 确认框:页面只负责"调它 + 尊重答案";弹窗本身由 tests/appConfirm.spec.ts 驱动真 Modal 覆盖。
+const appConfirm = vi.fn()
+vi.mock('@/components/base/AppConfirm', async () => {
+  const actual = await vi.importActual<typeof import('../src/components/base/AppConfirm')>(
+    '../src/components/base/AppConfirm',
+  )
+  return { ...actual, appConfirm: (...args: unknown[]) => appConfirm(...args) }
+})
+
 beforeEach(() => {
   vi.clearAllMocks()
-  window.confirm = vi.fn(() => true)
+  appConfirm.mockResolvedValue(true)
   listAdminDicts.mockResolvedValue([{ type: 'space', key: 'bathroom', label: '卫生间' }])
 })
 
@@ -188,7 +197,7 @@ describe('列表', () => {
       page: 1,
       size: 10,
     })
-    window.confirm = vi.fn(() => false)
+    appConfirm.mockResolvedValue(false)
 
     const wrapper = await mountList()
     await buttonWith(wrapper, '删除')!.trigger('click')

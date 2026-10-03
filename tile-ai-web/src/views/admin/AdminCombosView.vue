@@ -6,6 +6,7 @@ import { deleteCombo, listCombos } from '@/api/admin/combos'
 import { listAdminDicts } from '@/api/admin/dicts'
 import type { Dict } from '@/api/admin/dicts'
 import { useAdminAuthStore } from '@/stores/adminAuth'
+import { appConfirm } from '@/components/base/AppConfirm'
 import type { Combo } from '@/api/types'
 
 /**
@@ -101,7 +102,16 @@ function goPage(target: number) {
 }
 
 async function remove(row: Combo) {
-  if (!window.confirm(`确认删除搭配「${row.name}」?该操作不可撤销。`)) return
+  if (
+    !(await appConfirm({
+      title: '确认删除搭配',
+      content: `确认删除「${row.name}」?该操作不可撤销。`,
+      okText: '删除',
+      danger: true,
+    }))
+  ) {
+    return
+  }
   notice.value = ''
   errorText.value = ''
   try {

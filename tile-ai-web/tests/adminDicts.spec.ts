@@ -102,9 +102,18 @@ function buttonWith(wrapper: Awaited<ReturnType<typeof mountAs>>, text: string) 
   return wrapper.findAll('button').find((button) => button.text().includes(text))
 }
 
+// 确认框:页面只负责"调它 + 尊重答案";弹窗本身由 tests/appConfirm.spec.ts 驱动真 Modal 覆盖。
+const appConfirm = vi.fn()
+vi.mock('@/components/base/AppConfirm', async () => {
+  const actual = await vi.importActual<typeof import('../src/components/base/AppConfirm')>(
+    '../src/components/base/AppConfirm',
+  )
+  return { ...actual, appConfirm: (...args: unknown[]) => appConfirm(...args) }
+})
+
 beforeEach(() => {
   vi.clearAllMocks()
-  window.confirm = vi.fn(() => true)
+  appConfirm.mockResolvedValue(true)
 })
 
 describe('契约一致性', () => {
@@ -200,7 +209,7 @@ describe('行为', () => {
     listAdminDicts.mockResolvedValue([
       { id: 7, type: 'space', key: 'living_room', label: '客厅', status: 'enabled' },
     ])
-    window.confirm = vi.fn(() => false)
+    appConfirm.mockResolvedValue(false)
 
     const wrapper = await mountAs('super_admin')
     await buttonWith(wrapper, '删除')!.trigger('click')

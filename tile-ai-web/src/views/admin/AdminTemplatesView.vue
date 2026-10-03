@@ -4,6 +4,7 @@ import { useRouter } from 'vue-router'
 
 import { deleteTemplate, listTemplates } from '@/api/admin/templates'
 import { useAdminAuthStore } from '@/stores/adminAuth'
+import { appConfirm } from '@/components/base/AppConfirm'
 import type { UnitTemplate } from '@/api/types'
 
 /**
@@ -72,7 +73,16 @@ function goPage(target: number) {
 }
 
 async function remove(row: UnitTemplate) {
-  if (!window.confirm(`确认删除户型模板「${row.name}」?该操作不可撤销。`)) return
+  if (
+    !(await appConfirm({
+      title: '确认删除户型模板',
+      content: `确认删除「${row.name}」?该操作不可撤销。`,
+      okText: '删除',
+      danger: true,
+    }))
+  ) {
+    return
+  }
   notice.value = ''
   errorText.value = ''
   try {

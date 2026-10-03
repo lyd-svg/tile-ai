@@ -153,10 +153,18 @@ function shareLinkValue(wrapper: Awaited<ReturnType<typeof mountView>>['wrapper'
   return input.exists() ? (input.element as HTMLInputElement).value : ''
 }
 
+// 确认框:页面只负责"调它 + 尊重答案";弹窗本身由 tests/appConfirm.spec.ts 驱动真 Modal 覆盖。
+const appConfirm = vi.fn()
+vi.mock('@/components/base/AppConfirm', async () => {
+  const actual = await vi.importActual<typeof import('../src/components/base/AppConfirm')>(
+    '../src/components/base/AppConfirm',
+  )
+  return { ...actual, appConfirm: (...args: unknown[]) => appConfirm(...args) }
+})
+
 beforeEach(() => {
   vi.clearAllMocks()
-  // happy-dom 里没有 `window.confirm`,直接赋值(与 adminProducts.spec.ts 同一写法)
-  window.confirm = vi.fn(() => true)
+  appConfirm.mockResolvedValue(true)
   Object.defineProperty(window.navigator, 'clipboard', {
     value: { writeText },
     configurable: true,
@@ -406,14 +414,14 @@ describe('另存为与删除', () => {
   })
 
   it('删除的二次确认返回否 ⇒ 一个请求都不发', async () => {
-    const confirmSpy = vi.fn(() => false)
-    window.confirm = confirmSpy
+    // 用户在确认框上点了"取消"
+    appConfirm.mockResolvedValue(false)
     const { wrapper } = await mountView()
 
     await buttonByText(wrapper, '删除').trigger('click')
     await flushPromises()
 
-    expect(confirmSpy).toHaveBeenCalled()
+    expect(appConfirm).toHaveBeenCalled()
     expect(deletePlan).not.toHaveBeenCalled()
   })
 
@@ -510,15 +518,15 @@ describe('分享(F-1.10)', () => {
   })
 
   it('废除的二次确认返回否 ⇒ 一个请求都不发,链接还在', async () => {
-    const confirmSpy = vi.fn(() => false)
-    window.confirm = confirmSpy
+    // 用户在确认框上点了"取消"
+    appConfirm.mockResolvedValue(false)
     getPlan.mockResolvedValue({ ...DETAIL, shareToken: 'Tok-42' })
     const { wrapper } = await mountView()
 
     await buttonByText(wrapper, '废除链接').trigger('click')
     await flushPromises()
 
-    expect(confirmSpy).toHaveBeenCalled()
+    expect(appConfirm).toHaveBeenCalled()
     expect(revokeShare).not.toHaveBeenCalled()
     expect(wrapper.find('.share-link').exists()).toBe(true)
   })
