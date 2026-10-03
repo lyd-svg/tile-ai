@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { Skeleton } from 'ant-design-vue'
+import { Button, Skeleton } from 'ant-design-vue'
 import { computed, onMounted, reactive, ref } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 
@@ -298,7 +298,7 @@ onMounted(async () => {
               名称
               <input v-model="space.name" type="text" placeholder="如 主卫" />
             </label>
-            <button type="button" class="danger" @click="removeSpace(spaceIndex)">移除空间</button>
+            <Button danger @click="removeSpace(spaceIndex)">移除空间</Button>
           </div>
 
           <div class="row">
@@ -346,19 +346,17 @@ onMounted(async () => {
                 高(米)
                 <input v-model="opening.h" type="number" step="0.01" />
               </label>
-              <button type="button" @click="removeOpening(spaceIndex, openingIndex)">移除</button>
+              <Button @click="removeOpening(spaceIndex, openingIndex)">移除</Button>
             </li>
           </ul>
-          <button type="button" class="ghost" @click="addOpening(spaceIndex)">加一个开口</button>
+          <Button @click="addOpening(spaceIndex)">加一个开口</Button>
         </li>
       </ul>
 
-      <button type="button" class="ghost" @click="addSpace">加一个空间</button>
+      <Button @click="addSpace">加一个空间</Button>
 
       <div class="actions">
-        <button v-if="canWrite" type="submit" class="primary" :disabled="saving">
-          {{ saving ? '保存中…' : '保存' }}
-        </button>
+        <Button v-if="canWrite" type="primary" html-type="submit" :loading="saving">保存</Button>
         <span v-else class="hint">当前账号没有修改权限。</span>
       </div>
     </form>
@@ -499,56 +497,9 @@ select:focus-visible {
   padding: 0;
 }
 
-/* ── 按钮 ───────────────────────────────────────────────────────────────── */
-button {
-  height: var(--control-height);
-  padding: 0 var(--space-4);
-  border: 1px solid var(--color-border-strong);
-  border-radius: var(--radius-sm);
-  background: var(--color-surface);
-  color: var(--color-text);
-  font: inherit;
-  font-size: var(--text-sm);
-  cursor: pointer;
-  transition:
-    border-color var(--dur-fast) var(--ease-standard),
-    background var(--dur-fast) var(--ease-standard);
-}
-
-button:hover:not(:disabled) {
-  border-color: var(--color-primary);
-  color: var(--color-primary);
-}
-
-button.primary {
-  border-color: var(--color-primary);
-  background: var(--color-primary);
-  color: var(--color-on-primary);
-  font-weight: 600;
-}
-
-button.primary:hover:not(:disabled) {
-  background: var(--color-primary-hover);
-  border-color: var(--color-primary-hover);
-  color: var(--color-on-primary);
-}
-
-/* 移除 / 删除是危险操作 —— 危险色 + 明确的文字 */
-button.danger {
-  border-color: var(--color-danger);
-  color: var(--color-danger);
-}
-
-button.danger:hover:not(:disabled) {
-  background: var(--color-danger-soft);
-  border-color: var(--color-danger);
-  color: var(--color-danger);
-}
-
-button:disabled {
-  opacity: 0.45;
-  cursor: not-allowed;
-}
+/* ⚠️ **本页按钮已全部迁 antd**(移除空间 / 移除 / 加一个开口 / 加一个空间 / 保存)——
+   不再写样式(§70.9)。原来这里是**裸 `button {}`**,它会照样命中 antd 的
+   `<button class="ant-btn">` ⇒ 整块删掉(`tile-ai-design.md` §5.6)。 */
 
 .actions {
   display: flex;

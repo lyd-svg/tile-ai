@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { Select, Skeleton } from 'ant-design-vue'
+import { Button, Select, Skeleton } from 'ant-design-vue'
 import { computed, onMounted, reactive, ref } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 
@@ -294,7 +294,7 @@ onMounted(async () => {
               瓷砖编号
               <input v-model="item.sku" type="text" placeholder="如 TL-1001" />
             </label>
-            <button type="button" class="ghost" @click="searchProducts(index)">查</button>
+            <Button @click="searchProducts(index)">查</Button>
             <span v-if="item.name" class="hint">{{ item.name }}</span>
           </div>
 
@@ -313,7 +313,7 @@ onMounted(async () => {
               备注(可选)
               <input v-model="item.note" type="text" />
             </label>
-            <button type="button" class="danger" @click="removeItem(index)">移除</button>
+            <Button danger @click="removeItem(index)">移除</Button>
           </div>
 
           <ul v-if="candidateFor === index && candidates.length" class="candidates">
@@ -327,12 +327,10 @@ onMounted(async () => {
         </li>
       </ul>
 
-      <button type="button" class="ghost" @click="addItem">加一项</button>
+      <Button @click="addItem">加一项</Button>
 
       <div class="actions">
-        <button v-if="canWrite" type="submit" class="primary" :disabled="saving">
-          {{ saving ? '保存中…' : '保存' }}
-        </button>
+        <Button v-if="canWrite" type="primary" html-type="submit" :loading="saving">保存</Button>
         <span v-else class="hint">当前账号没有修改权限。</span>
       </div>
     </form>
@@ -500,55 +498,10 @@ select:focus-visible {
 }
 
 /* ── 按钮 ───────────────────────────────────────────────────────────────── */
-button {
-  height: var(--control-height);
-  padding: 0 var(--space-4);
-  border: 1px solid var(--color-border-strong);
-  border-radius: var(--radius-sm);
-  background: var(--color-surface);
-  color: var(--color-text);
-  font: inherit;
-  font-size: var(--text-sm);
-  cursor: pointer;
-  transition:
-    border-color var(--dur-fast) var(--ease-standard),
-    background var(--dur-fast) var(--ease-standard);
-}
-
-button:hover:not(:disabled) {
-  border-color: var(--color-primary);
-  color: var(--color-primary);
-}
-
-button.primary {
-  border-color: var(--color-primary);
-  background: var(--color-primary);
-  color: var(--color-on-primary);
-  font-weight: 600;
-}
-
-button.primary:hover:not(:disabled) {
-  background: var(--color-primary-hover);
-  border-color: var(--color-primary-hover);
-  color: var(--color-on-primary);
-}
-
-/* 移除 / 删除是危险操作 —— 危险色 + 明确的文字,不靠图标暗示 */
-button.danger {
-  border-color: var(--color-danger);
-  color: var(--color-danger);
-}
-
-button.danger:hover:not(:disabled) {
-  background: var(--color-danger-soft);
-  border-color: var(--color-danger);
-  color: var(--color-danger);
-}
-
-button:disabled {
-  opacity: 0.45;
-  cursor: not-allowed;
-}
+/* ⚠️ **本页按钮已全部迁 antd**(查 / 移除 / 加一项 / 保存)—— 不再写样式(§70.9)。
+   原来这里是**裸 `button {}`**:它会照样命中 antd 渲染出的 `<button class="ant-btn">`
+   ⇒ 整块删掉(`tile-ai-design.md` §5.6)。
+   ⚠️ 上面的 **`.link`(候选产品那几个)是自定义交互元素**,刻意保留、不迁。 */
 
 .actions {
   display: flex;

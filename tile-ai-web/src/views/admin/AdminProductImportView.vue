@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import { Button } from 'ant-design-vue'
 import { computed, onBeforeUnmount, ref } from 'vue'
 
 import {
@@ -203,9 +204,9 @@ onBeforeUnmount(cancelPolling)
       </fieldset>
 
       <div class="actions">
-        <button v-if="canImport" type="button" class="primary" :disabled="uploading" @click="start">
-          {{ uploading ? '上传中…' : '开始导入' }}
-        </button>
+        <Button v-if="canImport" type="primary" :loading="uploading" @click="start">
+          开始导入
+        </Button>
         <span v-else class="hint">当前账号没有批量导入权限。</span>
       </div>
     </div>
@@ -243,7 +244,7 @@ onBeforeUnmount(cancelPolling)
         </table>
 
         <div class="actions">
-          <button type="button" @click="exportErrors">导出错误报告(CSV)</button>
+          <Button @click="exportErrors">导出错误报告(CSV)</Button>
         </div>
         <p class="hint">导出的就是上面这些行(行号 + 原因),改完那一行再传一次即可。</p>
       </template>
@@ -421,41 +422,7 @@ th {
   margin-top: var(--space-4);
 }
 
-button {
-  height: var(--control-height);
-  padding: 0 var(--space-4);
-  border: 1px solid var(--color-border-strong);
-  border-radius: var(--radius-sm);
-  background: var(--color-surface);
-  color: var(--color-text);
-  font: inherit;
-  font-size: var(--text-sm);
-  cursor: pointer;
-  transition:
-    border-color var(--dur-fast) var(--ease-standard),
-    background var(--dur-fast) var(--ease-standard);
-}
-
-button:hover:not(:disabled) {
-  border-color: var(--color-primary);
-  color: var(--color-primary);
-}
-
-button.primary {
-  border-color: var(--color-primary);
-  background: var(--color-primary);
-  color: var(--color-on-primary);
-  font-weight: 600;
-}
-
-button.primary:hover:not(:disabled) {
-  background: var(--color-primary-hover);
-  border-color: var(--color-primary-hover);
-  color: var(--color-on-primary);
-}
-
-button:disabled {
-  opacity: 0.45;
-  cursor: not-allowed;
-}
+/* ⚠️ **本页两个按钮已迁 antd**(开始导入 / 导出错误报告)—— 不再写样式(§70.9)。
+   原来这里是**裸 `button {}`**,会照样命中 antd 的 `<button class="ant-btn">`
+   ⇒ 整块删掉(`tile-ai-design.md` §5.6)。 */
 </style>
