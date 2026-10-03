@@ -55,6 +55,29 @@ export interface AdminUserView {
   createdAt?: string
 }
 
+/**
+ * 后台操作日志(对外视图)。§8.1 t_operation_log
+ *
+ * ⚠️ **`adminUsername` 表里不存** —— 后端按 `adminId` 读时富化(§8.1)。
+ * 账号已被**物理删除**时它是 null,渲染要兜底成「已删除账号 #N」而不是留空白
+ * (为什么富化放服务端:看日志要 `log:read`,而运营没有 `account:manage`,
+ * 前端自己查不出用户名)。
+ */
+export interface OperationLog {
+  id: number
+  adminId?: number
+  adminUsername?: string | null
+  /** 动作标识,如 `product.delete` */
+  action: string
+  targetType?: string
+  /** 目标资源 ID。**是 string** —— 契约如此([id] 走路径时是数字,这里是字符串) */
+  targetId?: string
+  /** 操作详情(JSON **对象**)。没有详情、或后端解析失败时为 null */
+  detail?: Record<string, unknown> | null
+  ip?: string
+  createdAt: string
+}
+
 /** 通用开关状态。§8.2 */
 export type ProductStatus = 'on_sale' | 'off_sale'
 

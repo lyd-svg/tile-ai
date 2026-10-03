@@ -199,14 +199,14 @@ const router = createRouter({
         {
           path: 'accounts',
           name: 'admin-accounts',
-          component: () => import('@/views/admin/AdminPlaceholderView.vue'),
-          meta: { task: 'F-0.2', title: '账号与权限' },
+          component: () => import('@/views/admin/AdminAccountsView.vue'),
+          meta: { title: '账号与权限' },
         },
         {
           path: 'logs',
           name: 'admin-logs',
-          component: () => import('@/views/admin/AdminPlaceholderView.vue'),
-          meta: { task: 'F-0.2', title: '操作日志' },
+          component: () => import('@/views/admin/AdminLogsView.vue'),
+          meta: { title: '操作日志' },
         },
       ],
     },
