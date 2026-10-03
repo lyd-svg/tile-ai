@@ -1,30 +1,27 @@
 /**
- * `appConfirm`(antd `Modal` 包装层)的测试 —— **G2 的配方验证**,见 `openapi-verification.md` §68。
+ * `appConfirm` 的测试 —— **G2 的样板**,见 `openapi-verification.md` §70.6。
  *
- * 这一个文件是**整批 `window.confirm` 迁移的样板**:8 个页面都要靠它。
- * 所以它不只测包装层,还负责回答一个问题:
- * **antd 的 `Modal.confirm` 在 happy-dom 里到底跑不跑得起来、怎么驱动。**
+ * 与上一版(测静态 `Modal.confirm`)的关键区别:
+ * **现在弹窗是一个组件,必须先挂宿主**。生产里宿主由 `App.vue` 挂在
+ * `<ConfigProvider>` 之内;这里单独挂一个。
  *
- * 与 `Select` 同源的三条规则(见 `tests/helpers/antd.ts`)在这里同样适用:
- * 弹层渲染到 portal ⇒ **必须查 `document`,不能用 `wrapper.find`**。
+ * 规则与 `Select` 同源(见 `tests/helpers/antd.ts`):弹层在 **portal** 里,
+ * ⇒ **必须查 `document`,不能用 `wrapper.find`**。
  */
 
-import { flushPromises } from '@vue/test-utils'
+import { flushPromises, mount } from '@vue/test-utils'
 import { afterEach, describe, expect, it } from 'vitest'
 
 import { appConfirm } from '../src/components/base/AppConfirm'
+import AppConfirmHost from '../src/components/base/AppConfirmHost.vue'
 
 /**
- * 在 portal 里按文案找一个按钮。
+ * 在 portal 里按文案找按钮。
  *
- * ⚠️ 查的是 `document` —— 确认框在 portal 里,`wrapper.find` 搜不到。
- *
- * ⚠️ **比对前必须把空白全部去掉**。antd 默认会在"两个汉字"的按钮里插空格
- *    (「确定」→「确 定」),而且它**不报错** —— 只是静默找不到。
- *
- *    生产里 `App.vue` 用 `ConfigProvider.config({ autoInsertSpaceInButton: false })` 关掉了它,
- *    但**本测试不挂 `App.vue`**,拿不到那个全局设置 —— 所以**这里必须自己去空白**,
- *    不是"双保险",是**唯一保险**。
+ * ⚠️ 查 `document` —— 弹窗在 portal 里。
+ * ⚠️ **比对前去掉全部空白**:antd 会给"两个汉字"的按钮插空格(「确 定」),
+ *    而且**不报错**。生产里 `App.vue` 关了那个开关,但**本测试不挂 `App.vue`**,
+ *    拿不到那条设置 —— 所以这里**必须**自己去空白。
  */
 function portalButton(text: string): HTMLElement | undefined {
   const normalize = (value: string) => value.replace(/\s+/g, '')
@@ -33,18 +30,30 @@ function portalButton(text: string): HTMLElement | undefined {
   )
 }
 
+/**
+ * 挂宿主。
+ *
+ * ⚠️ **不挂它,`appConfirm` 什么都弹不出来** —— 状态变了,但没有人渲染它。
+ * 这是"声明式"与"静态方法"最直接的区别。
+ */
+function mountHost() {
+  return mount(AppConfirmHost)
+}
+
 afterEach(() => {
-  // 弹层不会被自动回收 —— 不清掉,上一条的确认框会漏到下一条里
+  // 弹层不会被自动回收 —— 不清掉,上一条的弹窗会漏到下一条里
   document.body.innerHTML = ''
 })
 
-describe('appConfirm —— antd Modal 包装层', () => {
+describe('appConfirm —— 声明式确认框', () => {
   it('点「确定」→ true', async () => {
+    mountHost()
     const answer = appConfirm({ title: '确认删除', content: '该操作不可撤销', danger: true })
     await flushPromises()
 
-    // eslint-disable-next-line no-console
-    console.log('===MODAL-DOM===' + document.body.innerHTML.slice(0, 2500))
+    // 弹窗走 portal:查 document,不是 wrapper
+    expect(document.body.textContent).toContain('确认删除')
+    expect(document.body.textContent).toContain('该操作不可撤销')
 
     const ok = portalButton('确定')
     expect(ok).toBeTruthy()
@@ -55,6 +64,7 @@ describe('appConfirm —— antd Modal 包装层', () => {
   })
 
   it('点「取消」→ false', async () => {
+    mountHost()
     const answer = appConfirm({ title: '确认删除' })
     await flushPromises()
 
@@ -63,6 +73,42 @@ describe('appConfirm —— antd Modal 包装层', () => {
     cancel!.click()
     await flushPromises()
 
+    expect(await answer).toBe(false)
+  })
+
+  it('上一个没答完又弹一个时,上一个判为「取消」—— 不会永远挂着', async () => {
+    mountHost()
+
+    const first = appConfirm({ title: '第一个' })
+    await flushPromises()
+
+    // 还在等答案时又弹一个
+    const second = appConfirm({ title: '第二个' })
+    await flushPromises()
+
+    // ⚠️ 被顶掉的那个**必须 resolve** —— 否则调用处的 `await` 永远不返回,
+    // 界面上表现为"点了没反应",而且不会有任何报错。
+    expect(await first).toBe(false)
+
+    // 页面上应当只剩"第二个"这一个弹窗(声明式的好处:同一个 Modal 实例)
+    expect(document.body.textContent).toContain('第二个')
+    expect(document.body.textContent).not.toContain('第一个')
+
+    portalButton('确定')!.click()
+    await flushPromises()
+    expect(await second).toBe(true)
+  })
+
+  it('自定义按钮文案生效', async () => {
+    mountHost()
+    const answer = appConfirm({ title: '废除链接', okText: '废除', cancelText: '算了' })
+    await flushPromises()
+
+    expect(portalButton('废除')).toBeTruthy()
+    expect(portalButton('算了')).toBeTruthy()
+
+    portalButton('算了')!.click()
+    await flushPromises()
     expect(await answer).toBe(false)
   })
 })

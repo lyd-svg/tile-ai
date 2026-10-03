@@ -1,21 +1,23 @@
 /**
- * 确认框 —— **antd `Modal` 的包装层**(阶段 G2 的第一个产出,见 `openapi-verification.md` §68)。
+ * 确认框 —— **状态与公开 API**(阶段 G2,见 `openapi-verification.md` §70.6)。
  *
- * ## 为什么要有这一层,而不是让 8 个页面各自调 `Modal.confirm`
+ * ## ⚠️ 为什么不是 `Modal.confirm`
  *
- * 1. **规范要求**:`tile-ai-design.md` §6.1 —— 页面不得直接 import antd 组件,
- *    全走 `src/components/` 包装层。
- * 2. **它把回调式 API 变回"同步式"**。原来页面里写的是:
- *    ```ts
- *    if (!window.confirm('确认删除?')) return
- *    await deleteX()
- *    ```
- *    而 antd 的 `Modal.confirm` 是**回调式**的 —— 直接用就得把 `deleteX()` 那段
- *    **搬进 `onOk` 回调**,那是一次真正的代码重构。
- *    包成 `Promise<boolean>` 之后,页面只需要把 `window.confirm(` 换成
- *    `await appConfirm({`,**其余一行不动**。
- * 3. **8 个页面共用一处** —— 要改文案、要接入主题、要统一"危险操作用红色确认按钮",
- *    只改这一个文件。
+ * antd 的**静态方法** `Modal.confirm` 是**脱离应用上下文**渲染的(自建根、挂到 body),
+ * 于是两件事都做不到(均为实测):
+ *   ① **拿不到主题** ⇒ 按钮会是 antd 默认蓝;
+ *   ② `<ConfigProvider :auto-insert-space-in-button="false">` **管不到它**
+ *      ⇒ 按钮文案渲染成「确 定」。
+ * 全局配置那条路也走不通(类型不兼容、且那个开关不在全局字段表里)。
+ *
+ * ⇒ **改成声明式**:本文件只放"状态 + Promise",**不 import antd**;
+ *   真正渲染的 `<Modal>` 放在 `AppConfirmHost.vue` 里,由 `App.vue` **挂在根上**
+ *   ——那样它就在 `<ConfigProvider>` 之内,**主题与空格一起解决**。
+ *
+ * ## 这层切法的好处
+ *
+ * - **页面侧与测试都不碰 antd** —— 它们只认识 `appConfirm()`;
+ * - 要换掉弹窗实现(或换 antd 版本),**只动宿主组件一个文件**。
  *
  * ## 用法
  *
@@ -23,11 +25,11 @@
  * if (!(await appConfirm({ title: '确认删除', content: `确认删除 ${row.sku}?`, danger: true }))) return
  * ```
  *
- * ⚠️ **调用处必须 `await`** —— 忘了 `await` 会拿到一个恒真的 Promise,
- * 于是**确认框还没点就已经执行了**。这是个静默错误,不会有任何报错。
+ * ⚠️ **调用处必须 `await`** —— 忘了会拿到一个恒真的 Promise,于是
+ * **确认框还没点就已经执行了**。这是静默错误,不会有任何报错。
  */
 
-import { Modal } from 'ant-design-vue'
+import { reactive } from 'vue'
 
 export interface AppConfirmOptions {
   /** 标题(短) */
@@ -40,22 +42,46 @@ export interface AppConfirmOptions {
   danger?: boolean
 }
 
+/** 宿主组件读的当前状态。`open` 为真时弹窗显示。 */
+export const confirmState = reactive({
+  open: false,
+  title: '',
+  content: '',
+  okText: '确定',
+  cancelText: '取消',
+  danger: false,
+})
+
+/** 正在等答案的那个 Promise 的 resolve —— 同一时刻只允许一个确认框。 */
+let pending: ((answer: boolean) => void) | null = null
+
 /**
- * 弹出确认框。**点了确定 → `true`;取消 / 关闭 → `false`。**
+ * 弹出确认框。**点了确定 → `true`;取消 / 关掉 → `false`。**
  *
  * ⚠️ 与 `window.confirm` 不同,它是**异步**的 —— 调用处要 `await`。
  */
 export function appConfirm(options: AppConfirmOptions): Promise<boolean> {
-  return new Promise((resolve) => {
-    Modal.confirm({
-      title: options.title,
-      content: options.content,
-      okText: options.okText ?? '确定',
-      cancelText: options.cancelText ?? '取消',
-      okType: options.danger ? 'danger' : 'primary',
-      // 遮罩点击 / ESC 关闭都算"取消" —— `window.confirm` 也是这个语义
-      onOk: () => resolve(true),
-      onCancel: () => resolve(false),
-    })
+  // 上一个还没答完就又弹一个 —— 把上一个**判为"取消"**再顶掉。
+  // 不这么做的话,那个 Promise **永远不 resolve**,调用处的 `await` 会一直挂着
+  // (页面上表现为"点了没反应",而且不会有任何报错)。
+  pending?.(false)
+
+  confirmState.open = true
+  confirmState.title = options.title
+  confirmState.content = options.content ?? ''
+  confirmState.okText = options.okText ?? '确定'
+  confirmState.cancelText = options.cancelText ?? '取消'
+  confirmState.danger = options.danger ?? false
+
+  return new Promise<boolean>((resolve) => {
+    pending = resolve
   })
+}
+
+/** 由宿主组件调用:用户在弹窗上做了选择。 */
+export function settleConfirm(answer: boolean): void {
+  confirmState.open = false
+  const resolve = pending
+  pending = null
+  resolve?.(answer)
 }

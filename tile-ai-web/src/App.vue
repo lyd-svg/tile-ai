@@ -4,6 +4,7 @@ import { computed, watchEffect } from 'vue'
 import { useRoute } from 'vue-router'
 
 import { themeFor, type AppThemeName } from '@/styles/antdTheme'
+import AppConfirmHost from '@/components/base/AppConfirmHost.vue'
 
 /**
  * 根外壳 —— **全站主题的唯一接线点**。
@@ -68,11 +69,11 @@ watchEffect(() => {
  * 而 ② 那个开关**在全局配置里根本没有**(`GlobalConfigProviderProps` 只有
  * `prefixCls` / `iconPrefixCls` / `getPopupContainer` / `theme`)。
  *
- * ⇒ **岔路(未决,见 `openapi-verification.md` §70)**:
- *   - **A. 自建声明式确认框**:用 `<Modal>` 组件(不是静态方法)+ 一个挂在根上的宿主,
- *     这样它**进得去上下文**,主题与空格两个问题**一起解决**。工程量约一个组件。
- *   - **B. 放弃 Modal**,确认框继续用别的做法。
- *   在定下来之前,`src/components/base/AppConfirm.ts` **不接入任何页面**。
+ * ⇒ **岔路已定(2026-10-03,用户选 A)**:自建**声明式**确认框 ——
+ *   `components/base/AppConfirmHost.vue`(渲染 `<Modal>`)+
+ *   `components/base/AppConfirm.ts`(纯状态与 Promise,不碰 antd),
+ *   宿主挂在**本文件的 `<ConfigProvider>` 之内**,从而**进得去上下文**,
+ *   主题与空格两个问题一起解决。见 `openapi-verification.md` §70.6。
  */
 </script>
 
@@ -86,5 +87,11 @@ watchEffect(() => {
        ⇒ 关掉它,全站按钮文案统一。 -->
   <ConfigProvider :theme="theme" :auto-insert-space-in-button="false">
     <RouterView />
+
+    <!-- 确认框宿主 —— 全项目**只挂这一处**,而且**必须在 `<ConfigProvider>` 之内**:
+         它靠上下文拿主题令牌与"不插空格"这条设置。放到外面就又变成
+         `Modal.confirm` 那种"脱上下文"的老问题(按钮会成默认蓝、文案成「确 定」)。
+         见 `src/components/base/AppConfirm.ts` 的文件头与 `openapi-verification.md` §70.6。 -->
+    <AppConfirmHost />
   </ConfigProvider>
 </template>
