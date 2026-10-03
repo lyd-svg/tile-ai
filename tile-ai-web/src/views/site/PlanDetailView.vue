@@ -151,9 +151,33 @@ const cover = computed<PlanImage | null>(() => {
   return list.find((image) => image.isCover) ?? list[0]
 })
 
-const thumbs = computed(() =>
-  (plan.value?.images ?? []).filter((image) => image.url !== cover.value?.url),
-)
+/** 全部效果图。**不排序也不筛选** —— 顺序由服务端给(封面在前,见 §8.4)。 */
+const gallery = computed<PlanImage[]>(() => plan.value?.images ?? [])
+
+/**
+ * 用户点开看的那一张。`null` = 没点过 ⇒ 显示封面。
+ *
+ * 为什么不直接用一个下标:契约**没规定** `images` 的顺序(只说第 1 张
+ * `view=default` 且 `isCover=true`)。用"点过就用点的、没点过就用封面"这种写法,
+ * 顺序变了也不会让默认显示的那张跟着变。
+ */
+const selected = ref<PlanImage | null>(null)
+
+/**
+ * 主图位置显示哪一张:**点过的那张(且它还在这一份结果里)**,否则封面。
+ *
+ * ⚠️ 那个"还在结果里"的判断不是多余的 —— 换一份方案、或换个分享令牌时,
+ * 组件实例会被复用,而 `selected` 里存的还是**上一份**的图。
+ * 少了这个判断,主图会显示别的方案的图,而且**不报错**。
+ * 用自愈式判据而不是"在加载处记得重置":后者要求每个改动 `images` 的地方都不能忘。
+ */
+const active = computed<PlanImage | null>(() => {
+  const chosen = selected.value
+  if (chosen && gallery.value.some((image) => image.url === chosen.url)) {
+    return chosen
+  }
+  return cover.value
+})
 
 /** 视角名 → 中文标签。**按 view 区分,不靠数组下标猜**(与 GenerateView 同口径)。 */
 function viewLabel(view?: string): string {
@@ -393,16 +417,25 @@ async function revokeShareLink() {
       <!-- ---------------------------- 效果图 ---------------------------- -->
       <section class="block">
         <h2>效果图</h2>
-        <template v-if="cover">
+        <template v-if="active">
           <div class="main">
-            <img :src="cover.url" :alt="viewLabel(cover.view)" />
-            <p class="caption">{{ viewLabel(cover.view) }}</p>
+            <img :src="active.url" :alt="viewLabel(active.view)" />
+            <p class="caption">{{ viewLabel(active.view) }}</p>
           </div>
-          <div v-if="thumbs.length" class="thumbs">
-            <figure v-for="image in thumbs" :key="image.url">
+          <!-- 多角度图:**点一下就换到主图位置**显示大图(与商品详情页同款交互)。
+               缩略图把**全部**图都列出来(含当前这张),这样点回封面也有路。 -->
+          <div v-if="gallery.length > 1" class="thumbs">
+            <button
+              v-for="image in gallery"
+              :key="image.url"
+              type="button"
+              :class="['thumb', { 'thumb--active': image.url === active.url }]"
+              :aria-pressed="image.url === active.url"
+              @click="selected = image"
+            >
               <img :src="image.url" :alt="viewLabel(image.view)" />
-              <figcaption>{{ viewLabel(image.view) }}</figcaption>
-            </figure>
+              <span class="thumb-cap">{{ viewLabel(image.view) }}</span>
+            </button>
           </div>
         </template>
         <p v-else class="hint">这份方案没有效果图。</p>
@@ -597,18 +630,36 @@ h2 {
   margin-top: 0.75rem;
 }
 
-.thumbs figure {
-  margin: 0;
+/* 缩略图是 button(可点)—— 盖掉全局 button 的边框/背景,只留图与说明 */
+.thumb {
+  display: flex;
+  flex-direction: column;
+  gap: 0.2rem;
+  width: 8rem;
+  padding: 0.2rem;
+  border: 2px solid transparent;
+  border-radius: 0.4rem;
+  background: none;
+  cursor: pointer;
 }
 
-.thumbs img {
-  width: 8rem;
+.thumb img {
+  width: 100%;
   height: 6rem;
   object-fit: cover;
-  border-radius: 0.35rem;
+  border-radius: 0.25rem;
 }
 
-.thumbs figcaption {
+/* 当前正在主图位置展示的那张 */
+.thumb--active {
+  border-color: #1d4ed8;
+}
+
+.thumb--active .thumb-cap {
+  color: #1d4ed8;
+}
+
+.thumb-cap {
   color: #6b7280;
   font-size: 0.75rem;
   text-align: center;

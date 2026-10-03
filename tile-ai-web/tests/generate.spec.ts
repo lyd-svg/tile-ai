@@ -293,7 +293,16 @@ describe('多角度图片', () => {
     // 封面是 default,另一张是 angle1;两张都渲染出来
     expect(wrapper.find('.main img').attributes('src')).toBe('/img/a.svg')
     expect(wrapper.find('.main .caption').text()).toBe('正面')
-    expect(wrapper.find('.thumbs figcaption').text()).toBe('角度 1')
+    expect(wrapper.findAll('.thumbs .thumb-cap').map((node) => node.text())).toEqual([
+      '正面',
+      '角度 1',
+    ])
+
+    // 多角度图点一下就换到主图位置(与商品详情页同款交互)
+    await wrapper.findAll('.thumbs .thumb')[1].trigger('click')
+    await tick()
+    expect(wrapper.find('.main img').attributes('src')).toBe('/img/b.svg')
+    expect(wrapper.find('.main .caption').text()).toBe('角度 1')
   })
 })
 

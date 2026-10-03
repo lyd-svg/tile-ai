@@ -136,9 +136,22 @@ describe('渲染', () => {
     expect(wrapper.find('.meta').text()).toBe('卫生间 · 现代')
     expect(wrapper.find('.spaces').text()).toContain('主卫')
     expect(wrapper.find('.main img').attributes('src')).toBe('/img/a.svg')
-    expect(wrapper.find('.thumbs figcaption').text()).toBe('角度 1')
+    expect(wrapper.findAll('.thumbs .thumb-cap').map((node) => node.text())).toEqual([
+      '正面',
+      '角度 1',
+    ])
     expect(wrapper.findAll('.part-table tbody tr')).toHaveLength(2)
     expect(wrapper.find('.totals').text()).toContain('¥2109.41')
+  })
+
+  it('多角度图:点缩略图换到主图位置 —— 看的人也能自己翻角度', async () => {
+    const { wrapper } = await mountView()
+
+    expect(wrapper.find('.main img').attributes('src')).toBe('/img/a.svg')
+
+    await wrapper.findAll('.thumbs .thumb')[1].trigger('click')
+    expect(wrapper.find('.main img').attributes('src')).toBe('/img/b.svg')
+    expect(wrapper.find('.main .caption').text()).toBe('角度 1')
   })
 
   it('顶部说明这是一份只读分享', async () => {
@@ -170,7 +183,9 @@ describe('渲染', () => {
     const { wrapper } = await mountView()
 
     expect(wrapper.find('.stale').text()).toContain('当时的价')
-    expect(wrapper.findAll('button')).toHaveLength(0)
+    // 不该有「重算」入口(看的人没有账号,重算要登录)。
+    // 注意口径:缩略图也是 button,但那是**切换视角**,不算管理动作 —— 见下面那条。
+    expect(wrapper.findAll('button').some((item) => item.text().includes('重算'))).toBe(false)
   })
 
   it('字典接口失败 ⇒ 照常渲染方案,只退化成显示 key', async () => {
@@ -183,10 +198,19 @@ describe('渲染', () => {
 })
 
 describe('⚠️ 一个管理动作都不能有', () => {
-  it('整页没有任何按钮(改名 / 另存为 / 删除 / 重算全都不该出现在这里)', async () => {
+  it('整页只有「切换视角」这一种按钮(改名 / 另存为 / 删除 / 重算都不该出现)', async () => {
     const { wrapper } = await mountView()
 
-    expect(wrapper.findAll('button')).toHaveLength(0)
+    // ⚠️ 2026-10-03 起这条换了口径。原先写的是 `findAll('button')).toHaveLength(0)`,
+    // 而多角度缩略图改成可点之后,页面**合法地**有了按钮 —— 它是"切换视角",
+    // 不是管理动作。这一页真正要守的是"**看的人改不了任何东西**",不是"一个 button 都没有"。
+    // 改成**允许清单**:出现任何别的按钮都会红,逼人显式更新这条断言(而不是悄悄放行)。
+    const labels = wrapper.findAll('button').map((item) => item.text())
+    expect(
+      labels.every((text) => /^(正面|角度 \d+)$/.test(text)),
+      `出现了非视角按钮:${labels.join(' / ')}`,
+    ).toBe(true)
+
     for (const word of ['改名', '另存为', '删除', '重算', '保存']) {
       expect(wrapper.text(), `公开页不该出现「${word}」`).not.toContain(word)
     }

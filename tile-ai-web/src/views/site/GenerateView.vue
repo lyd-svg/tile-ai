@@ -206,7 +206,26 @@ const cover = computed<PlanImage | null>(() => {
   return list.find((image) => image.isCover) ?? list[0]
 })
 
-const thumbs = computed(() => images.value.filter((image) => image.url !== cover.value?.url))
+/** 全部结果图。**不排序也不筛选** —— 顺序由服务端给(封面在前,见 §8.4)。 */
+const gallery = computed<PlanImage[]>(() => images.value)
+
+/** 用户点开看的那一张。`null` = 没点过 ⇒ 显示封面。 */
+const selected = ref<PlanImage | null>(null)
+
+/**
+ * 主图位置显示哪一张:**点过的那张(且它还在这一轮结果里)**,否则封面。
+ *
+ * ⚠️ "还在这一轮结果里"这句是关键 —— **重新生成会换掉整组图**,而 `selected`
+ * 里留着的还是上一轮那张。少了这个判断,主图会显示**上一轮**的图,而且**不报错**:
+ * 用户看到的是"重新生成完,画面没变",实际上变的是别的角度的缩略图。
+ */
+const active = computed<PlanImage | null>(() => {
+  const chosen = selected.value
+  if (chosen && gallery.value.some((image) => image.url === chosen.url)) {
+    return chosen
+  }
+  return cover.value
+})
 
 /** 视角名 → 中文标签。**按 view 区分,不靠数组下标猜**。 */
 function viewLabel(view?: string): string {
@@ -374,18 +393,30 @@ onBeforeUnmount(cancelPolling)
       <!-- ---------------------------- 结果 ---------------------------- -->
       <div v-if="status === 'success'" class="result">
         <h2>生成完成</h2>
-        <div v-if="cover" class="main">
-          <img :src="cover.url" :alt="viewLabel(cover.view)" />
-          <p class="caption">{{ viewLabel(cover.view) }}</p>
-        </div>
+        <!-- 主图与缩略图裹在同一个 v-if 里:缩略图要拿 active 做高亮,
+             拆成兄弟节点的话 vue-tsc 窄化不到(active 可能是 null) -->
+        <template v-if="active">
+          <div class="main">
+            <img :src="active.url" :alt="viewLabel(active.view)" />
+            <p class="caption">{{ viewLabel(active.view) }}</p>
+          </div>
+          <!-- 多角度图:**点一下就换到主图位置**显示大图(与商品详情页同款交互)。
+               缩略图列出全部图(含当前这张),这样点回封面也有路。 -->
+          <div v-if="gallery.length > 1" class="thumbs">
+            <button
+              v-for="image in gallery"
+              :key="image.url"
+              type="button"
+              :class="['thumb', { 'thumb--active': image.url === active.url }]"
+              :aria-pressed="image.url === active.url"
+              @click="selected = image"
+            >
+              <img :src="image.url" :alt="viewLabel(image.view)" />
+              <span class="thumb-cap">{{ viewLabel(image.view) }}</span>
+            </button>
+          </div>
+        </template>
         <p v-else class="note">任务已完成,但没有返回图片。</p>
-
-        <div v-if="thumbs.length" class="thumbs">
-          <figure v-for="image in thumbs" :key="image.url">
-            <img :src="image.url" :alt="viewLabel(image.view)" />
-            <figcaption>{{ viewLabel(image.view) }}</figcaption>
-          </figure>
-        </div>
 
         <!-- 方案已经存到服务端了 —— 给一条能走回去的路,而不是只丢一个编号让用户去猜。
              用字符串路径而不是 `{ name: 'plan-detail' }`:命名路由要求目标路由已注册,
@@ -557,18 +588,35 @@ button.primary:disabled {
   gap: 0.75rem;
 }
 
-.thumbs figure {
-  margin: 0;
+/* 缩略图是 button(可点)—— 盖掉全局 button 的边框/背景,只留图与说明 */
+.thumb {
+  display: flex;
+  flex-direction: column;
+  gap: 0.2rem;
   width: 10rem;
+  padding: 0.2rem;
+  border: 2px solid transparent;
+  border-radius: 0.4rem;
+  background: none;
+  cursor: pointer;
 }
 
-.thumbs img {
+.thumb img {
   width: 100%;
   border-radius: 0.25rem;
   border: 1px solid #e5e7eb;
 }
 
-.thumbs figcaption {
+/* 当前正在主图位置展示的那张 */
+.thumb--active {
+  border-color: #1d4ed8;
+}
+
+.thumb--active .thumb-cap {
+  color: #1d4ed8;
+}
+
+.thumb-cap {
   color: #6b7280;
   font-size: 0.8rem;
   text-align: center;

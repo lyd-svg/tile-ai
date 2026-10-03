@@ -180,7 +180,49 @@ describe('渲染', () => {
     expect(wrapper.find('.spaces').text()).toContain('2 × 1.8m')
     expect(wrapper.find('.main img').attributes('src')).toBe('/img/a.svg')
     expect(wrapper.find('.main .caption').text()).toBe('正面')
-    expect(wrapper.find('.thumbs figcaption').text()).toBe('角度 1')
+    // 缩略图把**两张都**列出来(含封面那张)—— 否则点开角度图之后就回不到封面了
+    expect(wrapper.findAll('.thumbs .thumb-cap').map((node) => node.text())).toEqual([
+      '正面',
+      '角度 1',
+    ])
+  })
+
+  it('多角度图:点缩略图换到主图位置,再点回封面', async () => {
+    const { wrapper } = await mountView()
+
+    // 默认是封面
+    expect(wrapper.find('.main img').attributes('src')).toBe('/img/a.svg')
+
+    await wrapper.findAll('.thumbs .thumb')[1].trigger('click')
+    expect(wrapper.find('.main img').attributes('src')).toBe('/img/b.svg')
+    expect(wrapper.find('.main .caption').text()).toBe('角度 1')
+    // 当前正在看的那张要标出来,否则用户不知道自己在看哪张
+    expect(wrapper.findAll('.thumbs .thumb')[1].classes()).toContain('thumb--active')
+    expect(wrapper.findAll('.thumbs .thumb')[0].classes()).not.toContain('thumb--active')
+
+    await wrapper.findAll('.thumbs .thumb')[0].trigger('click')
+    expect(wrapper.find('.main img').attributes('src')).toBe('/img/a.svg')
+    expect(wrapper.findAll('.thumbs .thumb')[0].classes()).toContain('thumb--active')
+  })
+
+  it('换到另一份方案后,主图**不能**还停在上一次点开的那张上', async () => {
+    // 方案 8 的图片集合与方案 7 完全不同
+    getPlan.mockImplementation(async (id: number) => ({
+      ...DETAIL,
+      id,
+      images:
+        id === 8 ? [{ url: '/img/c.svg', view: 'default', isCover: true }] : DETAIL.images,
+    }))
+    const { wrapper, router } = await mountView()
+
+    await wrapper.findAll('.thumbs .thumb')[1].trigger('click')
+    expect(wrapper.find('.main img').attributes('src')).toBe('/img/b.svg')
+
+    await router.push('/plans/8')
+    await flushPromises()
+
+    // 不校验"点过的那张还在不在新集合里"的话,这里会显示**上一份方案**的图,而且不报错
+    expect(wrapper.find('.main img').attributes('src')).toBe('/img/c.svg')
   })
 
   it('部位表与报价明细分属两张表,报价合计三项都在', async () => {
