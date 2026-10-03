@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { Alert, Button, Skeleton } from 'ant-design-vue'
+import { Alert, Button, Skeleton, Table } from 'ant-design-vue'
 import { computed, onMounted, ref } from 'vue'
 
 import { listLogs } from '@/api/admin/logs'
@@ -140,28 +140,42 @@ onMounted(load)
 
     <Skeleton v-if="loading" active :paragraph="{ rows: 4 }" />
 
-    <table v-else-if="rows.length">
-      <thead>
-        <tr>
-          <th>时间</th>
-          <th>操作人</th>
-          <th>动作</th>
-          <th>目标</th>
-          <th>IP</th>
-          <th>详情</th>
-        </tr>
-      </thead>
-      <tbody>
-        <tr v-for="row in rows" :key="row.id">
-          <td>{{ timeOf(row.createdAt) }}</td>
-          <td>{{ operatorOf(row) }}</td>
-          <td>{{ row.action }}</td>
-          <td>{{ targetOf(row) }}</td>
-          <td>{{ row.ip || '—' }}</td>
-          <td>{{ detailOf(row) }}</td>
-        </tr>
-      </tbody>
-    </table>
+    <Table
+      v-else-if="rows.length"
+      class="log-table"
+      size="small"
+      :data-source="rows"
+      :pagination="false"
+      row-key="id"
+    >
+      <Table.Column title="时间" key="time" />
+      <Table.Column title="操作人" key="operator" />
+      <Table.Column title="动作" key="action" />
+      <Table.Column title="目标" key="target" />
+      <Table.Column title="IP" key="ip" />
+      <Table.Column title="详情" key="detail" />
+
+      <!-- ⚠️ `record as OperationLog`:antd 把 `bodyCell` 的行类型标成 `Record<string, any>`,
+           而下面这几个格式化函数收的是 `OperationLog`。断言只写在模板里,**`<script>` 不动**。 -->
+      <template #bodyCell="{ column, record }">
+        <template v-if="column.key === 'time'">
+          <span class="mono">{{ timeOf(record.createdAt) }}</span>
+        </template>
+        <template v-else-if="column.key === 'operator'">
+          {{ operatorOf(record as OperationLog) }}
+        </template>
+        <template v-else-if="column.key === 'action'">
+          <span class="mono">{{ record.action }}</span>
+        </template>
+        <template v-else-if="column.key === 'target'">
+          {{ targetOf(record as OperationLog) }}
+        </template>
+        <template v-else-if="column.key === 'ip'">{{ record.ip || '—' }}</template>
+        <template v-else-if="column.key === 'detail'">
+          {{ detailOf(record as OperationLog) }}
+        </template>
+      </template>
+    </Table>
 
     <p v-else class="hint">没有符合条件的日志。</p>
 
@@ -264,45 +278,19 @@ select:focus-visible {
 }
 
 /* ── 日志表 ─────────────────────────────────────────────────────────────── */
-table {
-  width: 100%;
-  border-collapse: collapse;
-  border: 1px solid var(--color-border);
-  border-radius: var(--radius-md);
-  overflow: hidden;
-  font-size: var(--text-sm);
-}
+/* ⚠️ 表格已迁 antd `Table`(§72)。原来那套裸 `table` / `th` / `td` / `tbody tr:hover`
+   规则**必须删掉** —— antd `Table` 渲染出来的**正是** `<table><th><td><tr>`
+   (与 §5.6 记的 `.field input` 命中 `.ant-input` 是同一个坑)。
+   表头底色 / 边框 / 悬停**一律改走主题令牌**(`styles/antdTheme.ts` 的 `components.Table`),
+   **不用 `:deep()` 去改库的外观**。 */
 
-th,
-td {
-  padding: var(--space-2) var(--space-3);
-  border-bottom: 1px solid var(--color-border);
-  text-align: left;
-}
-
-th {
-  background: var(--color-surface-sunken);
-  color: var(--color-text-secondary);
-  font-size: var(--text-xs);
-  font-weight: 600;
-  white-space: nowrap;
-}
-
-tbody tr:hover {
-  background: var(--color-bg);
-}
-
-/* 时间与动作码是"要看清楚"的两列 —— 等宽数字/等宽字体便于竖着扫 */
-td:first-child,
-td:nth-child(3) {
+/* 时间与动作码是"要看清楚"的两列 —— 等宽数字/等宽字体便于竖着扫。
+   原来是靠 `td:first-child` / `td:nth-child(3)` 按**列序号**选中的,迁到 `Table`
+   后列的顺序改了就不再对应 ⇒ 改成模板里显式挂 `.mono`(更稳,也不怕以后调列序)。 */
+.log-table .mono {
   font-variant-numeric: tabular-nums;
   font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
   font-size: var(--text-xs);
-}
-
-.actions {
-  display: flex;
-  gap: var(--space-1);
 }
 
 /* ── 分页 ───────────────────────────────────────────────────────────────── */
