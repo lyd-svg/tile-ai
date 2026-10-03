@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { Alert, Button, Input, Select, Skeleton } from 'ant-design-vue'
+import { Alert, Button, Input, Select, Skeleton, Table } from 'ant-design-vue'
 import { computed, onMounted, ref } from 'vue'
 import { useRouter } from 'vue-router'
 
@@ -154,40 +154,48 @@ onMounted(load)
 
     <Skeleton v-if="loading" active :paragraph="{ rows: 4 }" />
 
-    <table v-else-if="rows.length">
-      <thead>
-        <tr>
-          <th>编号</th>
-          <th>名称</th>
-          <th>材质</th>
-          <th>规格</th>
-          <th class="num">单价(元/㎡)</th>
-          <th>状态</th>
-          <th>操作</th>
-        </tr>
-      </thead>
-      <tbody>
-        <tr v-for="row in rows" :key="row.sku">
-          <td>{{ row.sku }}</td>
-          <td>{{ row.name }}</td>
-          <td>{{ row.material || '—' }}</td>
-          <td>{{ row.spec || '—' }}</td>
-          <td class="num">{{ row.pricePerSqm }}</td>
-          <td>
-            <span :class="['tag', row.status === 'on_sale' ? 'tag--on' : 'tag--off']">
-              {{ row.status === 'on_sale' ? '已上架' : '已下架' }}
-            </span>
-          </td>
-          <td class="actions">
-            <Button v-if="canWrite" @click="edit(row)">编辑</Button>
-            <Button v-if="canPublish" @click="toggleStatus(row)">
-              {{ row.status === 'on_sale' ? '下架' : '上架' }}
+    <Table
+      v-else-if="rows.length"
+      class="sku-table"
+      size="small"
+      :data-source="rows"
+      :pagination="false"
+      row-key="sku"
+    >
+      <Table.Column title="编号" key="sku" />
+      <Table.Column title="名称" key="name" />
+      <Table.Column title="材质" key="material" />
+      <Table.Column title="规格" key="spec" />
+      <Table.Column title="单价(元/㎡)" key="price" align="right" />
+      <Table.Column title="状态" key="status" />
+      <Table.Column title="操作" key="actions" />
+
+      <!-- ⚠️ `record as Sku` —— `bodyCell` 的行是 `Record<string, any>`,
+           而 `edit` / `toggleStatus` / `remove` 收的是 `Sku`。断言只写在模板里。 -->
+      <template #bodyCell="{ column, record }">
+        <template v-if="column.key === 'sku'">{{ record.sku }}</template>
+        <template v-else-if="column.key === 'name'">{{ record.name }}</template>
+        <template v-else-if="column.key === 'material'">{{ record.material || '—' }}</template>
+        <template v-else-if="column.key === 'spec'">{{ record.spec || '—' }}</template>
+        <template v-else-if="column.key === 'price'">
+          <span class="num">{{ record.pricePerSqm }}</span>
+        </template>
+        <template v-else-if="column.key === 'status'">
+          <span :class="['tag', record.status === 'on_sale' ? 'tag--on' : 'tag--off']">
+            {{ record.status === 'on_sale' ? '已上架' : '已下架' }}
+          </span>
+        </template>
+        <template v-else-if="column.key === 'actions'">
+          <div class="actions">
+            <Button v-if="canWrite" @click="edit(record as Sku)">编辑</Button>
+            <Button v-if="canPublish" @click="toggleStatus(record as Sku)">
+              {{ record.status === 'on_sale' ? '下架' : '上架' }}
             </Button>
-            <Button v-if="canDelete" danger @click="remove(row)">删除</Button>
-          </td>
-        </tr>
-      </tbody>
-    </table>
+            <Button v-if="canDelete" danger @click="remove(record as Sku)">删除</Button>
+          </div>
+        </template>
+      </template>
+    </Table>
 
     <p v-else class="hint">没有符合条件的 SKU。</p>
 
@@ -259,38 +267,12 @@ h1 {
    见 `openapi-verification.md` §70.9。 */
 
 /* ── 表格 ───────────────────────────────────────────────────────────────── */
-table {
-  width: 100%;
-  border-collapse: collapse;
-  border: 1px solid var(--color-border);
-  border-radius: var(--radius-md);
-  overflow: hidden;
-  font-size: var(--text-sm);
-  font-variant-numeric: tabular-nums;
-}
+/* ⚠️ 已迁 antd `Table`(§72)。原来那套裸 `table` / `th` / `td` / `tbody tr:hover`
+   必须删掉 —— antd 渲染出来的**正是**这些标签(§5.6 同一个坑)。 */
 
-th,
-td {
-  padding: var(--space-2) var(--space-3);
-  border-bottom: 1px solid var(--color-border);
-  text-align: left;
-}
-
-th {
-  background: var(--color-surface-sunken);
-  color: var(--color-text-secondary);
-  font-size: var(--text-xs);
-  font-weight: 600;
-  white-space: nowrap;
-}
-
-tbody tr:hover {
-  background: var(--color-bg);
-}
-
-/* 数字列右对齐 —— 单价要能竖着比大小 */
+/* 数字列右对齐 —— 对齐由列的 `align="right"` 负责,这里只留"数字等宽" */
 .num {
-  text-align: right;
+  font-variant-numeric: tabular-nums;
 }
 
 .actions {

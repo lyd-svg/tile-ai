@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { Alert, Button, Skeleton } from 'ant-design-vue'
+import { Alert, Button, Skeleton, Table } from 'ant-design-vue'
 import { computed, onMounted, reactive, ref } from 'vue'
 
 import { createDict, deleteDict, listAdminDicts, updateDict } from '@/api/admin/dicts'
@@ -193,34 +193,44 @@ onMounted(load)
 
     <Skeleton v-if="loading" active :paragraph="{ rows: 4 }" />
 
-    <table v-else-if="rows.length">
-      <thead>
-        <tr>
-          <th>展示名</th>
-          <th>存储键</th>
-          <th class="num">排序</th>
-          <th>状态</th>
-          <th>操作</th>
-        </tr>
-      </thead>
-      <tbody>
-        <tr v-for="row in rows" :key="row.id ?? row.key">
-          <td>{{ row.label }}</td>
-          <td class="key">{{ row.key }}</td>
-          <td class="num">{{ row.sort ?? '—' }}</td>
-          <td>
-            <span v-if="!row.status" class="hint">—</span>
-            <span v-else :class="['tag', row.status === 'enabled' ? 'tag--on' : 'tag--off']">
-              {{ row.status === 'enabled' ? '启用' : '停用' }}
-            </span>
-          </td>
-          <td class="actions">
-            <Button v-if="canWrite" @click="startEdit(row)">编辑</Button>
-            <Button v-if="canWrite" danger @click="remove(row)">删除</Button>
-          </td>
-        </tr>
-      </tbody>
-    </table>
+    <Table
+      v-else-if="rows.length"
+      class="dict-table"
+      size="small"
+      :data-source="rows"
+      :pagination="false"
+      :row-key="(row: Dict) => row.id ?? row.key"
+    >
+      <Table.Column title="展示名" key="label" />
+      <Table.Column title="存储键" key="key" />
+      <Table.Column title="排序" key="sort" align="right" />
+      <Table.Column title="状态" key="status" />
+      <Table.Column title="操作" key="actions" />
+
+      <!-- ⚠️ `record as Dict` —— `bodyCell` 的行是 `Record<string, any>`,
+           而 `startEdit` / `remove` 收的是 `Dict`。断言只写在模板里。 -->
+      <template #bodyCell="{ column, record }">
+        <template v-if="column.key === 'label'">{{ record.label }}</template>
+        <template v-else-if="column.key === 'key'">
+          <span class="key">{{ record.key }}</span>
+        </template>
+        <template v-else-if="column.key === 'sort'">
+          <span class="num">{{ record.sort ?? '—' }}</span>
+        </template>
+        <template v-else-if="column.key === 'status'">
+          <span v-if="!record.status" class="hint">—</span>
+          <span v-else :class="['tag', record.status === 'enabled' ? 'tag--on' : 'tag--off']">
+            {{ record.status === 'enabled' ? '启用' : '停用' }}
+          </span>
+        </template>
+        <template v-else-if="column.key === 'actions'">
+          <div class="actions">
+            <Button v-if="canWrite" @click="startEdit(record as Dict)">编辑</Button>
+            <Button v-if="canWrite" danger @click="remove(record as Dict)">删除</Button>
+          </div>
+        </template>
+      </template>
+    </Table>
 
     <p v-else class="hint">暂无{{ typeLabel }}字典项。</p>
 
@@ -335,37 +345,12 @@ onMounted(load)
 }
 
 /* ── 字典表 ─────────────────────────────────────────────────────────────── */
-table {
-  width: 100%;
-  border-collapse: collapse;
-  border: 1px solid var(--color-border);
-  border-radius: var(--radius-md);
-  overflow: hidden;
-  font-size: var(--text-sm);
-  font-variant-numeric: tabular-nums;
-}
+/* ⚠️ 已迁 antd `Table`(§72)。原来那套裸 `table` / `th` / `td` / `tbody tr:hover`
+   必须删掉 —— antd 渲染出来的**正是**这些标签(§5.6 同一个坑)。 */
 
-th,
-td {
-  padding: var(--space-2) var(--space-3);
-  border-bottom: 1px solid var(--color-border);
-  text-align: left;
-}
-
-th {
-  background: var(--color-surface-sunken);
-  color: var(--color-text-secondary);
-  font-size: var(--text-xs);
-  font-weight: 600;
-  white-space: nowrap;
-}
-
-tbody tr:hover {
-  background: var(--color-bg);
-}
-
+/* 对齐由列的 `align="right"` 负责,这里只留"数字等宽" */
 .num {
-  text-align: right;
+  font-variant-numeric: tabular-nums;
 }
 
 /* 存储键是代码,用等宽 —— 与展示名一眼可分 */

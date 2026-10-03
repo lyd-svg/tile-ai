@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { Alert, Button, Skeleton } from 'ant-design-vue'
+import { Alert, Button, Skeleton, Table } from 'ant-design-vue'
 import { computed, onMounted, ref } from 'vue'
 
 import { listQuoteParams, upsertQuoteParam } from '@/api/admin/quoteParams'
@@ -161,44 +161,56 @@ onMounted(load)
 
     <Skeleton v-if="loading" active :paragraph="{ rows: 4 }" />
 
-    <table v-else>
-      <thead>
-        <tr>
-          <th>参数</th>
-          <th>当前值</th>
-          <th>填入</th>
-          <th>说明</th>
-          <th>操作</th>
-        </tr>
-      </thead>
-      <tbody>
-        <tr v-for="row in rows" :key="row.key">
-          <td>
-            <strong>{{ row.label }}</strong>
-            <div class="key">{{ row.key }}</div>
-          </td>
-          <td>
-            <span v-if="row.value === null" class="hint">未配置</span>
-            <template v-else>
-              {{ row.value }}
-              <span v-if="row.key !== 'aux_unit_price'" class="hint">
-                (≈ {{ percentHint(row.value) }})
-              </span>
-            </template>
-          </td>
-          <td>
-            <input v-model="row.input" type="text" inputmode="decimal" :placeholder="row.value === null ? '未配置' : String(row.value)" />
-            <span class="unit">{{ row.unit }}</span>
-          </td>
-          <td class="hint">{{ row.hint }}</td>
-          <td>
-            <Button v-if="canWrite" :loading="savingKey === row.key" @click="save(row)">
-              保存
-            </Button>
-          </td>
-        </tr>
-      </tbody>
-    </table>
+    <Table
+      v-else
+      class="param-table"
+      size="small"
+      :data-source="rows"
+      :pagination="false"
+      :row-key="(row: RowState) => row.key"
+    >
+      <Table.Column title="参数" key="label" />
+      <Table.Column title="当前值" key="value" />
+      <Table.Column title="填入" key="input" />
+      <Table.Column title="说明" key="hint" />
+      <Table.Column title="操作" key="actions" />
+
+      <!-- ⚠️ 这一页**不加 `record as RowState`**:`record` 是 `Record<string, any>`,
+           `record.value` / `record.input` 都是 `any` —— 正好绕开"`v-else` 无法
+           为 `number | null` 做窄化"的麻烦。只有要喂给 `save()` 的那一处需要断言。 -->
+      <template #bodyCell="{ column, record }">
+        <template v-if="column.key === 'label'">
+          <strong>{{ record.label }}</strong>
+          <div class="key">{{ record.key }}</div>
+        </template>
+        <template v-else-if="column.key === 'value'">
+          <span v-if="record.value === null" class="hint">未配置</span>
+          <template v-else>
+            {{ record.value }}
+            <span v-if="record.key !== 'aux_unit_price'" class="hint">
+              (≈ {{ percentHint(record.value) }})
+            </span>
+          </template>
+        </template>
+        <template v-else-if="column.key === 'input'">
+          <input
+            v-model="record.input"
+            type="text"
+            inputmode="decimal"
+            :placeholder="record.value === null ? '未配置' : String(record.value)"
+          />
+          <span class="unit">{{ record.unit }}</span>
+        </template>
+        <template v-else-if="column.key === 'hint'">
+          <span class="hint">{{ record.hint }}</span>
+        </template>
+        <template v-else-if="column.key === 'actions'">
+          <Button v-if="canWrite" :loading="savingKey === record.key" @click="save(record as RowState)">
+            保存
+          </Button>
+        </template>
+      </template>
+    </Table>
   </section>
 </template>
 
@@ -260,31 +272,8 @@ h1 {
 }
 
 /* ── 参数表 ─────────────────────────────────────────────────────────────── */
-table {
-  width: 100%;
-  border-collapse: collapse;
-  border: 1px solid var(--color-border);
-  border-radius: var(--radius-md);
-  overflow: hidden;
-  font-size: var(--text-sm);
-  font-variant-numeric: tabular-nums;
-}
-
-th,
-td {
-  padding: var(--space-3);
-  border-bottom: 1px solid var(--color-border);
-  text-align: left;
-  vertical-align: top;
-}
-
-th {
-  background: var(--color-surface-sunken);
-  color: var(--color-text-secondary);
-  font-size: var(--text-xs);
-  font-weight: 600;
-  white-space: nowrap;
-}
+/* ⚠️ 已迁 antd `Table`(§72)。原来那套裸 `table` / `th` / `td` 必须删掉 ——
+   antd 渲染出来的**正是**这些标签(§5.6 同一个坑)。 */
 
 /* 参数键是代码 —— 等宽,和展示名一眼分开 */
 .key {
@@ -294,7 +283,9 @@ th {
   font-size: var(--text-xs);
 }
 
-td input {
+/* ⚠️ 原来是 `td input` —— 迁到 antd `Table` 后 `td` 由**库**渲染,
+   这样写等于在改库的元素(§5.6)。收窄到本页自己的表格容器。 */
+.param-table input {
   width: 8rem;
   height: var(--control-height);
   padding: 0 var(--space-3);
@@ -306,7 +297,7 @@ td input {
   font-size: var(--text-sm);
 }
 
-td input:focus-visible {
+.param-table input:focus-visible {
   outline: 2px solid var(--color-focus);
   outline-offset: 1px;
   border-color: var(--color-primary);

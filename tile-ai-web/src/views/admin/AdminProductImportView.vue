@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { Alert, Button } from 'ant-design-vue'
+import { Alert, Button, Table } from 'ant-design-vue'
 import { computed, onBeforeUnmount, ref } from 'vue'
 
 import {
@@ -228,20 +228,23 @@ onBeforeUnmount(cancelPolling)
 
       <template v-if="errors.length">
         <h3>错误行({{ errors.length }})</h3>
-        <table>
-          <thead>
-            <tr>
-              <th class="num">行号</th>
-              <th>原因</th>
-            </tr>
-          </thead>
-          <tbody>
-            <tr v-for="(item, index) in errors" :key="`${item.row}-${index}`">
-              <td class="num">{{ item.row === 0 ? '批次级' : item.row }}</td>
-              <td>{{ item.reason }}</td>
-            </tr>
-          </tbody>
-        </table>
+        <Table
+          class="error-table"
+          size="small"
+          :data-source="errors"
+          :pagination="false"
+          :row-key="(row: ImportRowError, index?: number) => `${row.row}-${index ?? 0}`"
+        >
+          <Table.Column title="行号" key="row" align="right" />
+          <Table.Column title="原因" key="reason" />
+
+          <template #bodyCell="{ column, record }">
+            <template v-if="column.key === 'row'">
+              <span class="num">{{ record.row === 0 ? '批次级' : record.row }}</span>
+            </template>
+            <template v-else-if="column.key === 'reason'">{{ record.reason }}</template>
+          </template>
+        </Table>
 
         <div class="actions">
           <Button @click="exportErrors">导出错误报告(CSV)</Button>
@@ -366,33 +369,11 @@ input[type='file'] {
 }
 
 /* ── 错误行表格 ─────────────────────────────────────────────────────────── */
-table {
-  width: 100%;
-  border-collapse: collapse;
-  border: 1px solid var(--color-border);
-  border-radius: var(--radius-sm);
-  overflow: hidden;
-  font-size: var(--text-sm);
-  font-variant-numeric: tabular-nums;
-}
+/* ⚠️ 已迁 antd `Table`(§72)。原来那套裸 `table` / `th` / `td` 必须删掉 ——
+   antd 渲染出来的**正是**这些标签(§5.6 同一个坑)。 */
 
-th,
-td {
-  padding: var(--space-2) var(--space-3);
-  border-bottom: 1px solid var(--color-border);
-  text-align: left;
-}
-
-th {
-  background: var(--color-surface-sunken);
-  color: var(--color-text-secondary);
-  font-size: var(--text-xs);
-  font-weight: 600;
-}
-
-/* 行号右对齐并禁止换行("批次级"也不该被拆成两行) */
+/* 行号禁止换行("批次级"也不该被拆成两行);右对齐由列的 `align="right"` 负责 */
 .num {
-  text-align: right;
   white-space: nowrap;
 }
 
