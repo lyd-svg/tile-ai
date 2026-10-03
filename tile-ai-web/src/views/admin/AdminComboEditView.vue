@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import { Select } from 'ant-design-vue'
 import { computed, onMounted, reactive, ref } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 
@@ -302,11 +303,13 @@ onMounted(async () => {
           <div class="row">
             <label>
               部位
-              <select v-model="item.part">
-                <option v-for="part in PART_OPTIONS" :key="part" :value="part">
+              <!-- ⚠️ `part-select` 这个 class 是**测试锚点**:antd 的 Select 没有原生
+                   `<select>` 可供定位,测试得靠一个稳定的钩子。见 §68 / G1.5。 -->
+              <Select v-model:value="item.part" class="part-select">
+                <Select.Option v-for="part in PART_OPTIONS" :key="part" :value="part">
                   {{ PART_LABELS[part] }}
-                </option>
-              </select>
+                </Select.Option>
+              </Select>
             </label>
             <label>
               备注(可选)

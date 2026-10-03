@@ -24,6 +24,7 @@ import AdminCombosView from '../src/views/admin/AdminCombosView.vue'
 import AdminComboEditView from '../src/views/admin/AdminComboEditView.vue'
 import { useAdminAuthStore } from '../src/stores/adminAuth'
 import type { AdminUserView, Role } from '../src/api/types'
+import { openSelect, openedSelectOptionTexts } from './helpers/antd'
 
 const ADMIN_CONTRACT = resolve(dirname(fileURLToPath(import.meta.url)), '../../openapi-admin.yaml')
 const COMMON_CONTRACT = resolve(dirname(fileURLToPath(import.meta.url)), '../../openapi-common.yaml')
@@ -274,17 +275,21 @@ describe('编辑', () => {
     })
 
     const { wrapper } = await mountEdit()
-    const selects = wrapper.findAll('select')
-    const partSelect = selects.find((select) =>
-      select.findAll('option').some((option) => (option.element as HTMLOptionElement).value === 'local'),
-    )
 
-    expect(partSelect).toBeTruthy()
-    expect(partSelect!.findAll('option').map((option) => (option.element as HTMLOptionElement).value)).toEqual([
-      'floor',
-      'wall',
-      'local',
-    ])
+    // ⚠️ antd 的 `Select` **没有原生 `<select>`** —— 旧写法
+    // (`findAll('select')` + 读 `<option>`)在这里**直接失效**。
+    // 改走**测试锚点**:模板上给它挂的那个 `.part-select`。
+    const partSelect = wrapper.find('.part-select')
+    expect(partSelect.exists()).toBe(true)
+
+    // 选项**要打开下拉才存在**,且被渲染到 portal(`document.body`)——
+    // 所以用 `tests/helpers/antd.ts` 的工具,而不是 `wrapper.find`。
+    await openSelect(partSelect)
+    await flushPromises()
+
+    // 断言的是**界面上真能选到的三值**,不是内部常量 —— 它仍然能证伪:
+    // 谁把 `PART_OPTIONS` 改错、或把它改成走字典,这里就红。
+    expect(openedSelectOptionTexts()).toEqual(['地面', '墙面', '局部'])
   })
 
   it('items 为空时客户端先拦住,不发请求', async () => {
