@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import { Button } from 'ant-design-vue'
 import { computed, onBeforeUnmount, onMounted, ref } from 'vue'
 
 import { getGenerateProgress, submitGenerate } from '@/api/c/generate'
@@ -355,7 +356,7 @@ onBeforeUnmount(cancelPolling)
               <strong>{{ PART_LABELS[item.part] }}</strong>
               · {{ item.name || item.sku }}
             </span>
-            <button type="button" class="remove" @click="removePart(item.part)">移除</button>
+            <Button danger size="small" @click="removePart(item.part)">移除</Button>
           </li>
         </ul>
         <p class="note">
@@ -367,9 +368,9 @@ onBeforeUnmount(cancelPolling)
 
       <!-- ---------------------------- 提交 ---------------------------- -->
       <div v-if="!taskId" class="actions">
-        <button type="button" class="primary" :disabled="!canSubmit" @click="submit">
-          {{ submitting ? '提交中…' : '开始生成' }}
-        </button>
+        <Button type="primary" :loading="submitting" :disabled="!canSubmit" @click="submit">
+          开始生成
+        </Button>
         <span v-if="!space" class="note">先选择空间。</span>
       </div>
 
@@ -389,7 +390,7 @@ onBeforeUnmount(cancelPolling)
 
       <p v-if="failureReason" class="error" role="alert">{{ failureReason }}</p>
       <div v-if="status === 'failed'" class="actions">
-        <button type="button" class="primary" @click="reset">重新生成</button>
+        <Button type="primary" @click="reset">重新生成</Button>
       </div>
 
       <!-- ---------------------------- 结果 ---------------------------- -->
@@ -448,7 +449,7 @@ onBeforeUnmount(cancelPolling)
         </div>
 
         <div class="actions">
-          <button type="button" class="ghost" @click="reset">再生成一次</button>
+          <Button @click="reset">再生成一次</Button>
         </div>
       </div>
     </template>
@@ -560,65 +561,15 @@ h2 {
   line-height: var(--leading-xs);
 }
 
-.remove {
-  padding: var(--space-1) var(--space-3);
-  border: 1px solid var(--color-danger);
-  border-radius: var(--radius-sm);
-  background: var(--color-surface);
-  color: var(--color-danger);
-  font: inherit;
-  font-size: var(--text-xs);
-  cursor: pointer;
-}
-
-.remove:hover {
-  background: var(--color-danger-soft);
-}
-
-/* ── 按钮 ───────────────────────────────────────────────────────────────── */
+/* ⚠️ **本页的常规按钮已迁 antd**(移除 / 开始生成 / 重新生成 / 再生成一次)——
+   不再写样式(§70.9)。
+   ⚠️ 但下面的 **`.thumb`(多角度缩略图)是自定义交互元素**,刻意保留、**不迁**:
+   它是"点一下换主图"的图块,不是普通按钮,套 antd `Button` 会跟设计打架。 */
 .actions {
   display: flex;
   align-items: center;
   gap: var(--space-3);
   margin-bottom: var(--space-4);
-}
-
-button.primary {
-  padding: var(--space-3) var(--space-5);
-  border: 1px solid var(--color-primary);
-  border-radius: var(--radius-sm);
-  background: var(--color-primary);
-  color: var(--color-on-primary);
-  font: inherit;
-  font-size: var(--text-base);
-  font-weight: 600;
-  cursor: pointer;
-}
-
-button.primary:hover:not(:disabled) {
-  background: var(--color-primary-hover);
-  border-color: var(--color-primary-hover);
-}
-
-button.primary:disabled {
-  opacity: 0.45;
-  cursor: not-allowed;
-}
-
-.ghost {
-  padding: var(--space-2) var(--space-4);
-  border: 1px solid var(--color-border-strong);
-  border-radius: var(--radius-sm);
-  background: var(--color-surface);
-  color: var(--color-text);
-  font: inherit;
-  font-size: var(--text-sm);
-  cursor: pointer;
-}
-
-.ghost:hover {
-  border-color: var(--color-primary);
-  color: var(--color-primary);
 }
 
 /* ── 进度 ───────────────────────────────────────────────────────────────── */
