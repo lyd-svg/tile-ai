@@ -19,6 +19,8 @@ import { flushPromises, mount } from '@vue/test-utils'
 import { load } from 'js-yaml'
 import { createPinia, setActivePinia } from 'pinia'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
+
+import { normalize } from './helpers/antd'
 import { createMemoryHistory, createRouter } from 'vue-router'
 
 import * as furnishApi from '../src/api/admin/furnish'
@@ -115,12 +117,15 @@ async function mountAs(role: Role) {
   return wrapper
 }
 
+/** 按文案找按钮 —— **归一化空白**后再比(antd 会给两个汉字的按钮插空格)。 */
 function buttonWith(wrapper: Awaited<ReturnType<typeof mountAs>>, text: string) {
-  return wrapper.findAll('button').find((button) => button.text().includes(text))
+  const target = normalize(text)
+  return wrapper.findAll('button').find((button) => normalize(button.text()).includes(target))
 }
 
 function cellWith(wrapper: Awaited<ReturnType<typeof mountAs>>, text: string) {
-  return wrapper.findAll('.cell button').filter((button) => button.text().includes(text))
+  const target = normalize(text)
+  return wrapper.findAll('.cell button').filter((button) => normalize(button.text()).includes(target))
 }
 
 // 确认框:页面只负责"调它 + 尊重答案";弹窗本身由 tests/appConfirm.spec.ts 驱动真 Modal 覆盖。

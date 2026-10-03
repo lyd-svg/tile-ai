@@ -18,6 +18,8 @@ import { load } from 'js-yaml'
 import { createPinia, setActivePinia } from 'pinia'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
+import { normalize } from './helpers/antd'
+
 import { BusinessError, ErrorCode } from '../src/api/errors'
 import type { AdminUserView, Role } from '../src/api/types'
 import AdminAccountsView from '../src/views/admin/AdminAccountsView.vue'
@@ -237,7 +239,7 @@ describe('权限门控(架构 §4.4)', () => {
   it('super_admin 能看到新增/编辑/删除', async () => {
     const { wrapper } = await mountAs('super_admin')
 
-    const labels = wrapper.findAll('button').map((button) => button.text())
+    const labels = wrapper.findAll('button').map((button) => normalize(button.text()))
     expect(labels).toContain('新增账号')
     expect(labels).toContain('编辑')
     expect(labels).toContain('删除')
@@ -247,7 +249,7 @@ describe('权限门控(架构 §4.4)', () => {
     for (const role of ['operator', 'editor'] as const) {
       const { wrapper } = await mountAs(role)
 
-      const labels = wrapper.findAll('button').map((button) => button.text())
+      const labels = wrapper.findAll('button').map((button) => normalize(button.text()))
       expect(labels).not.toContain('新增账号')
       expect(labels).not.toContain('编辑')
       expect(labels).not.toContain('删除')
@@ -259,10 +261,10 @@ describe('防呆的界面侧', () => {
   it('自己那一行的删除按钮是禁用的(服务端仍会再拦一次)', async () => {
     const { wrapper } = await mountAs('super_admin')
 
-    const selfDelete = rowButtons(wrapper, 0).find((button) => button.text() === '删除')
+    const selfDelete = rowButtons(wrapper, 0).find((button) => normalize(button.text()) === normalize('删除'))
     expect(selfDelete?.attributes('disabled')).toBeDefined()
 
-    const otherDelete = rowButtons(wrapper, 1).find((button) => button.text() === '删除')
+    const otherDelete = rowButtons(wrapper, 1).find((button) => normalize(button.text()) === normalize('删除'))
     expect(otherDelete?.attributes('disabled')).toBeUndefined()
   })
 
@@ -270,7 +272,7 @@ describe('防呆的界面侧', () => {
     const { wrapper } = await mountAs('super_admin')
 
     // 点第一行(自己)的「编辑」→ 打开表单 → 保存
-    await rowButtons(wrapper, 0).find((button) => button.text() === '编辑')?.trigger('click')
+    await rowButtons(wrapper, 0).find((button) => normalize(button.text()) === normalize('编辑'))?.trigger('click')
     updateAccount.mockRejectedValue(
       new BusinessError({ code: ErrorCode.STATUS_NOT_ALLOWED, message: '不能停用自己' }),
     )
@@ -286,7 +288,7 @@ describe('密码语义(最容易出事故的一处)', () => {
     const { wrapper } = await mountAs('super_admin')
     updateAccount.mockResolvedValue(undefined)
 
-    await rowButtons(wrapper, 1).find((button) => button.text() === '编辑')?.trigger('click')
+    await rowButtons(wrapper, 1).find((button) => normalize(button.text()) === normalize('编辑'))?.trigger('click')
     // 编辑态下密码框本来就是空的
     await wrapper.find('form.panel').trigger('submit')
     await flushPromises()
@@ -303,7 +305,7 @@ describe('密码语义(最容易出事故的一处)', () => {
     const { wrapper } = await mountAs('super_admin')
     updateAccount.mockResolvedValue(undefined)
 
-    await rowButtons(wrapper, 1).find((button) => button.text() === '编辑')?.trigger('click')
+    await rowButtons(wrapper, 1).find((button) => normalize(button.text()) === normalize('编辑'))?.trigger('click')
     await wrapper.find('form.panel input[type="password"]').setValue('NewPass123')
     await wrapper.find('form.panel').trigger('submit')
     await flushPromises()
@@ -315,7 +317,10 @@ describe('密码语义(最容易出事故的一处)', () => {
   it('新增时不填密码 → 不发请求,当场提示', async () => {
     const { wrapper } = await mountAs('super_admin')
 
-    await wrapper.findAll('button').find((button) => button.text() === '新增账号')?.trigger('click')
+    await wrapper
+      .findAll('button')
+      .find((button) => normalize(button.text()) === normalize('新增账号'))
+      ?.trigger('click')
     await wrapper.find('form.panel input[type="text"]').setValue('lisi')
     await wrapper.find('form.panel').trigger('submit')
     await flushPromises()

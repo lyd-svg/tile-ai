@@ -10,10 +10,11 @@
  */
 
 import { flushPromises, mount } from '@vue/test-utils'
-import { afterEach, describe, expect, it } from 'vitest'
+import { describe, expect, it } from 'vitest'
 
 import { appConfirm } from '../src/components/base/AppConfirm'
 import AppConfirmHost from '../src/components/base/AppConfirmHost.vue'
+import { normalize } from './helpers/antd'
 
 /**
  * 在 portal 里按文案找按钮。
@@ -39,11 +40,6 @@ function portalButton(text: string): HTMLElement | undefined {
 function mountHost() {
   return mount(AppConfirmHost)
 }
-
-afterEach(() => {
-  // 弹层不会被自动回收 —— 不清掉,上一条的弹窗会漏到下一条里
-  document.body.innerHTML = ''
-})
 
 describe('appConfirm —— 声明式确认框', () => {
   it('点「确定」→ true', async () => {
@@ -97,6 +93,30 @@ describe('appConfirm —— 声明式确认框', () => {
     portalButton('确定')!.click()
     await flushPromises()
     expect(await second).toBe(true)
+  })
+
+  /**
+   * ⚠️ **特点说明测试(characterization test)** —— 它钉的是 **antd 的行为,不是我们的代码**。
+   *
+   * 目的:让"为什么到处都在归一化空白"这件事**有个可执行的出处**。
+   * 少了它,后来人会以为那些 `.replace(/\s+/g, '')` 是多余的噪音而清理掉,
+   * 然后在某次迁移按钮时**静默踩坑**(见 `openapi-verification.md` §70.6 / §70.9)。
+   *
+   * 哪天 antd 不再插空格了,这条会红 —— 那时**就可以把归一化撤掉**。这正是它的用处。
+   */
+  it('⚠️ antd 会给「两个汉字」的按钮插空格(所以比对必须归一化)', async () => {
+    mountHost()
+    appConfirm({ title: 'x' })
+    await flushPromises()
+
+    const raw = Array.from(document.querySelectorAll('button')).map((n) => n.textContent ?? '')
+    expect(raw.some((text) => text.includes('确 定'))).toBe(true)
+
+    // 归一化之后才比得上干净的「确定」
+    const ok = Array.from(document.querySelectorAll('button')).find(
+      (node) => normalize(node.textContent ?? '') === '确定',
+    )
+    expect(ok).toBeTruthy()
   })
 
   it('自定义按钮文案生效', async () => {

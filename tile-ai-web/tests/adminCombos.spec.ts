@@ -16,7 +16,7 @@ import { fileURLToPath } from 'node:url'
 import { flushPromises, mount } from '@vue/test-utils'
 import { load } from 'js-yaml'
 import { createPinia, setActivePinia } from 'pinia'
-import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
+import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { createMemoryHistory, createRouter } from 'vue-router'
 
 import { BusinessError, ErrorCode } from '../src/api/errors'
@@ -24,7 +24,7 @@ import AdminCombosView from '../src/views/admin/AdminCombosView.vue'
 import AdminComboEditView from '../src/views/admin/AdminComboEditView.vue'
 import { useAdminAuthStore } from '../src/stores/adminAuth'
 import type { AdminUserView, Role } from '../src/api/types'
-import { openSelect, openedSelectOptionTexts } from './helpers/antd'
+import { normalize, openSelect, openedSelectOptionTexts } from './helpers/antd'
 
 const ADMIN_CONTRACT = resolve(dirname(fileURLToPath(import.meta.url)), '../../openapi-admin.yaml')
 const COMMON_CONTRACT = resolve(dirname(fileURLToPath(import.meta.url)), '../../openapi-common.yaml')
@@ -123,9 +123,11 @@ const mountList = (role: Role = 'super_admin') =>
 const mountEdit = (role: Role = 'super_admin') =>
   mountView(AdminComboEditView, 'admin-combo-edit', '/admin/combos/7', role)
 
+/** 按文案找按钮 —— **归一化空白**后再比(antd 会给两个汉字的按钮插空格)。 */
 function buttonWith(wrapper: { findAll: (s: string) => { text: () => string }[] }, text: string) {
+  const target = normalize(text)
   return (wrapper.findAll('button') as unknown as { text: () => string; trigger: (e: string) => Promise<void> }[]).find(
-    (button) => button.text().includes(text),
+    (button) => normalize(button.text()).includes(target),
   )
 }
 
@@ -146,14 +148,6 @@ beforeEach(() => {
       ? [{ type: 'space', key: 'bathroom', label: '卫生间' }]
       : [{ type: 'style', key: 'modern', label: '现代' }],
   )
-})
-
-afterEach(() => {
-  // ⚠️ **必须清**:antd 的 portal 组件(Select 的下拉 / Modal)渲染到 `document.body`,
-  // **不会被自动回收**。不清掉的话,上一条用例打开的下拉会**漏到下一条里** ——
-  // 实测:本文件里"筛选下拉"那条打开的两个下拉漏进了"部位下拉恒为三个值",
-  // 让它收到 5 个选项而红。
-  document.body.innerHTML = ''
 })
 
 describe('契约一致性', () => {

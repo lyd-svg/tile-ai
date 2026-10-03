@@ -14,6 +14,8 @@ import { flushPromises, mount } from '@vue/test-utils'
 import { load } from 'js-yaml'
 import { createPinia, setActivePinia } from 'pinia'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
+
+import { normalize } from './helpers/antd'
 import { createMemoryHistory, createRouter } from 'vue-router'
 
 import { BusinessError, ErrorCode } from '../src/api/errors'
@@ -299,7 +301,7 @@ describe('列表渲染', () => {
 describe('权限门控(架构 §4.4)', () => {
   it('editor 看不到删除与上下架,但看得到编辑', async () => {
     const { wrapper } = await mountWithRows('editor')
-    const labels = wrapper.findAll('button').map((button) => button.text())
+    const labels = wrapper.findAll('button').map((button) => normalize(button.text()))
 
     expect(labels).toContain('编辑')
     expect(labels).not.toContain('删除')
@@ -311,12 +313,12 @@ describe('权限门控(架构 §4.4)', () => {
   it('editor 也看不到新增入口(它没有 product:write 吗?)', async () => {
     // editor **有** product:write(§4.4:能创建与编辑),所以新增按钮应当可见
     const { wrapper } = await mountWithRows('editor')
-    expect(wrapper.findAll('button').map((b) => b.text())).toContain('新增 SKU')
+    expect(wrapper.findAll('button').map((b) => normalize(b.text()))).toContain(normalize('新增 SKU'))
   })
 
   it('operator 看得到全部三个操作', async () => {
     const { wrapper } = await mountWithRows('operator')
-    const labels = wrapper.findAll('button').map((button) => button.text())
+    const labels = wrapper.findAll('button').map((button) => normalize(button.text()))
 
     expect(labels).toContain('编辑')
     expect(labels).toContain('删除')
@@ -329,7 +331,9 @@ describe('错误提示', () => {
     const { wrapper } = await mountWithRows('operator')
     setProductStatus.mockRejectedValue(new BusinessError({ code: ErrorCode.STATUS_NOT_ALLOWED }))
 
-    const downButton = wrapper.findAll('button').find((button) => button.text() === '下架')
+    const downButton = wrapper.findAll('button').find(
+      (button) => normalize(button.text()) === normalize('下架'),
+    )
     await downButton!.trigger('click')
     await flushPromises()
 
@@ -348,7 +352,9 @@ describe('错误提示', () => {
     appConfirm.mockResolvedValue(false)
     const { wrapper } = await mountWithRows('operator')
 
-    const removeButton = wrapper.findAll('button').find((button) => button.text() === '删除')
+    const removeButton = wrapper.findAll('button').find(
+      (button) => normalize(button.text()) === normalize('删除'),
+    )
     await removeButton!.trigger('click')
     await flushPromises()
 

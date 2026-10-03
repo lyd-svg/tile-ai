@@ -24,5 +24,8 @@ export default defineConfig({
   test: {
     environment: 'happy-dom',
     include: ['tests/**/*.spec.ts'],
+    // 全局钩子:每条用例后清 `document.body` —— 见 `tests/setup.ts` 的说明
+    // (antd 的 portal 弹层不会被自动回收,不清会漏到下一条用例里)。
+    setupFiles: ['tests/setup.ts'],
   },
 })

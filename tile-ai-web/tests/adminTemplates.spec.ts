@@ -17,6 +17,8 @@ import { flushPromises, mount } from '@vue/test-utils'
 import { load } from 'js-yaml'
 import { createPinia, setActivePinia } from 'pinia'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
+
+import { normalize } from './helpers/antd'
 import { createMemoryHistory, createRouter } from 'vue-router'
 
 import AdminTemplatesView from '../src/views/admin/AdminTemplatesView.vue'
@@ -114,8 +116,10 @@ const mountList = (role: Role = 'super_admin') =>
 const mountEdit = (role: Role = 'super_admin') =>
   mountView(AdminTemplateEditView, '/admin/templates/5', role)
 
+/** 按文案找按钮 —— **归一化空白**后再比(antd 会给两个汉字的按钮插空格)。 */
 function buttonWith(wrapper: Awaited<ReturnType<typeof mountEdit>>, text: string) {
-  return wrapper.findAll('button').find((button) => button.text().includes(text))
+  const target = normalize(text)
+  return wrapper.findAll('button').find((button) => normalize(button.text()).includes(target))
 }
 
 /** 一个带**派生面积**的模板 —— 服务端会回填 areas,前端不该把它送回去。 */

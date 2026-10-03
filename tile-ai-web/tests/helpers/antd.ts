@@ -26,7 +26,7 @@
  * **这一条没有实测过,别当结论用。**
  */
 
-import type { DOMWrapper } from '@vue/test-utils'
+import type { DOMWrapper, VueWrapper } from '@vue/test-utils'
 
 /**
  * 打开一个 antd `Select` 的下拉。
@@ -69,4 +69,53 @@ export async function pickSelectOption(text: string): Promise<void> {
  */
 export function portalText(): string {
   return document.body.textContent ?? ''
+}
+
+/**
+ * 去掉**全部空白**再比对 —— 见下面 `buttonTexts` 的说明。
+ *
+ * 导出它是给各 spec 里**已有的**局部 helper 用(那些 helper 各有各的签名,
+ * 重写代价大于收益);**新写的用例请直接用 `buttonTexts` / `buttonByText`**。
+ */
+export function normalize(value: string): string {
+  return value.replace(/\s+/g, '')
+}
+
+/**
+ * 读页面上全部按钮的文案,**已去掉空白**。
+ *
+ * ## ⚠️ 为什么必须去空白
+ *
+ * antd **默认会给「两个汉字」的按钮插一个空格** —— 「编辑」渲染成「编 辑」。
+ * 而**测试不挂 `App.vue`**,拿不到 `ConfigProvider :auto-insert-space-in-button="false"`
+ * 那条设置(生产里关掉了,测试里没关)。
+ *
+ * ⇒ 直接写 `button.text() === '编辑'` 会**静默失败**:不报错、不提示,
+ *    只是**永远找不到那个按钮**。实测踩到过(见 `openapi-verification.md` §70.6 / §70.9)。
+ *
+ * ⚠️ 一律用本文件这三个函数,**别在用例里手写 `findAll('button')`** ——
+ *    手写就会忘记归一化,而且**忘了也不会红**,只会在某天迁移按钮时突然炸。
+ */
+export function buttonTexts(wrapper: VueWrapper): string[] {
+  return wrapper.findAll('button').map((node) => normalize(node.text()))
+}
+
+/** 按文案找按钮(**去掉空白**后比)。找不到返回 `undefined`。 */
+export function findButton(wrapper: VueWrapper, text: string): DOMWrapper<Element> | undefined {
+  const target = normalize(text)
+  return wrapper.findAll('button').find((node) => normalize(node.text()) === target)
+}
+
+/**
+ * 按文案找按钮,**找不到直接抛** —— 大多数用例要的是这个:
+ * 拿到 `undefined` 再随手 `!` 会得到一个更难读的失败信息。
+ */
+export function buttonByText(wrapper: VueWrapper, text: string): DOMWrapper<Element> {
+  const found = findButton(wrapper, text)
+  if (!found) {
+    throw new Error(
+      `页面上没有「${text}」这个按钮;当前有:${buttonTexts(wrapper).join(' / ') || '(一个都没有)'}`,
+    )
+  }
+  return found
 }

@@ -11,6 +11,8 @@
 import { flushPromises, mount } from '@vue/test-utils'
 import { createPinia, setActivePinia } from 'pinia'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
+
+import { normalize } from './helpers/antd'
 import { createMemoryHistory, createRouter } from 'vue-router'
 
 import { BusinessError } from '../src/api/errors'
@@ -83,8 +85,10 @@ function buttons(wrapper: Awaited<ReturnType<typeof mountView>>['wrapper']) {
   return wrapper.findAll('button')
 }
 
+/** 按文案找按钮 —— **归一化空白**后再比(antd 会给两个汉字的按钮插空格)。 */
 function buttonWith(wrapper: Awaited<ReturnType<typeof mountView>>['wrapper'], text: string) {
-  return buttons(wrapper).find((button) => button.text().includes(text))
+  const target = normalize(text)
+  return buttons(wrapper).find((button) => normalize(button.text()).includes(target))
 }
 
 beforeEach(() => {

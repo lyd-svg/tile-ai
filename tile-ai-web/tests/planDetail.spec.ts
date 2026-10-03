@@ -18,6 +18,8 @@
 import { flushPromises, mount } from '@vue/test-utils'
 import { createPinia, setActivePinia } from 'pinia'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
+
+import { normalize } from './helpers/antd'
 import { createMemoryHistory, createRouter } from 'vue-router'
 
 import { BusinessError, ErrorCode } from '../src/api/errors'
@@ -120,7 +122,9 @@ async function mountView(path = '/plans/7') {
 
 /** 按文案找按钮 —— 比按下标猜稳。 */
 function buttonByText(wrapper: Awaited<ReturnType<typeof mountView>>['wrapper'], text: string) {
-  const button = wrapper.findAll('button').find((item) => item.text().includes(text))
+  // **归一化空白**后再比 —— antd 会给两个汉字的按钮插空格(「保存」→「保 存」)
+  const target = normalize(text)
+  const button = wrapper.findAll('button').find((item) => normalize(item.text()).includes(target))
   if (!button) throw new Error(`找不到按钮:${text}`)
   return button
 }
