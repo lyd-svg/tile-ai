@@ -6991,6 +6991,7 @@ C8 当初把控件迁移推迟,理由是「**无测试覆盖 ⇒ 不可验证**�
 
 1. **antd 组件在 happy-dom 里怎么测** —— G2 的真正难点,**尚无样板**。
    建议在 G1 之后、G2 之前**先解决一次**(拿一个有测试的页面做样板),否则 G2 会边做边卡。
+   ✅ **已解决(2026-10-03)**:配方见 **§70.2**,工具落在 `tile-ai-web/tests/helpers/antd.ts`。
 2. **42 kB 的账**:要到 G1 做完才开始**真正兑现**。
 3. **`prefers-reduced-motion`**:组件自带动效也要能被系统开关降级 —— **待验**。
 
@@ -7053,6 +7054,70 @@ C8 当初把控件迁移推迟,理由是「**无测试覆盖 ⇒ 不可验证**�
 - `transitions.dev` 的 **免费只读扫描**(`npx transitions-agent --json`)看起来能给出
   "哪些组件缺动效"的清单 —— 但它要 `npx` 执行第三方代码,**未跑**。若要试,应当**单独决策**。
 - 星数**未独立复核**(见 69.1 的警告)。
+
+---
+
+## 70. 阶段 G1 / G1.5 完成:四页迁 antd + **antd 在 happy-dom 里怎么测**(2026-10-03)
+
+### 70.1 G1:四个**无测试**页面迁 antd(零测试风险)
+
+| 页面 | 迁了什么 |
+| --- | --- |
+| `AdminProductEditView` | 文本 / 数字 / 下拉 / 复选 / 按钮 / **骨架屏** |
+| `ComboListView` | `Select`(可清空)· `Button` · `Skeleton` · **`Empty`** |
+| `StoreView` | `Skeleton` · `Button`(带 `href`)· `Empty` |
+| `AdminHomeView` | **`Descriptions`**(账号事实)· **`Tag`**(权限点:可做=绿 / 不可做=默认灰) |
+
+**验收**:构建通过,`vue-tsc` 抓到一处类型错(antd 数字框的值类型是 `string | number`,
+不等于 `number | undefined`)已修;384/384 全绿。
+
+**顺带落地了 §3.11**:`prefers-reduced-motion` 写进 `base.css`,
+**用极短时长而非 `none`**(`none` 会把骨架屏微光一起干掉,加载态反而像卡死)。
+
+### 70.2 ⭐ G1.5:antd 组件的测试配方(**三条,全部经实测**)
+
+这一步的产出是 `tile-ai-web/tests/helpers/antd.ts` —— G2 要逐页迁 12 个**有测试的**
+页面,每个都会撞上同一个问题,与其每页各写一遍,不如固化一次。
+
+在 `AdminComboEditView` 的**部位下拉**上做了真实迁移 + 测试改写,实测确认:
+
+| # | 规则 | 怎么发现的 |
+| --- | --- | --- |
+| 1 | **定位靠"测试锚点"** —— 模板上给 antd 组件挂一个稳定 `class`(如 `.part-select`)。别靠层级或序号。 | antd 的 `Select` **没有原生 `<select>`**,旧的 `findAll('select')` + 读 `<option>` **直接失效** |
+| 2 | **打开下拉用 `mousedown`,不是 `click`** | ⚠️ **第一版用 `click`,下拉根本没打开** —— `document.body.innerHTML` 是**空的**。换 `mousedown` 后选项才出现 |
+| 3 | **portal 里的东西查 `document`,不能用 `wrapper.find`** | 下拉/Modal/Message 都渲染到 `document.body`,而 `@vue/test-utils` 的 `wrapper` **只在组件自己的元素树里搜** |
+
+**一条明确未验的**(写进 helper 的注释了,别当结论):
+`mount()` 默认**不把组件挂到 document**。上述写法对此不敏感(portal 挂 body、组件用 wrapper 找);
+但若哪天需要 `document.querySelector` 找**组件本身**,就得上 `attachTo: document.body`。**未实测。**
+
+### 70.3 测试是**改写**的,不是删掉的
+
+那条用例(`部位下拉恒为三个值(不走字典)`)的**断言方式换了,断言强度没降**:
+
+- 旧:`findAll('select')` → 找到含 `local` 的那个 → 读它的 `<option>` 值
+- 新:`.part-select` 锚点 → `mousedown` 打开 → 读 portal 里的选项文案 → `toEqual(['地面','墙面','局部'])`
+
+**它仍然能证伪**:谁把 `PART_OPTIONS` 改错、或把它改成走字典,这里就红。
+**测试总数 384 未变** —— 没有靠删断言迁就(项目规矩)。
+
+### 70.4 打包体积:之前那个"一页 250 kB"是**暂时假象**
+
+| | 只有 1 页用 antd 时 | **4 页用之后** |
+| --- | --- | --- |
+| 主包 `index` | 182.12 kB | **100.89 kB** ↓ |
+| antd 共享块 | (全压在该页里) | `select` **141** · `AntdIcon` **83** · `skeleton` **30** |
+| `AdminProductEditView` 自身 | 249.71 kB | **75.57 kB** |
+
+⇒ Vite 把 antd **拆成了按需加载的共享块**(合计约 254 kB / gzip 84 kB),
+**只有用到 antd 的页面才加载**。C 端 12 页里目前只有搭配页与门店页付这个钱。
+
+⚠️ **未细查**:`AntdIcon` 那 83 kB 是被谁拉进来的(疑为 `Empty` 的插图,或 `Tag`/`Descriptions`)。
+
+### 70.5 下一步
+
+**G2**:逐页迁**有测试的**页面,每页同步重写受影响的测试。
+配方已就位(70.2),但**每页仍要单独验收** —— 因为每页测试钉的东西不同。
 
 
 

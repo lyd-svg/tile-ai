@@ -254,9 +254,14 @@ C 端 12 页的清单按用户旅程排,但**顺序可以停在任何一步** �
 
 | 批 | 范围 | 测试风险 | 目的 |
 | --- | --- | --- | --- |
-| **G1** | **无测试覆盖**的 4 页:`ComboListView` · `StoreView` · `AdminHomeView` · `AdminProductEditView` | **零** | 先回答「antd 在这套主题下好不好看、动效对不对」。**效果不对就停,退回成本几乎为零** |
-| **G1.5** | **立样板**:拿**一个有测试的**页面,把"antd 组件在 happy-dom 里怎么测"解决一次 | — | 否则 G2 会**边做边卡**(§68.5 第 1 条) |
+| **G1** ✅ | **无测试覆盖**的 4 页:`ComboListView` · `StoreView` · `AdminHomeView` · `AdminProductEditView` | **零** | 先回答「antd 在这套主题下好不好看、动效对不对」。**效果不对就停,退回成本几乎为零** |
+| **G1.5** ✅ | **立样板**:拿**一个有测试的**页面(`AdminComboEditView` 的部位下拉),把"antd 组件在 happy-dom 里怎么测"解决一次 | — | 否则 G2 会**边做边卡**(§68.5 第 1 条) |
 | **G2** | 逐页迁**有测试**的页面,**每页同步重写受影响的测试** | 每页都要改测试 | 主要工作量 |
+
+> ✅ **G1 与 G1.5 均已完成(2026-10-03)** —— 结果、配方与体积数字见
+> `openapi-verification.md` **§70**。
+> **G1.5 的三条实测规则**(定位靠测试锚点 / 打开下拉用 `mousedown` 而非 `click` /
+> portal 里的东西查 `document`)已固化成 `tile-ai-web/tests/helpers/antd.ts`。
 
 **G1 的验收方式**:每页仍是"一步一验收" —— 构建 + 测试(该页无测试,故测试只是防回归)+
 **你在浏览器里看**。动效这种东西**没有测试能证伪**,只能人眼。
@@ -406,6 +411,8 @@ C 端 12 页的清单按用户旅程排,但**顺序可以停在任何一步** �
 > ✅ **阶段 G1 四页全部完成**(`AdminProductEditView` · `ComboListView` · `StoreView` · `AdminHomeView`)。
 > **下一步 G1.5**:拿一个有测试的页面,把"antd 组件在 happy-dom 里怎么测"解决一次,
 > 否则 G2 会边做边卡。
+
+| **G1.5** | 2026-10-03 | **立 antd 测试样板** —— `AdminComboEditView` 的**部位下拉**迁 `Select`,并**改写**对应用例(断言强度未降);产出 **`tests/helpers/antd.ts`**(三条实测规则) | 未提交 | **29 / 384 全绿**(条数**未变** —— 是改写不是删) | 不适用(测试自身) | `AdminComboEditView.vue` · `tests/adminCombos.spec.ts` · **新增** `tests/helpers/antd.ts` | 构建通过 | ⚠️ **"`mount` 不挂 document"那条未实测**(写进 helper 注释里了);该页其余控件未迁 |
 
 **表怎么填(示例)**:
 
