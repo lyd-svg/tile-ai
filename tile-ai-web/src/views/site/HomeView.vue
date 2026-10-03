@@ -9,35 +9,39 @@
 
 <template>
   <section class="hero">
-    <h1>把瓷砖,铺进你家的样子</h1>
-    <p class="sub">
+    <p class="hero__eyebrow">选砖 · 录户型 · 效果图 · 报价</p>
+    <h1 class="hero__title">把瓷砖,铺进你家的样子</h1>
+    <p class="hero__sub">
       选砖 → 录户型 → 生成效果图 → 按部位报价。买东西之前,先看见效果。
     </p>
   </section>
 
   <section class="paths">
-    <RouterLink class="card" to="/products">
-      <h2>A · 自己挑砖</h2>
-      <p>按花色、材质、规格、风格、价格区间筛选产品库。</p>
-      <span class="tag tag--on">可用</span>
+    <RouterLink class="path" to="/products">
+      <span class="path__badge">A</span>
+      <h2 class="path__title">自己挑砖</h2>
+      <p class="path__desc">按花色、材质、规格、风格、价格区间筛选产品库。</p>
+      <span class="path__go">开始选砖 →</span>
     </RouterLink>
 
-    <RouterLink class="card" to="/combos">
-      <h2>B · 看成套搭配</h2>
-      <p>按空间与风格查看人工维护的成套方案,含参考报价区间。</p>
-      <span class="tag tag--on">可用</span>
+    <RouterLink class="path" to="/combos">
+      <span class="path__badge">B</span>
+      <h2 class="path__title">看成套搭配</h2>
+      <p class="path__desc">按空间与风格查看人工维护的成套方案,含参考报价区间。</p>
+      <span class="path__go">看看搭配 →</span>
     </RouterLink>
 
-    <RouterLink class="card" to="/consult">
-      <h2>C · 问 AI 顾问</h2>
-      <p>用自然语言描述需求,让 AI 推荐瓷砖与搭配方案。</p>
-      <span class="tag tag--on">可用</span>
+    <RouterLink class="path" to="/consult">
+      <span class="path__badge">C</span>
+      <h2 class="path__title">问 AI 顾问</h2>
+      <p class="path__desc">用自然语言描述需求,让 AI 推荐瓷砖与搭配方案。</p>
+      <span class="path__go">去问一问 →</span>
     </RouterLink>
   </section>
 
   <section class="next">
-    <h2>接下来会发生什么</h2>
-    <p class="hint">
+    <h2 class="next__title">接下来会发生什么</h2>
+    <p class="next__text">
       选好砖之后进入<b>户型录入</b>与<b>效果图生成</b> —— 这两步都已开放,
       选好砖就能走完「录户型 → 生成效果图 → 按部位报价」。
     </p>
@@ -45,76 +49,136 @@
 </template>
 
 <style scoped>
+/* 样式一律走设计令牌(`src/styles/tokens.css`)——本文件不出现任何十六进制。
+   令牌值见 `tile-ai-design.md` §3。 */
+
+/* ── 主视觉 ─────────────────────────────────────────────────────────────── */
 .hero {
-  padding: 2rem 0 1rem;
+  padding: var(--space-8) 0 var(--space-6);
+  border-bottom: 1px solid var(--color-border);
 }
 
-h1 {
-  margin: 0 0 0.5rem;
-  font-size: 1.75rem;
+.hero__eyebrow {
+  margin: 0 0 var(--space-3);
+  font-size: var(--text-sm);
+  line-height: var(--leading-sm);
+  letter-spacing: 0.08em;
+  color: var(--color-accent);
 }
 
-.sub {
-  color: #6b7280;
+.hero__title {
+  margin: 0 0 var(--space-4);
+  font-size: var(--text-3xl);
+  line-height: var(--leading-3xl);
+  font-weight: 700;
+  letter-spacing: -0.01em;
+  color: var(--color-text);
+}
+
+.hero__sub {
   margin: 0;
+  max-width: 42rem;
+  font-size: var(--text-lg);
+  line-height: var(--leading-lg);
+  color: var(--color-text-secondary);
 }
 
+/* ── 三条路径 ───────────────────────────────────────────────────────────── */
 .paths {
   display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(16rem, 1fr));
-  gap: 1rem;
-  margin: 1.5rem 0;
+  grid-template-columns: repeat(auto-fit, minmax(17rem, 1fr));
+  gap: var(--space-4);
+  margin: var(--space-6) 0;
 }
 
-.card {
-  display: block;
-  padding: 1.1rem;
-  border: 1px solid #e5e7eb;
-  border-radius: 0.5rem;
+.path {
+  display: flex;
+  flex-direction: column;
+  padding: var(--space-5);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-lg);
+  background: var(--color-surface);
+  box-shadow: var(--shadow-sm);
   text-decoration: none;
   color: inherit;
+  transition:
+    border-color var(--dur-base) var(--ease-standard),
+    box-shadow var(--dur-base) var(--ease-standard),
+    transform var(--dur-base) var(--ease-standard);
 }
 
-.card:hover {
-  border-color: #93c5fd;
+.path:hover {
+  border-color: var(--color-primary);
+  box-shadow: var(--shadow-md);
+  transform: translateY(-2px);
 }
 
-.card--off {
-  opacity: 0.6;
+.path:focus-visible {
+  outline: 2px solid var(--color-focus);
+  outline-offset: 2px;
 }
 
-h2 {
-  margin: 0 0 0.4rem;
-  font-size: 1.05rem;
+.path__badge {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 1.75rem;
+  height: 1.75rem;
+  margin-bottom: var(--space-4);
+  border-radius: var(--radius-sm);
+  background: var(--color-primary-soft);
+  color: var(--color-primary);
+  font-size: var(--text-sm);
+  line-height: 1;
+  font-weight: 700;
 }
 
-.card p {
-  margin: 0 0 0.75rem;
-  color: #6b7280;
-  font-size: 0.9rem;
+.path__title {
+  margin: 0 0 var(--space-2);
+  font-size: var(--text-xl);
+  line-height: var(--leading-xl);
+  font-weight: 600;
+  color: var(--color-text);
 }
 
-.tag {
-  display: inline-block;
-  padding: 0.1rem 0.45rem;
-  border-radius: 0.25rem;
-  background: #f3f4f6;
-  color: #6b7280;
-  font-size: 0.8rem;
+.path__desc {
+  margin: 0 0 var(--space-4);
+  flex: 1;
+  font-size: var(--text-sm);
+  line-height: var(--leading-sm);
+  color: var(--color-text-secondary);
 }
 
-.tag--on {
-  background: #ecfdf5;
-  color: #047857;
+.path__go {
+  font-size: var(--text-sm);
+  line-height: var(--leading-sm);
+  font-weight: 600;
+  color: var(--color-primary);
 }
 
-.next h2 {
-  font-size: 1rem;
-  color: #374151;
+/* ── 说明 ───────────────────────────────────────────────────────────────── */
+.next {
+  padding: var(--space-5);
+  border-radius: var(--radius-md);
+  background: var(--color-surface-sunken);
 }
 
-.hint {
-  color: #6b7280;
-  font-size: 0.9rem;
+.next__title {
+  margin: 0 0 var(--space-2);
+  font-size: var(--text-lg);
+  line-height: var(--leading-lg);
+  font-weight: 600;
+  color: var(--color-text);
+}
+
+.next__text {
+  margin: 0;
+  font-size: var(--text-sm);
+  line-height: var(--leading-sm);
+  color: var(--color-text-secondary);
+}
+
+.next__text b {
+  color: var(--color-text);
 }
 </style>

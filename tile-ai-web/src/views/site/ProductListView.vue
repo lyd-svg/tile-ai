@@ -92,27 +92,30 @@ onMounted(async () => {
 
 <template>
   <section>
-    <h1>选砖</h1>
+    <header class="page-head">
+      <h1 class="page-head__title">选砖</h1>
+      <p class="page-head__sub">按花色、材质、规格、风格与价格区间挑砖。</p>
+    </header>
 
     <form class="filters" @submit.prevent="search">
-      <label>
-        关键词
+      <label class="field">
+        <span class="field__label">关键词</span>
         <input v-model="filters.keyword" type="text" placeholder="名称或编号" />
       </label>
-      <label>
-        材质
+      <label class="field">
+        <span class="field__label">材质</span>
         <input v-model="filters.material" type="text" placeholder="如 釉面砖" />
       </label>
-      <label>
-        规格
+      <label class="field">
+        <span class="field__label">规格</span>
         <input v-model="filters.spec" type="text" placeholder="如 750×1500mm" />
       </label>
-      <label>
-        花色
+      <label class="field">
+        <span class="field__label">花色</span>
         <input v-model="filters.colorPattern" type="text" placeholder="如 浅灰" />
       </label>
-      <label>
-        空间
+      <label class="field">
+        <span class="field__label">空间</span>
         <select v-model="filters.space">
           <option value="">全部</option>
           <option v-for="item in spaces" :key="item.key" :value="item.key">
@@ -120,8 +123,8 @@ onMounted(async () => {
           </option>
         </select>
       </label>
-      <label>
-        风格
+      <label class="field">
+        <span class="field__label">风格</span>
         <select v-model="filters.style">
           <option value="">全部</option>
           <option v-for="item in styles" :key="item.key" :value="item.key">
@@ -129,8 +132,8 @@ onMounted(async () => {
           </option>
         </select>
       </label>
-      <label>
-        价格下限
+      <label class="field field--narrow">
+        <span class="field__label">价格下限</span>
         <input
           :value="filters.priceMin"
           type="number"
@@ -138,8 +141,8 @@ onMounted(async () => {
           @input="filters.priceMin = priceOf(($event.target as HTMLInputElement).value)"
         />
       </label>
-      <label>
-        价格上限
+      <label class="field field--narrow">
+        <span class="field__label">价格上限</span>
         <input
           :value="filters.priceMax"
           type="number"
@@ -148,8 +151,8 @@ onMounted(async () => {
         />
       </label>
       <div class="actions">
-        <button type="submit" class="primary">查询</button>
-        <button v-if="hasFilter" type="button" @click="reset">清空</button>
+        <button type="submit" class="btn btn--primary">查询</button>
+        <button v-if="hasFilter" type="button" class="btn" @click="reset">清空</button>
       </div>
     </form>
 
@@ -165,22 +168,28 @@ onMounted(async () => {
               <img v-if="row.coverImage" :src="row.coverImage" :alt="row.name" />
               <span v-else class="thumb--empty">暂无图片</span>
             </div>
-            <h3>{{ row.name }}</h3>
-            <p class="meta">{{ [row.material, row.spec, row.surface].filter(Boolean).join(' · ') }}</p>
-            <p class="price">
-              ¥{{ row.pricePerSqm }}<small>/㎡</small>
-            </p>
-            <p class="tags">
-              <span v-for="tag in row.styleTags ?? []" :key="tag" class="tag">{{ tag }}</span>
-            </p>
+            <div class="card__body">
+              <h3 class="card__name">{{ row.name }}</h3>
+              <p class="meta">{{ [row.material, row.spec, row.surface].filter(Boolean).join(' · ') }}</p>
+              <p class="price">
+                ¥{{ row.pricePerSqm }}<small>/㎡</small>
+              </p>
+              <p class="tags">
+                <span v-for="tag in row.styleTags ?? []" :key="tag" class="tag">{{ tag }}</span>
+              </p>
+            </div>
           </RouterLink>
         </li>
       </ul>
 
       <footer class="pager">
-        <button type="button" :disabled="!hasPrev" @click="goPage(page - 1)">上一页</button>
-        <span>第 {{ page }} / {{ totalPages }} 页</span>
-        <button type="button" :disabled="!hasNext" @click="goPage(page + 1)">下一页</button>
+        <button type="button" class="btn" :disabled="!hasPrev" @click="goPage(page - 1)">
+          上一页
+        </button>
+        <span class="pager__pos">第 {{ page }} / {{ totalPages }} 页</span>
+        <button type="button" class="btn" :disabled="!hasNext" @click="goPage(page + 1)">
+          下一页
+        </button>
       </footer>
     </template>
 
@@ -189,92 +198,168 @@ onMounted(async () => {
 </template>
 
 <style scoped>
-h1 {
-  margin: 0 0 1rem;
-  font-size: 1.35rem;
+/* 样式一律走设计令牌(`src/styles/tokens.css`)—— 本文件不出现任何十六进制。
+   ⚠️ 元素与绑定**一个没动**:筛选仍是原生 input / select,
+   因为这一页的筛选表单**没有测试覆盖**,换控件属于"不可验证的行为改动"。
+   详见 `tile-ai-ui-rollout-plan.md` 登记表 C2 行。 */
+
+.page-head {
+  margin-bottom: var(--space-5);
 }
 
+.page-head__title {
+  margin: 0 0 var(--space-2);
+  font-size: var(--text-2xl);
+  line-height: var(--leading-2xl);
+  font-weight: 700;
+  color: var(--color-text);
+}
+
+.page-head__sub {
+  margin: 0;
+  font-size: var(--text-sm);
+  line-height: var(--leading-sm);
+  color: var(--color-text-secondary);
+}
+
+/* ── 筛选区 ─────────────────────────────────────────────────────────────── */
 .filters {
   display: flex;
   flex-wrap: wrap;
-  gap: 0.75rem;
+  gap: var(--space-3);
   align-items: flex-end;
-  padding: 0.9rem;
-  border: 1px solid #e5e7eb;
-  border-radius: 0.5rem;
+  padding: var(--space-4);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-md);
+  background: var(--color-surface);
 }
 
-.filters label {
+.field {
   display: flex;
   flex-direction: column;
-  gap: 0.2rem;
-  font-size: 0.85rem;
-  color: #374151;
+  gap: var(--space-1);
+  min-width: 9rem;
 }
 
-input,
-select {
-  padding: 0.3rem 0.45rem;
-  border: 1px solid #d1d5db;
-  border-radius: 0.25rem;
+.field--narrow {
+  min-width: 6rem;
+}
+
+.field__label {
+  font-size: var(--text-xs);
+  line-height: var(--leading-xs);
+  color: var(--color-text-secondary);
+}
+
+.field input,
+.field select {
+  height: var(--control-height);
+  padding: 0 var(--space-3);
+  border: 1px solid var(--color-border-strong);
+  border-radius: var(--radius-sm);
+  background: var(--color-surface);
+  color: var(--color-text);
+  font: inherit;
+  font-size: var(--text-sm);
+}
+
+.field input:focus-visible,
+.field select:focus-visible {
+  outline: 2px solid var(--color-focus);
+  outline-offset: 1px;
+  border-color: var(--color-primary);
 }
 
 .actions {
   display: flex;
-  gap: 0.5rem;
+  gap: var(--space-2);
 }
 
-button {
-  padding: 0.35rem 0.8rem;
-  border: 1px solid #d1d5db;
-  border-radius: 0.25rem;
-  background: white;
+/* ── 按钮 ───────────────────────────────────────────────────────────────── */
+.btn {
+  height: var(--control-height);
+  padding: 0 var(--space-4);
+  border: 1px solid var(--color-border-strong);
+  border-radius: var(--radius-sm);
+  background: var(--color-surface);
+  color: var(--color-text);
+  font: inherit;
+  font-size: var(--text-sm);
   cursor: pointer;
+  transition: background var(--dur-fast) var(--ease-standard);
 }
 
-button:disabled {
-  opacity: 0.5;
+.btn:hover:not(:disabled) {
+  border-color: var(--color-primary);
+  color: var(--color-primary);
+}
+
+.btn--primary {
+  background: var(--color-primary);
+  border-color: var(--color-primary);
+  color: var(--color-on-primary);
+  font-weight: 600;
+}
+
+.btn--primary:hover:not(:disabled) {
+  background: var(--color-primary-hover);
+  border-color: var(--color-primary-hover);
+  color: var(--color-on-primary);
+}
+
+.btn:disabled {
+  opacity: 0.45;
   cursor: default;
 }
 
-.primary {
-  background: #1d4ed8;
-  border-color: #1d4ed8;
-  color: white;
-}
-
+/* ── 结果 ───────────────────────────────────────────────────────────────── */
 .count {
-  color: #6b7280;
-  font-size: 0.9rem;
-  margin: 1rem 0 0.5rem;
+  margin: var(--space-5) 0 var(--space-3);
+  font-size: var(--text-sm);
+  color: var(--color-text-secondary);
 }
 
 .grid {
   display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(14rem, 1fr));
-  gap: 1rem;
+  grid-template-columns: repeat(auto-fill, minmax(15rem, 1fr));
+  gap: var(--space-4);
   list-style: none;
   padding: 0;
   margin: 0;
 }
 
 .card {
-  display: block;
-  border: 1px solid #e5e7eb;
-  border-radius: 0.5rem;
+  display: flex;
+  flex-direction: column;
+  height: 100%;
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-lg);
+  background: var(--color-surface);
+  box-shadow: var(--shadow-sm);
   overflow: hidden;
   text-decoration: none;
   color: inherit;
-  height: 100%;
+  transition:
+    border-color var(--dur-base) var(--ease-standard),
+    box-shadow var(--dur-base) var(--ease-standard),
+    transform var(--dur-base) var(--ease-standard);
 }
 
 .card:hover {
-  border-color: #93c5fd;
+  border-color: var(--color-primary);
+  box-shadow: var(--shadow-md);
+  transform: translateY(-2px);
 }
 
+.card:focus-visible {
+  outline: 2px solid var(--color-focus);
+  outline-offset: 2px;
+}
+
+/* 瓷砖图固定 1:1 —— 防加载抖动,也让不同花色的砖可横向比较 */
 .thumb {
-  height: 8rem;
-  background: #f9fafb;
+  aspect-ratio: 1 / 1;
+  background: var(--color-surface-sunken);
   display: flex;
   align-items: center;
   justify-content: center;
@@ -287,60 +372,97 @@ button:disabled {
 }
 
 .thumb--empty {
-  color: #9ca3af;
-  font-size: 0.85rem;
+  color: var(--color-text-muted);
+  font-size: var(--text-xs);
 }
 
-.card h3 {
-  margin: 0.6rem 0.75rem 0.2rem;
-  font-size: 1rem;
+.card__body {
+  display: flex;
+  flex-direction: column;
+  flex: 1;
+  padding: var(--space-3) var(--space-4) var(--space-4);
+}
+
+.card__name {
+  margin: 0 0 var(--space-1);
+  font-size: var(--text-base);
+  line-height: var(--leading-base);
+  font-weight: 600;
+  color: var(--color-text);
 }
 
 .meta {
-  margin: 0 0.75rem;
-  color: #6b7280;
-  font-size: 0.82rem;
+  margin: 0 0 var(--space-2);
   min-height: 1.2em;
+  font-size: var(--text-xs);
+  line-height: var(--leading-xs);
+  color: var(--color-text-muted);
 }
 
+/* 报价是这一页的重点,用主色压住视线 */
 .price {
-  margin: 0.4rem 0.75rem 0;
-  color: #b45309;
-  font-weight: 600;
+  margin: auto 0 0;
+  font-size: var(--text-lg);
+  line-height: var(--leading-lg);
+  font-weight: 700;
+  font-variant-numeric: tabular-nums;
+  color: var(--color-primary);
 }
 
 .price small {
-  color: #9ca3af;
+  font-size: var(--text-xs);
   font-weight: 400;
+  color: var(--color-text-muted);
 }
 
 .tags {
-  margin: 0.4rem 0.75rem 0.75rem;
+  margin: var(--space-2) 0 0;
 }
 
 .tag {
   display: inline-block;
-  margin-right: 0.3rem;
-  padding: 0.05rem 0.35rem;
-  border-radius: 0.25rem;
-  background: #eff6ff;
-  color: #1d4ed8;
-  font-size: 0.75rem;
+  margin-right: var(--space-1);
+  padding: 0.1rem var(--space-2);
+  border-radius: var(--radius-full);
+  background: var(--color-primary-soft);
+  color: var(--color-primary);
+  font-size: var(--text-xs);
+  line-height: var(--leading-xs);
 }
 
+/* ── 分页 ───────────────────────────────────────────────────────────────── */
 .pager {
   display: flex;
-  gap: 1rem;
+  gap: var(--space-4);
   align-items: center;
   justify-content: center;
-  margin-top: 1.5rem;
+  margin-top: var(--space-6);
 }
 
+.pager__pos {
+  font-size: var(--text-sm);
+  color: var(--color-text-secondary);
+  font-variant-numeric: tabular-nums;
+}
+
+/* ── 状态 ───────────────────────────────────────────────────────────────── */
 .error {
-  color: #b91c1c;
+  margin: var(--space-5) 0 0;
+  padding: var(--space-3) var(--space-4);
+  border: 1px solid var(--color-danger);
+  border-radius: var(--radius-sm);
+  background: var(--color-danger-soft);
+  color: var(--color-danger);
+  font-size: var(--text-sm);
 }
 
 .hint {
-  color: #6b7280;
+  margin: var(--space-6) 0;
+  padding: var(--space-6);
+  border-radius: var(--radius-md);
+  background: var(--color-surface-sunken);
+  color: var(--color-text-secondary);
+  font-size: var(--text-sm);
+  text-align: center;
 }
 </style>

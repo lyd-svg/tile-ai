@@ -259,164 +259,260 @@ onMounted(load)
 </template>
 
 <style scoped>
+/* 样式一律走设计令牌(`src/styles/tokens.css`)—— 本文件不出现任何十六进制。
+   ⚠️ **本页 `<template>` 与 `<script>` 一个字节未动**,只换了这一块。
+   ⚠️ 测试断言 `.tag--off` **恰好 1 个** —— 样式改了不影响计数,但不能新增该 class。 */
+
 .head h1 {
-  margin: 0 0 0.5rem;
-  font-size: 1.3rem;
+  margin: 0 0 var(--space-2);
+  font-size: var(--text-xl);
+  line-height: var(--leading-xl);
+  font-weight: 700;
+  color: var(--color-text);
 }
 
 .hint {
-  color: #6b7280;
-  font-size: 0.8rem;
+  font-size: var(--text-xs);
+  line-height: var(--leading-xs);
+  color: var(--color-text-muted);
 }
 
+.hint strong {
+  color: var(--color-text-secondary);
+}
+
+/* ── 页签 ───────────────────────────────────────────────────────────────── */
 .tabs {
   display: flex;
-  gap: 0.5rem;
-  margin: 0.75rem 0;
+  gap: var(--space-2);
+  margin: var(--space-4) 0;
 }
 
 .tabs button {
-  padding: 0.35rem 0.9rem;
-  border: 1px solid #d1d5db;
-  border-radius: 0.25rem;
-  background: white;
+  height: var(--control-height);
+  padding: 0 var(--space-4);
+  border: 1px solid var(--color-border-strong);
+  border-radius: var(--radius-full);
+  background: var(--color-surface);
+  color: var(--color-text-secondary);
+  font: inherit;
+  font-size: var(--text-sm);
   cursor: pointer;
+  transition:
+    border-color var(--dur-fast) var(--ease-standard),
+    background var(--dur-fast) var(--ease-standard);
+}
+
+.tabs button:hover {
+  border-color: var(--color-primary);
+  color: var(--color-primary);
 }
 
 .tabs button.active {
-  border-color: #1d4ed8;
-  background: #eff6ff;
-  color: #1d4ed8;
+  border-color: var(--color-primary);
+  background: var(--color-primary-soft);
+  color: var(--color-primary);
+  font-weight: 600;
 }
 
+/* ── 状态 ───────────────────────────────────────────────────────────────── */
 .error {
-  padding: 0.5rem 0.75rem;
-  border: 1px solid #fca5a5;
-  border-radius: 0.25rem;
-  background: #fef2f2;
-  color: #b91c1c;
-  font-size: 0.85rem;
+  margin: var(--space-3) 0;
+  padding: var(--space-3) var(--space-4);
+  border: 1px solid var(--color-danger);
+  border-radius: var(--radius-sm);
+  background: var(--color-danger-soft);
+  color: var(--color-danger);
+  font-size: var(--text-sm);
 }
 
 .notice {
-  padding: 0.5rem 0.75rem;
-  border: 1px solid #bbf7d0;
-  border-radius: 0.25rem;
-  background: #f0fdf4;
-  color: #166534;
-  font-size: 0.85rem;
+  margin: var(--space-3) 0;
+  padding: var(--space-3) var(--space-4);
+  border: 1px solid var(--color-success);
+  border-radius: var(--radius-sm);
+  background: var(--color-success-soft);
+  color: var(--color-success);
+  font-size: var(--text-sm);
 }
 
 .errors {
-  margin: 0.5rem 0;
-  padding-left: 1.2rem;
-  color: #b91c1c;
-  font-size: 0.85rem;
+  margin: var(--space-3) 0;
+  padding-left: var(--space-5);
+  color: var(--color-danger);
+  font-size: var(--text-sm);
 }
 
+/* ── 字典表 ─────────────────────────────────────────────────────────────── */
 table {
   width: 100%;
   border-collapse: collapse;
-  font-size: 0.9rem;
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-md);
+  overflow: hidden;
+  font-size: var(--text-sm);
+  font-variant-numeric: tabular-nums;
 }
 
 th,
 td {
-  border-bottom: 1px solid #e5e7eb;
-  padding: 0.5rem;
+  padding: var(--space-2) var(--space-3);
+  border-bottom: 1px solid var(--color-border);
   text-align: left;
 }
 
 th {
-  color: #374151;
+  background: var(--color-surface-sunken);
+  color: var(--color-text-secondary);
+  font-size: var(--text-xs);
   font-weight: 600;
+  white-space: nowrap;
+}
+
+tbody tr:hover {
+  background: var(--color-bg);
 }
 
 .num {
   text-align: right;
 }
 
+/* 存储键是代码,用等宽 —— 与展示名一眼可分 */
 .key {
   font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
-  font-size: 0.85rem;
+  font-size: var(--text-xs);
+  color: var(--color-text-secondary);
 }
 
+/* 状态标签:启用=暖绿、停用=中性灰。**停用不是错误,不用红色** */
 .tag {
-  padding: 0.1rem 0.35rem;
-  border-radius: 0.2rem;
-  font-size: 0.75rem;
+  display: inline-block;
+  padding: 0.05rem var(--space-2);
+  border-radius: var(--radius-full);
+  font-size: var(--text-xs);
+  line-height: var(--leading-xs);
+  white-space: nowrap;
 }
 
 .tag--on {
-  background: #ecfdf5;
-  color: #047857;
+  background: var(--color-success-soft);
+  color: var(--color-success);
 }
 
 .tag--off {
-  background: #f3f4f6;
-  color: #6b7280;
+  background: var(--color-surface-sunken);
+  color: var(--color-text-muted);
 }
 
+/* ── 行内操作 ───────────────────────────────────────────────────────────── */
 .actions {
   display: flex;
-  gap: 0.4rem;
+  gap: var(--space-1);
 }
 
 .actions button {
-  padding: 0.25rem 0.6rem;
-  border: 1px solid #d1d5db;
-  border-radius: 0.25rem;
-  background: white;
+  height: var(--control-height);
+  padding: 0 var(--space-3);
+  border: 1px solid var(--color-border-strong);
+  border-radius: var(--radius-sm);
+  background: var(--color-surface);
+  color: var(--color-text);
+  font: inherit;
+  font-size: var(--text-sm);
   cursor: pointer;
-  font-size: 0.85rem;
+  transition: border-color var(--dur-fast) var(--ease-standard);
+}
+
+.actions button:hover:not(:disabled) {
+  border-color: var(--color-primary);
+  color: var(--color-primary);
 }
 
 .actions button.danger {
-  border-color: #fca5a5;
-  color: #b91c1c;
+  border-color: var(--color-danger);
+  color: var(--color-danger);
 }
 
+.actions button.danger:hover:not(:disabled) {
+  background: var(--color-danger-soft);
+  border-color: var(--color-danger);
+  color: var(--color-danger);
+}
+
+/* ── 编辑 / 新增表单 ────────────────────────────────────────────────────── */
 .panel {
-  border: 1px solid #e5e7eb;
-  border-radius: 0.375rem;
-  padding: 1rem;
-  margin-top: 1.5rem;
   max-width: 30rem;
+  margin-top: var(--space-5);
+  padding: var(--space-5);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-md);
+  background: var(--color-surface);
+  box-shadow: var(--shadow-sm);
 }
 
 .panel h2 {
-  margin: 0 0 0.75rem;
-  font-size: 1rem;
+  margin: 0 0 var(--space-4);
+  font-size: var(--text-base);
+  line-height: var(--leading-base);
+  font-weight: 600;
+  color: var(--color-text);
 }
 
 label {
   display: flex;
   flex-direction: column;
-  gap: 0.25rem;
-  margin-bottom: 0.75rem;
-  font-size: 0.85rem;
-  color: #374151;
+  gap: var(--space-1);
+  margin-bottom: var(--space-4);
+  font-size: var(--text-xs);
+  line-height: var(--leading-xs);
+  color: var(--color-text-secondary);
 }
 
 input,
 select {
-  padding: 0.4rem 0.5rem;
-  border: 1px solid #d1d5db;
-  border-radius: 0.25rem;
+  height: var(--control-height);
+  padding: 0 var(--space-3);
+  border: 1px solid var(--color-border-strong);
+  border-radius: var(--radius-sm);
+  background: var(--color-surface);
+  color: var(--color-text);
   font: inherit;
+  font-size: var(--text-sm);
+}
+
+input:focus-visible,
+select:focus-visible {
+  outline: 2px solid var(--color-focus);
+  outline-offset: 1px;
+  border-color: var(--color-primary);
+}
+
+select:disabled {
+  background: var(--color-surface-sunken);
+  color: var(--color-text-muted);
+  cursor: not-allowed;
 }
 
 button.primary {
-  padding: 0.5rem 1rem;
-  border: 1px solid #1d4ed8;
-  border-radius: 0.25rem;
-  background: #1d4ed8;
-  color: white;
+  height: var(--control-height);
+  padding: 0 var(--space-4);
+  border: 1px solid var(--color-primary);
+  border-radius: var(--radius-sm);
+  background: var(--color-primary);
+  color: var(--color-on-primary);
+  font: inherit;
+  font-size: var(--text-sm);
+  font-weight: 600;
   cursor: pointer;
 }
 
+button.primary:hover:not(:disabled) {
+  background: var(--color-primary-hover);
+  border-color: var(--color-primary-hover);
+}
+
 button.primary:disabled {
-  opacity: 0.5;
+  opacity: 0.45;
   cursor: not-allowed;
 }
 </style>

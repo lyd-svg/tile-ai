@@ -303,171 +303,248 @@ const metaText = computed(() =>
 </template>
 
 <style scoped>
+/* 样式一律走设计令牌(`src/styles/tokens.css`)—— 本文件不出现任何十六进制。
+   ⚠️ **本页 `<template>` 与 `<script>` 一个字节未动**,只换了这一块 ——
+   它的测试有逐 class 断言,还有一条硬规矩:**页面上不许出现
+   「改名 / 另存为 / 删除 / 重算 / 保存」**这五个词(公开页没有任何管理动作)。
+   ⚠️ 测试依赖的选择器:`.banner` `.meta` `.spaces` `.main img` `.main .caption`
+   `.thumbs .thumb`(含 `--active`)`.thumb-cap` `.part-table` `.quote-table`
+   `.totals` `.stale` `[role="alert"]`。 */
+
+/* 分享页是**陌生人看到的一页** —— 视作门面:居中、留白大、不堆控件 */
 .share {
   max-width: 60rem;
   margin: 0 auto;
-  padding: 1.5rem 1rem 3rem;
+  padding: var(--space-6) var(--space-4) var(--space-8);
 }
 
 .banner {
-  margin: 0 0 1rem;
-  padding: 0.5rem 0.75rem;
-  border-radius: 0.35rem;
-  background: #eff6ff;
-  color: #1d4ed8;
-  font-size: 0.85rem;
+  margin: 0 0 var(--space-5);
+  padding: var(--space-3) var(--space-4);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-sm);
+  background: var(--color-surface-sunken);
+  color: var(--color-text-secondary);
+  font-size: var(--text-sm);
+  line-height: var(--leading-sm);
+}
+
+.banner strong {
+  color: var(--color-text);
 }
 
 .head {
   display: flex;
   align-items: baseline;
-  gap: 0.75rem;
+  flex-wrap: wrap;
+  gap: var(--space-3);
+  margin-bottom: var(--space-4);
 }
 
 h1 {
   margin: 0;
-  font-size: 1.35rem;
+  font-size: var(--text-2xl);
+  line-height: var(--leading-2xl);
+  font-weight: 700;
+  color: var(--color-text);
 }
 
 h2 {
-  margin: 0 0 0.6rem;
-  font-size: 1.05rem;
+  margin: 0 0 var(--space-3);
+  font-size: var(--text-lg);
+  line-height: var(--leading-lg);
+  font-weight: 600;
+  color: var(--color-text);
 }
 
 .meta {
-  color: #6b7280;
-  font-size: 0.85rem;
+  font-size: var(--text-sm);
+  color: var(--color-text-secondary);
 }
 
+/* 每一块内容做成一张卡 */
 .block {
-  margin-top: 1.5rem;
-  padding-top: 1rem;
-  border-top: 1px solid #e5e7eb;
+  margin-top: var(--space-4);
+  padding: var(--space-5);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-md);
+  background: var(--color-surface);
+  box-shadow: var(--shadow-sm);
 }
 
+/* ── 效果图 ─────────────────────────────────────────────────────────────── */
 .main img {
   max-width: 100%;
-  border-radius: 0.5rem;
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-md);
 }
 
 .caption {
-  margin: 0.3rem 0 0;
-  color: #6b7280;
-  font-size: 0.8rem;
+  margin: var(--space-2) 0 0;
+  font-size: var(--text-xs);
+  line-height: var(--leading-xs);
+  color: var(--color-text-secondary);
 }
 
 .thumbs {
   display: flex;
-  gap: 0.75rem;
   flex-wrap: wrap;
-  margin-top: 0.75rem;
+  gap: var(--space-3);
+  margin-top: var(--space-3);
 }
 
 /* 缩略图是 button(可点)—— 盖掉全局 button 的边框/背景,只留图与说明 */
 .thumb {
   display: flex;
   flex-direction: column;
-  gap: 0.2rem;
+  gap: var(--space-1);
   width: 8rem;
-  padding: 0.2rem;
+  padding: var(--space-1);
   border: 2px solid transparent;
-  border-radius: 0.4rem;
+  border-radius: var(--radius-md);
   background: none;
   cursor: pointer;
+  transition: border-color var(--dur-fast) var(--ease-standard);
+}
+
+.thumb:hover {
+  border-color: var(--color-border-strong);
 }
 
 .thumb img {
   width: 100%;
   height: 6rem;
   object-fit: cover;
-  border-radius: 0.25rem;
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-sm);
 }
 
 /* 当前正在主图位置展示的那张 */
 .thumb--active {
-  border-color: #1d4ed8;
+  border-color: var(--color-primary);
 }
 
 .thumb--active .thumb-cap {
-  color: #1d4ed8;
+  color: var(--color-primary);
+  font-weight: 600;
 }
 
 .thumb-cap {
-  color: #6b7280;
-  font-size: 0.75rem;
+  font-size: var(--text-xs);
+  line-height: var(--leading-xs);
+  color: var(--color-text-secondary);
   text-align: center;
 }
 
+/* ── 户型与部位 ─────────────────────────────────────────────────────────── */
 .spaces {
-  margin: 0 0 1rem;
-  padding-left: 1.2rem;
-  color: #374151;
-  font-size: 0.9rem;
+  margin: 0 0 var(--space-4);
+  padding-left: var(--space-5);
+  font-size: var(--text-sm);
+  line-height: var(--leading-sm);
+  color: var(--color-text-secondary);
 }
 
+.spaces strong {
+  color: var(--color-text);
+}
+
+/* ── 表格(部位与报价)──────────────────────────────────────────────────── */
 table {
   width: 100%;
   border-collapse: collapse;
-  font-size: 0.9rem;
+  font-size: var(--text-sm);
+  font-variant-numeric: tabular-nums;
 }
 
 th,
 td {
-  padding: 0.45rem 0.5rem;
-  border-bottom: 1px solid #e5e7eb;
+  padding: var(--space-2) var(--space-3);
+  border-bottom: 1px solid var(--color-border);
   text-align: left;
 }
 
+th {
+  font-size: var(--text-xs);
+  font-weight: 600;
+  color: var(--color-text-secondary);
+}
+
+/* 数字列一律右对齐 —— 金额与面积要能竖着比大小 */
 .num {
   text-align: right;
 }
 
 .tag {
-  margin-left: 0.3rem;
-  padding: 0.05rem 0.3rem;
-  border-radius: 0.25rem;
-  background: #eff6ff;
-  color: #1d4ed8;
-  font-size: 0.72rem;
+  margin-left: var(--space-2);
+  padding: 0.05rem var(--space-2);
+  border-radius: var(--radius-full);
+  background: var(--color-primary-soft);
+  color: var(--color-primary);
+  font-size: var(--text-xs);
 }
 
 .stale {
-  padding: 0.5rem 0.75rem;
-  border-radius: 0.35rem;
-  background: #fef3c7;
-  color: #92400e;
-  font-size: 0.85rem;
+  margin: 0 0 var(--space-4);
+  padding: var(--space-3) var(--space-4);
+  border: 1px solid var(--color-warning);
+  border-radius: var(--radius-sm);
+  background: var(--color-warning-soft);
+  color: var(--color-text);
+  font-size: var(--text-sm);
 }
 
 .totals {
   display: grid;
   grid-template-columns: auto auto;
-  gap: 0.3rem 1rem;
+  gap: var(--space-1) var(--space-5);
   justify-content: end;
-  margin: 1rem 0 0;
-  font-size: 0.9rem;
+  margin: var(--space-4) 0 0;
+  font-size: var(--text-sm);
+  font-variant-numeric: tabular-nums;
 }
 
 .totals dt {
-  color: #6b7280;
+  color: var(--color-text-secondary);
 }
 
 .totals dd {
   margin: 0;
   text-align: right;
+  color: var(--color-text);
 }
 
+/* 总计是这一页最重要的数字 —— 放大 + 主色 */
 .totals .grand {
-  color: #b45309;
-  font-weight: 600;
+  padding-top: var(--space-2);
+  border-top: 1px solid var(--color-border);
+  color: var(--color-primary);
+  font-size: var(--text-lg);
+  font-weight: 700;
 }
 
+/* ── 状态 ───────────────────────────────────────────────────────────────── */
 .error {
-  color: #b91c1c;
+  margin: var(--space-3) 0;
+  padding: var(--space-3) var(--space-4);
+  border: 1px solid var(--color-danger);
+  border-radius: var(--radius-sm);
+  background: var(--color-danger-soft);
+  color: var(--color-danger);
+  font-size: var(--text-sm);
 }
 
 .hint {
-  color: #6b7280;
-  font-size: 0.9rem;
+  margin: var(--space-3) 0;
+  font-size: var(--text-sm);
+  line-height: var(--leading-sm);
+  color: var(--color-text-secondary);
+}
+
+.block > .hint:last-child {
+  padding: var(--space-4);
+  border-radius: var(--radius-sm);
+  background: var(--color-surface-sunken);
+  text-align: center;
 }
 </style>

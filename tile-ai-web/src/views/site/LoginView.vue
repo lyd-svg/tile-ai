@@ -94,76 +94,119 @@ async function submit() {
 </template>
 
 <style scoped>
+/* 样式一律走设计令牌(`src/styles/tokens.css`)—— 本文件不出现任何十六进制。
+   ⚠️ **本页 `<template>` 与 `<script>` 一个字节未动**,只换了这一块 ——
+   测试依赖三条结构约定:
+     ① `findAll('input')` 的**顺序** = 用户名、密码;
+     ② `find('form')` 能触发提交;
+     ③ `findAll('a')[0]` 是**登录/注册切换链接** —— 所以这里**不许再加任何链接**。 */
+
 .wrap {
   display: flex;
   justify-content: center;
-  padding-top: 3rem;
+  padding: var(--space-7) var(--space-4);
 }
 
 .card {
   display: flex;
   flex-direction: column;
-  gap: 0.75rem;
+  gap: var(--space-4);
   width: 22rem;
-  padding: 1.5rem;
-  border: 1px solid #e5e7eb;
-  border-radius: 0.5rem;
+  padding: var(--space-6);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-lg);
+  background: var(--color-surface);
+  box-shadow: var(--shadow-md);
 }
 
 h1 {
   margin: 0;
-  font-size: 1.2rem;
+  font-size: var(--text-xl);
+  line-height: var(--leading-xl);
+  font-weight: 700;
+  color: var(--color-text);
 }
 
 label {
   display: flex;
   flex-direction: column;
-  gap: 0.25rem;
-  font-size: 0.9rem;
+  gap: var(--space-1);
+  font-size: var(--text-xs);
+  line-height: var(--leading-xs);
+  color: var(--color-text-secondary);
 }
 
 small {
-  color: #6b7280;
+  color: var(--color-text-muted);
 }
 
 input {
-  padding: 0.4rem 0.5rem;
-  border: 1px solid #d1d5db;
-  border-radius: 0.25rem;
+  padding: var(--space-3) var(--space-4);
+  border: 1px solid var(--color-border-strong);
+  border-radius: var(--radius-sm);
+  background: var(--color-surface);
+  color: var(--color-text);
+  font: inherit;
+  font-size: var(--text-sm);
+}
+
+input:focus-visible {
+  outline: 2px solid var(--color-focus);
+  outline-offset: 1px;
+  border-color: var(--color-primary);
 }
 
 button {
-  padding: 0.5rem;
-  border: 0;
-  border-radius: 0.25rem;
-  background: #1d4ed8;
-  color: white;
+  padding: var(--space-3) var(--space-4);
+  border: 1px solid var(--color-primary);
+  border-radius: var(--radius-sm);
+  background: var(--color-primary);
+  color: var(--color-on-primary);
+  font: inherit;
+  font-size: var(--text-sm);
+  font-weight: 600;
   cursor: pointer;
+  transition: background var(--dur-fast) var(--ease-standard);
+}
+
+button:hover:not(:disabled) {
+  background: var(--color-primary-hover);
+  border-color: var(--color-primary-hover);
 }
 
 button:disabled {
-  opacity: 0.6;
+  opacity: 0.5;
+  cursor: not-allowed;
 }
 
 .switch {
   margin: 0;
-  font-size: 0.9rem;
-  color: #6b7280;
+  font-size: var(--text-sm);
+  color: var(--color-text-secondary);
 }
 
 .switch a {
-  color: #1d4ed8;
+  color: var(--color-primary);
+  font-weight: 600;
 }
 
 .notice {
   margin: 0;
-  color: #9ca3af;
-  font-size: 0.8rem;
+  padding-top: var(--space-3);
+  border-top: 1px solid var(--color-border);
+  color: var(--color-text-muted);
+  font-size: var(--text-xs);
+  line-height: var(--leading-xs);
 }
 
 .error {
   margin: 0;
-  color: #b91c1c;
-  font-size: 0.9rem;
+  padding: var(--space-3) var(--space-4);
+  border: 1px solid var(--color-danger);
+  border-radius: var(--radius-sm);
+  background: var(--color-danger-soft);
+  color: var(--color-danger);
+  font-size: var(--text-sm);
+  line-height: var(--leading-sm);
 }
 </style>

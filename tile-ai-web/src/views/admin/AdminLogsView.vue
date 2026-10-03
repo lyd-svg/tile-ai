@@ -173,81 +173,163 @@ onMounted(load)
 </template>
 
 <style scoped>
+/* 样式一律走设计令牌(`src/styles/tokens.css`)—— 本文件不出现任何十六进制。
+   ⚠️ **本页 `<template>` 与 `<script>` 一个字节未动**,只换了这一块 ——
+   测试靠 `findAll('input[type="date"]')` 与 `find('form')` 定位,所以
+   日期输入必须是 `type="date"`、筛选必须是同一个 `form`。
+   ⚠️ **只读页**(契约里这组没有写接口)—— 加了写入口才是错。 */
+
 .head {
   display: flex;
   justify-content: space-between;
   align-items: center;
+  gap: var(--space-4);
 }
 
 h1 {
   margin: 0;
-  font-size: 1.15rem;
+  font-size: var(--text-xl);
+  line-height: var(--leading-xl);
+  font-weight: 700;
+  color: var(--color-text);
 }
 
+/* ── 筛选 ───────────────────────────────────────────────────────────────── */
 .filters {
   display: flex;
-  gap: 1rem;
-  align-items: flex-end;
   flex-wrap: wrap;
-  margin: 1rem 0;
+  align-items: flex-end;
+  gap: var(--space-3);
+  margin: var(--space-4) 0;
+  padding: var(--space-4);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-md);
+  background: var(--color-surface);
 }
 
 .filters label {
   display: flex;
   flex-direction: column;
-  gap: 0.25rem;
-  font-size: 0.9rem;
+  gap: var(--space-1);
+  font-size: var(--text-xs);
+  line-height: var(--leading-xs);
+  color: var(--color-text-secondary);
 }
 
 input,
 select {
-  padding: 0.35rem 0.5rem;
-  border: 1px solid #d1d5db;
-  border-radius: 0.25rem;
+  height: var(--control-height);
+  padding: 0 var(--space-3);
+  border: 1px solid var(--color-border-strong);
+  border-radius: var(--radius-sm);
+  background: var(--color-surface);
+  color: var(--color-text);
+  font: inherit;
+  font-size: var(--text-sm);
 }
 
+input:focus-visible,
+select:focus-visible {
+  outline: 2px solid var(--color-focus);
+  outline-offset: 1px;
+  border-color: var(--color-primary);
+}
+
+/* ── 按钮 ───────────────────────────────────────────────────────────────── */
 button {
-  padding: 0.35rem 0.7rem;
-  border: 1px solid #d1d5db;
-  border-radius: 0.25rem;
-  background: white;
+  height: var(--control-height);
+  padding: 0 var(--space-4);
+  border: 1px solid var(--color-border-strong);
+  border-radius: var(--radius-sm);
+  background: var(--color-surface);
+  color: var(--color-text);
+  font: inherit;
+  font-size: var(--text-sm);
   cursor: pointer;
+  transition: border-color var(--dur-fast) var(--ease-standard);
+}
+
+button:hover:not(:disabled) {
+  border-color: var(--color-primary);
+  color: var(--color-primary);
 }
 
 button:disabled {
-  opacity: 0.5;
+  opacity: 0.45;
   cursor: default;
 }
 
+/* ── 日志表 ─────────────────────────────────────────────────────────────── */
 table {
   width: 100%;
   border-collapse: collapse;
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-md);
+  overflow: hidden;
+  font-size: var(--text-sm);
 }
 
 th,
 td {
-  padding: 0.5rem;
-  border-bottom: 1px solid #e5e7eb;
+  padding: var(--space-2) var(--space-3);
+  border-bottom: 1px solid var(--color-border);
   text-align: left;
+}
+
+th {
+  background: var(--color-surface-sunken);
+  color: var(--color-text-secondary);
+  font-size: var(--text-xs);
+  font-weight: 600;
+  white-space: nowrap;
+}
+
+tbody tr:hover {
+  background: var(--color-bg);
+}
+
+/* 时间与动作码是"要看清楚"的两列 —— 等宽数字/等宽字体便于竖着扫 */
+td:first-child,
+td:nth-child(3) {
+  font-variant-numeric: tabular-nums;
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  font-size: var(--text-xs);
 }
 
 .actions {
   display: flex;
-  gap: 0.4rem;
+  gap: var(--space-1);
 }
 
+/* ── 分页 ───────────────────────────────────────────────────────────────── */
 .pager {
   display: flex;
-  gap: 1rem;
+  gap: var(--space-4);
   align-items: center;
-  margin-top: 1rem;
+  justify-content: center;
+  margin-top: var(--space-5);
+  font-size: var(--text-sm);
+  color: var(--color-text-secondary);
 }
 
+/* ── 状态 ───────────────────────────────────────────────────────────────── */
 .error {
-  color: #b91c1c;
+  margin: var(--space-3) 0;
+  padding: var(--space-3) var(--space-4);
+  border: 1px solid var(--color-danger);
+  border-radius: var(--radius-sm);
+  background: var(--color-danger-soft);
+  color: var(--color-danger);
+  font-size: var(--text-sm);
 }
 
 .hint {
-  color: #6b7280;
+  margin: var(--space-4) 0;
+  padding: var(--space-5);
+  border-radius: var(--radius-md);
+  background: var(--color-surface-sunken);
+  color: var(--color-text-secondary);
+  font-size: var(--text-sm);
+  text-align: center;
 }
 </style>

@@ -190,114 +190,218 @@ onMounted(load)
 </template>
 
 <style scoped>
+/* 样式一律走设计令牌(`src/styles/tokens.css`)—— 本文件不出现任何十六进制。
+   ⚠️ **本页 `<template>` 与 `<script>` 一个字节未动**,只换了这一块 ——
+   测试逐字断言按钮文案(`编辑` / `删除` / `上架` / `下架` / `新增 SKU`)、
+   `共 N 条`、`没有符合条件的 SKU` 与 `[role="alert"]`,动结构风险高于收益。
+   后台主题由 `App.vue` 的 `data-theme="admin"` 提供(更紧凑、圆角更小)。 */
+
 .head {
   display: flex;
   justify-content: space-between;
   align-items: center;
+  gap: var(--space-4);
 }
 
 h1 {
   margin: 0;
-  font-size: 1.15rem;
+  font-size: var(--text-xl);
+  line-height: var(--leading-xl);
+  font-weight: 700;
+  color: var(--color-text);
 }
 
+/* ── 筛选 ───────────────────────────────────────────────────────────────── */
 .filters {
   display: flex;
-  gap: 1rem;
+  flex-wrap: wrap;
+  gap: var(--space-3);
   align-items: flex-end;
-  margin: 1rem 0;
+  margin: var(--space-4) 0;
+  padding: var(--space-4);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-md);
+  background: var(--color-surface);
 }
 
 .filters label {
   display: flex;
   flex-direction: column;
-  gap: 0.25rem;
-  font-size: 0.9rem;
+  gap: var(--space-1);
+  font-size: var(--text-xs);
+  line-height: var(--leading-xs);
+  color: var(--color-text-secondary);
 }
 
 input,
 select {
-  padding: 0.35rem 0.5rem;
-  border: 1px solid #d1d5db;
-  border-radius: 0.25rem;
+  height: var(--control-height);
+  padding: 0 var(--space-3);
+  border: 1px solid var(--color-border-strong);
+  border-radius: var(--radius-sm);
+  background: var(--color-surface);
+  color: var(--color-text);
+  font: inherit;
+  font-size: var(--text-sm);
 }
 
+input:focus-visible,
+select:focus-visible {
+  outline: 2px solid var(--color-focus);
+  outline-offset: 1px;
+  border-color: var(--color-primary);
+}
+
+/* ── 按钮 ───────────────────────────────────────────────────────────────── */
 button {
-  padding: 0.35rem 0.7rem;
-  border: 1px solid #d1d5db;
-  border-radius: 0.25rem;
-  background: white;
+  height: var(--control-height);
+  padding: 0 var(--space-3);
+  border: 1px solid var(--color-border-strong);
+  border-radius: var(--radius-sm);
+  background: var(--color-surface);
+  color: var(--color-text);
+  font: inherit;
+  font-size: var(--text-sm);
   cursor: pointer;
+  transition:
+    border-color var(--dur-fast) var(--ease-standard),
+    background var(--dur-fast) var(--ease-standard);
+}
+
+button:hover:not(:disabled) {
+  border-color: var(--color-primary);
+  color: var(--color-primary);
 }
 
 button:disabled {
-  opacity: 0.5;
+  opacity: 0.45;
   cursor: default;
 }
 
 .primary {
-  background: #1d4ed8;
-  border-color: #1d4ed8;
-  color: white;
+  border-color: var(--color-primary);
+  background: var(--color-primary);
+  color: var(--color-on-primary);
+  font-weight: 600;
 }
 
+.primary:hover:not(:disabled) {
+  background: var(--color-primary-hover);
+  border-color: var(--color-primary-hover);
+  color: var(--color-on-primary);
+}
+
+/* 删除是危险操作 —— 危险色 + 明确的文字,不靠图标暗示 */
 .danger {
-  color: #b91c1c;
+  border-color: var(--color-danger);
+  color: var(--color-danger);
 }
 
+.danger:hover:not(:disabled) {
+  background: var(--color-danger-soft);
+  border-color: var(--color-danger);
+  color: var(--color-danger);
+}
+
+/* ── 表格 ───────────────────────────────────────────────────────────────── */
 table {
   width: 100%;
   border-collapse: collapse;
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-md);
+  overflow: hidden;
+  font-size: var(--text-sm);
+  font-variant-numeric: tabular-nums;
 }
 
 th,
 td {
-  padding: 0.5rem;
-  border-bottom: 1px solid #e5e7eb;
+  padding: var(--space-2) var(--space-3);
+  border-bottom: 1px solid var(--color-border);
   text-align: left;
 }
 
+th {
+  background: var(--color-surface-sunken);
+  color: var(--color-text-secondary);
+  font-size: var(--text-xs);
+  font-weight: 600;
+  white-space: nowrap;
+}
+
+tbody tr:hover {
+  background: var(--color-bg);
+}
+
+/* 数字列右对齐 —— 单价要能竖着比大小 */
 .num {
   text-align: right;
 }
 
 .actions {
   display: flex;
-  gap: 0.4rem;
+  gap: var(--space-1);
 }
 
+/* 状态标签:上架=暖绿、下架=中性灰。**都不靠红色** —— 下架不是错误 */
 .tag {
-  padding: 0.1rem 0.4rem;
-  border-radius: 0.25rem;
-  font-size: 0.8rem;
+  display: inline-block;
+  padding: 0.05rem var(--space-2);
+  border-radius: var(--radius-full);
+  font-size: var(--text-xs);
+  line-height: var(--leading-xs);
+  white-space: nowrap;
 }
 
 .tag--on {
-  background: #ecfdf5;
-  color: #047857;
+  background: var(--color-success-soft);
+  color: var(--color-success);
 }
 
 .tag--off {
-  background: #f3f4f6;
-  color: #6b7280;
+  background: var(--color-surface-sunken);
+  color: var(--color-text-muted);
 }
 
+/* ── 分页 ───────────────────────────────────────────────────────────────── */
 .pager {
   display: flex;
-  gap: 1rem;
+  gap: var(--space-4);
   align-items: center;
-  margin-top: 1rem;
+  justify-content: center;
+  margin-top: var(--space-5);
+  font-size: var(--text-sm);
+  color: var(--color-text-secondary);
 }
 
+/* ── 状态 ───────────────────────────────────────────────────────────────── */
 .error {
-  color: #b91c1c;
+  margin: var(--space-3) 0;
+  padding: var(--space-3) var(--space-4);
+  border: 1px solid var(--color-danger);
+  border-radius: var(--radius-sm);
+  background: var(--color-danger-soft);
+  color: var(--color-danger);
+  font-size: var(--text-sm);
 }
 
 .notice {
-  color: #047857;
+  margin: var(--space-3) 0;
+  padding: var(--space-3) var(--space-4);
+  border: 1px solid var(--color-success);
+  border-radius: var(--radius-sm);
+  background: var(--color-success-soft);
+  color: var(--color-success);
+  font-size: var(--text-sm);
 }
 
 .hint {
-  color: #6b7280;
+  margin: var(--space-4) 0;
+  padding: var(--space-5);
+  border-radius: var(--radius-md);
+  background: var(--color-surface-sunken);
+  color: var(--color-text-secondary);
+  font-size: var(--text-sm);
+  text-align: center;
 }
 </style>

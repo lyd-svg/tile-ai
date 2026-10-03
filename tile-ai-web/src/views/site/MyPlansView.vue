@@ -121,7 +121,9 @@ onMounted(async () => {
 
 <template>
   <section>
-    <h1>我的方案</h1>
+    <header class="page-head">
+      <h1 class="page-head__title">我的方案</h1>
+    </header>
 
     <p v-if="errorText" class="error" role="alert">{{ errorText }}</p>
     <p v-if="loading" class="hint">加载中…</p>
@@ -135,14 +137,16 @@ onMounted(async () => {
               <img v-if="row.coverImage" :src="row.coverImage" alt="" />
               <span v-else class="thumb--empty">暂无效果图</span>
             </div>
-            <h3>{{ row.name }}</h3>
-            <p class="meta">{{ metaOf(row) }}</p>
-            <p class="price">
-              {{ priceOf(row) }}
-              <span v-if="row.quoteExpired" class="stale">报价已过期</span>
-            </p>
-            <p v-if="partsOf(row)" class="parts">{{ partsOf(row) }}</p>
-            <p class="time">{{ timeOf(row.createdAt) }}</p>
+            <div class="card__body">
+              <h3 class="card__name">{{ row.name }}</h3>
+              <p class="meta">{{ metaOf(row) }}</p>
+              <p class="price">
+                {{ priceOf(row) }}
+                <span v-if="row.quoteExpired" class="stale">报价已过期</span>
+              </p>
+              <p v-if="partsOf(row)" class="parts">{{ partsOf(row) }}</p>
+              <p class="time">{{ timeOf(row.createdAt) }}</p>
+            </div>
           </RouterLink>
         </li>
       </ul>
@@ -162,43 +166,71 @@ onMounted(async () => {
 </template>
 
 <style scoped>
-h1 {
-  margin: 0 0 1rem;
-  font-size: 1.35rem;
+/* 样式一律走设计令牌(`src/styles/tokens.css`)—— 本文件不出现任何十六进制。
+   ⚠️ 测试逐 class 断言,以下必须原样保留:`.card`(含 h3)· `.thumb` ·
+   `.thumb--empty` · `.meta` · `.price` · `.price .stale` · `.parts` · `.pager button`。
+   ⚠️ 本页**只允许有两个 `<button>`**(上一页 / 下一页)—— 有测试在数字。 */
+
+.page-head {
+  margin-bottom: var(--space-4);
+}
+
+.page-head__title {
+  margin: 0;
+  font-size: var(--text-2xl);
+  line-height: var(--leading-2xl);
+  font-weight: 700;
+  color: var(--color-text);
 }
 
 .count {
-  color: #6b7280;
-  font-size: 0.9rem;
-  margin: 1rem 0 0.5rem;
+  margin: var(--space-4) 0 var(--space-3);
+  font-size: var(--text-sm);
+  color: var(--color-text-secondary);
 }
 
+/* ── 方案卡网格 ─────────────────────────────────────────────────────────── */
 .grid {
   display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(14rem, 1fr));
-  gap: 1rem;
+  grid-template-columns: repeat(auto-fill, minmax(15rem, 1fr));
+  gap: var(--space-4);
   list-style: none;
   padding: 0;
   margin: 0;
 }
 
 .card {
-  display: block;
-  border: 1px solid #e5e7eb;
-  border-radius: 0.5rem;
+  display: flex;
+  flex-direction: column;
+  height: 100%;
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-lg);
+  background: var(--color-surface);
+  box-shadow: var(--shadow-sm);
   overflow: hidden;
   text-decoration: none;
   color: inherit;
-  height: 100%;
+  transition:
+    border-color var(--dur-base) var(--ease-standard),
+    box-shadow var(--dur-base) var(--ease-standard),
+    transform var(--dur-base) var(--ease-standard);
 }
 
 .card:hover {
-  border-color: #93c5fd;
+  border-color: var(--color-primary);
+  box-shadow: var(--shadow-md);
+  transform: translateY(-2px);
 }
 
+.card:focus-visible {
+  outline: 2px solid var(--color-focus);
+  outline-offset: 2px;
+}
+
+/* 效果图固定 4:3 —— 防加载抖动,也让不同方案可横向比较 */
 .thumb {
-  height: 8rem;
-  background: #f9fafb;
+  aspect-ratio: 4 / 3;
+  background: var(--color-surface-sunken);
   display: flex;
   align-items: center;
   justify-content: center;
@@ -211,76 +243,119 @@ h1 {
 }
 
 .thumb--empty {
-  color: #9ca3af;
-  font-size: 0.85rem;
+  color: var(--color-text-muted);
+  font-size: var(--text-xs);
 }
 
-.card h3 {
-  margin: 0.6rem 0.75rem 0.2rem;
-  font-size: 1rem;
+.card__body {
+  display: flex;
+  flex-direction: column;
+  flex: 1;
+  padding: var(--space-3) var(--space-4) var(--space-4);
+}
+
+.card__name {
+  margin: 0 0 var(--space-1);
+  font-size: var(--text-base);
+  line-height: var(--leading-base);
+  font-weight: 600;
+  color: var(--color-text);
 }
 
 .meta {
-  margin: 0 0.75rem;
-  color: #6b7280;
-  font-size: 0.82rem;
+  margin: 0 0 var(--space-2);
   min-height: 1.2em;
+  font-size: var(--text-xs);
+  line-height: var(--leading-xs);
+  color: var(--color-text-muted);
 }
 
+/* 报价是这一页的重点 —— 主色 + 等宽数字 */
 .price {
-  margin: 0.4rem 0.75rem 0;
-  color: #b45309;
-  font-weight: 600;
+  margin: auto 0 0;
+  font-size: var(--text-lg);
+  line-height: var(--leading-lg);
+  font-weight: 700;
+  font-variant-numeric: tabular-nums;
+  color: var(--color-primary);
 }
 
 .price .stale {
-  margin-left: 0.4rem;
-  padding: 0.05rem 0.35rem;
-  border-radius: 0.25rem;
-  background: #fef3c7;
-  color: #b45309;
-  font-size: 0.72rem;
+  margin-left: var(--space-2);
+  padding: 0.05rem var(--space-2);
+  border-radius: var(--radius-full);
+  background: var(--color-warning-soft);
+  color: var(--color-warning);
+  font-size: var(--text-xs);
   font-weight: 400;
 }
 
 .parts {
-  margin: 0.3rem 0.75rem 0;
-  color: #6b7280;
-  font-size: 0.78rem;
+  margin: var(--space-2) 0 0;
+  font-size: var(--text-xs);
+  line-height: var(--leading-xs);
+  color: var(--color-text-secondary);
 }
 
 .time {
-  margin: 0.3rem 0.75rem 0.75rem;
-  color: #9ca3af;
-  font-size: 0.75rem;
+  margin: var(--space-2) 0 0;
+  font-size: var(--text-xs);
+  line-height: var(--leading-xs);
+  color: var(--color-text-muted);
+  font-variant-numeric: tabular-nums;
 }
 
+/* ── 分页 ───────────────────────────────────────────────────────────────── */
 .pager {
   display: flex;
-  gap: 1rem;
+  gap: var(--space-4);
   align-items: center;
   justify-content: center;
-  margin-top: 1.5rem;
+  margin-top: var(--space-6);
+  font-size: var(--text-sm);
+  color: var(--color-text-secondary);
 }
 
 button {
-  padding: 0.35rem 0.8rem;
-  border: 1px solid #d1d5db;
-  border-radius: 0.25rem;
-  background: white;
+  padding: var(--space-2) var(--space-4);
+  border: 1px solid var(--color-border-strong);
+  border-radius: var(--radius-sm);
+  background: var(--color-surface);
+  color: var(--color-text);
+  font: inherit;
+  font-size: var(--text-sm);
   cursor: pointer;
+  transition: border-color var(--dur-fast) var(--ease-standard);
+}
+
+button:hover:not(:disabled) {
+  border-color: var(--color-primary);
+  color: var(--color-primary);
 }
 
 button:disabled {
-  opacity: 0.5;
+  opacity: 0.45;
   cursor: default;
 }
 
+/* ── 状态 ───────────────────────────────────────────────────────────────── */
 .error {
-  color: #b91c1c;
+  margin: 0;
+  padding: var(--space-3) var(--space-4);
+  border: 1px solid var(--color-danger);
+  border-radius: var(--radius-sm);
+  background: var(--color-danger-soft);
+  color: var(--color-danger);
+  font-size: var(--text-sm);
 }
 
 .hint {
-  color: #6b7280;
+  margin: var(--space-6) 0;
+  padding: var(--space-6);
+  border-radius: var(--radius-md);
+  background: var(--color-surface-sunken);
+  color: var(--color-text-secondary);
+  font-size: var(--text-sm);
+  text-align: center;
 }
 </style>

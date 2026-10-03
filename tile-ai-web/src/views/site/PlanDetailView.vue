@@ -585,238 +585,361 @@ async function revokeShareLink() {
 </template>
 
 <style scoped>
+/* 样式一律走设计令牌(`src/styles/tokens.css`)—— 本文件不出现任何十六进制。
+   ⚠️ **本页 `<template>` 与 `<script>` 一个字节未动**,只换了这一块 ——
+   因为它的测试有 60+ 条逐 class 断言(`.main` / `.thumbs` / `.thumb--active` /
+   `.part-table` / `.quote-table` / `.totals` / `.stale` / `.share-link` /
+   `.rename` …),动结构风险高于收益。 */
+
 .head {
   display: flex;
   align-items: baseline;
-  gap: 0.75rem;
+  flex-wrap: wrap;
+  gap: var(--space-3);
+  margin-bottom: var(--space-4);
 }
 
 h1 {
   margin: 0;
-  font-size: 1.35rem;
+  font-size: var(--text-2xl);
+  line-height: var(--leading-2xl);
+  font-weight: 700;
+  color: var(--color-text);
 }
 
 h2 {
-  margin: 0 0 0.6rem;
-  font-size: 1.05rem;
+  margin: 0 0 var(--space-3);
+  font-size: var(--text-lg);
+  line-height: var(--leading-lg);
+  font-weight: 600;
+  color: var(--color-text);
 }
 
 .meta {
-  color: #6b7280;
-  font-size: 0.85rem;
+  font-size: var(--text-sm);
+  color: var(--color-text-secondary);
 }
 
+/* 每一块内容做成一张卡 —— 工具感:信息分开、边界清楚 */
 .block {
-  margin-top: 1.5rem;
-  padding-top: 1rem;
-  border-top: 1px solid #e5e7eb;
+  margin-top: var(--space-4);
+  padding: var(--space-5);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-md);
+  background: var(--color-surface);
+  box-shadow: var(--shadow-sm);
 }
 
+/* ── 效果图 ─────────────────────────────────────────────────────────────── */
 .main img {
   max-width: 100%;
-  border-radius: 0.5rem;
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-md);
 }
 
 .caption {
-  margin: 0.3rem 0 0;
-  color: #6b7280;
-  font-size: 0.8rem;
+  margin: var(--space-2) 0 0;
+  font-size: var(--text-xs);
+  line-height: var(--leading-xs);
+  color: var(--color-text-secondary);
 }
 
 .thumbs {
   display: flex;
-  gap: 0.75rem;
   flex-wrap: wrap;
-  margin-top: 0.75rem;
+  gap: var(--space-3);
+  margin-top: var(--space-3);
 }
 
 /* 缩略图是 button(可点)—— 盖掉全局 button 的边框/背景,只留图与说明 */
 .thumb {
   display: flex;
   flex-direction: column;
-  gap: 0.2rem;
+  gap: var(--space-1);
   width: 8rem;
-  padding: 0.2rem;
+  padding: var(--space-1);
   border: 2px solid transparent;
-  border-radius: 0.4rem;
+  border-radius: var(--radius-md);
   background: none;
   cursor: pointer;
+  transition: border-color var(--dur-fast) var(--ease-standard);
+}
+
+.thumb:hover {
+  border-color: var(--color-border-strong);
 }
 
 .thumb img {
   width: 100%;
   height: 6rem;
   object-fit: cover;
-  border-radius: 0.25rem;
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-sm);
 }
 
 /* 当前正在主图位置展示的那张 */
 .thumb--active {
-  border-color: #1d4ed8;
+  border-color: var(--color-primary);
 }
 
 .thumb--active .thumb-cap {
-  color: #1d4ed8;
+  color: var(--color-primary);
+  font-weight: 600;
 }
 
 .thumb-cap {
-  color: #6b7280;
-  font-size: 0.75rem;
+  font-size: var(--text-xs);
+  line-height: var(--leading-xs);
+  color: var(--color-text-secondary);
   text-align: center;
 }
 
+/* ── 户型与部位 ─────────────────────────────────────────────────────────── */
 .spaces {
-  margin: 0 0 1rem;
-  padding-left: 1.2rem;
-  color: #374151;
-  font-size: 0.9rem;
+  margin: 0 0 var(--space-4);
+  padding-left: var(--space-5);
+  font-size: var(--text-sm);
+  line-height: var(--leading-sm);
+  color: var(--color-text-secondary);
 }
 
+.spaces strong {
+  color: var(--color-text);
+}
+
+/* ── 表格(报价与部位)─────────────────────────────────────────────────── */
 table {
   width: 100%;
   border-collapse: collapse;
-  font-size: 0.9rem;
+  font-size: var(--text-sm);
+  font-variant-numeric: tabular-nums;
 }
 
 th,
 td {
-  padding: 0.45rem 0.5rem;
-  border-bottom: 1px solid #e5e7eb;
+  padding: var(--space-2) var(--space-3);
+  border-bottom: 1px solid var(--color-border);
   text-align: left;
 }
 
+th {
+  color: var(--color-text-secondary);
+  font-weight: 600;
+  font-size: var(--text-xs);
+}
+
+/* 数字列一律右对齐 —— 金额与面积要能竖着比大小 */
 .num {
   text-align: right;
 }
 
 .tag {
-  margin-left: 0.3rem;
-  padding: 0.05rem 0.3rem;
-  border-radius: 0.25rem;
-  background: #eff6ff;
-  color: #1d4ed8;
-  font-size: 0.72rem;
+  margin-left: var(--space-2);
+  padding: 0.05rem var(--space-2);
+  border-radius: var(--radius-full);
+  background: var(--color-primary-soft);
+  color: var(--color-primary);
+  font-size: var(--text-xs);
 }
 
 .quote-head {
   display: flex;
   align-items: center;
-  gap: 1rem;
+  justify-content: space-between;
+  flex-wrap: wrap;
+  gap: var(--space-3);
+}
+
+.quote-head h2 {
+  margin-bottom: 0;
 }
 
 .stale {
-  padding: 0.5rem 0.75rem;
-  border-radius: 0.35rem;
-  background: #fef3c7;
-  color: #92400e;
-  font-size: 0.85rem;
+  margin: var(--space-3) 0 0;
+  padding: var(--space-3) var(--space-4);
+  border: 1px solid var(--color-warning);
+  border-radius: var(--radius-sm);
+  background: var(--color-warning-soft);
+  color: var(--color-text);
+  font-size: var(--text-sm);
 }
 
 .totals {
   display: grid;
   grid-template-columns: auto auto;
-  gap: 0.3rem 1rem;
+  gap: var(--space-1) var(--space-5);
   justify-content: end;
-  margin: 1rem 0 0;
-  font-size: 0.9rem;
+  margin: var(--space-4) 0 0;
+  font-size: var(--text-sm);
+  font-variant-numeric: tabular-nums;
 }
 
 .totals dt {
-  color: #6b7280;
+  color: var(--color-text-secondary);
 }
 
 .totals dd {
   margin: 0;
   text-align: right;
+  color: var(--color-text);
 }
 
+/* 总计是这一页最重要的数字 —— 放大 + 主色,压住视线 */
 .totals .grand {
-  color: #b45309;
-  font-weight: 600;
+  padding-top: var(--space-2);
+  border-top: 1px solid var(--color-border);
+  color: var(--color-primary);
+  font-size: var(--text-lg);
+  font-weight: 700;
 }
 
-.rename {
-  display: flex;
-  gap: 0.5rem;
-  align-items: flex-end;
-  margin-bottom: 1rem;
-}
-
-.rename label {
-  display: flex;
-  flex-direction: column;
-  gap: 0.2rem;
-  font-size: 0.85rem;
-  color: #374151;
-}
-
-.rename input {
-  min-width: 18rem;
-  padding: 0.35rem 0.5rem;
-  border: 1px solid #d1d5db;
-  border-radius: 0.25rem;
-}
-
-.actions {
-  display: flex;
-  gap: 0.5rem;
-}
-
+/* ── 分享 ───────────────────────────────────────────────────────────────── */
 .share-row {
   display: flex;
-  gap: 0.5rem;
+  gap: var(--space-2);
   align-items: center;
-  margin-top: 0.6rem;
+  margin-top: var(--space-3);
 }
 
 .share-link {
   flex: 1;
   min-width: 12rem;
-  padding: 0.35rem 0.5rem;
-  border: 1px solid #d1d5db;
-  border-radius: 0.25rem;
-  background: #f9fafb;
-  font-size: 0.85rem;
+  padding: var(--space-2) var(--space-3);
+  border: 1px solid var(--color-border-strong);
+  border-radius: var(--radius-sm);
+  background: var(--color-surface-sunken);
+  color: var(--color-text-secondary);
+  font: inherit;
+  font-size: var(--text-sm);
 }
 
+/* ── 管理 ───────────────────────────────────────────────────────────────── */
+.rename {
+  display: flex;
+  gap: var(--space-2);
+  align-items: flex-end;
+  margin-bottom: var(--space-4);
+}
+
+.rename label {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-1);
+  font-size: var(--text-xs);
+  color: var(--color-text-secondary);
+}
+
+.rename input {
+  min-width: 18rem;
+  padding: var(--space-2) var(--space-3);
+  border: 1px solid var(--color-border-strong);
+  border-radius: var(--radius-sm);
+  background: var(--color-surface);
+  color: var(--color-text);
+  font: inherit;
+  font-size: var(--text-sm);
+}
+
+.rename input:focus-visible {
+  outline: 2px solid var(--color-focus);
+  outline-offset: 1px;
+  border-color: var(--color-primary);
+}
+
+.actions {
+  display: flex;
+  gap: var(--space-2);
+}
+
+/* ── 按钮 ───────────────────────────────────────────────────────────────── */
 button {
-  padding: 0.35rem 0.8rem;
-  border: 1px solid #d1d5db;
-  border-radius: 0.25rem;
-  background: white;
+  padding: var(--space-2) var(--space-4);
+  border: 1px solid var(--color-border-strong);
+  border-radius: var(--radius-sm);
+  background: var(--color-surface);
+  color: var(--color-text);
+  font: inherit;
+  font-size: var(--text-sm);
   cursor: pointer;
+  transition:
+    border-color var(--dur-fast) var(--ease-standard),
+    background var(--dur-fast) var(--ease-standard);
+}
+
+button:hover:not(:disabled) {
+  border-color: var(--color-primary);
+  color: var(--color-primary);
 }
 
 button:disabled {
-  opacity: 0.5;
+  opacity: 0.45;
   cursor: default;
 }
 
 .primary {
-  background: #1d4ed8;
-  border-color: #1d4ed8;
-  color: white;
+  border-color: var(--color-primary);
+  background: var(--color-primary);
+  color: var(--color-on-primary);
+  font-weight: 600;
 }
 
+.primary:hover:not(:disabled) {
+  background: var(--color-primary-hover);
+  border-color: var(--color-primary-hover);
+  color: var(--color-on-primary);
+}
+
+/* 危险操作:危险色 + 明确的文字("删除" / "废除"),不靠图标暗示 */
 .danger {
-  color: #b91c1c;
+  border-color: var(--color-danger);
+  color: var(--color-danger);
 }
 
+.danger:hover:not(:disabled) {
+  background: var(--color-danger-soft);
+  color: var(--color-danger);
+  border-color: var(--color-danger);
+}
+
+/* ── 状态 ───────────────────────────────────────────────────────────────── */
 .errors {
-  color: #b91c1c;
-  font-size: 0.85rem;
+  margin: var(--space-3) 0 0;
+  padding-left: var(--space-5);
+  color: var(--color-danger);
+  font-size: var(--text-sm);
 }
 
 .error {
-  color: #b91c1c;
+  margin: var(--space-3) 0;
+  padding: var(--space-3) var(--space-4);
+  border: 1px solid var(--color-danger);
+  border-radius: var(--radius-sm);
+  background: var(--color-danger-soft);
+  color: var(--color-danger);
+  font-size: var(--text-sm);
 }
 
 .notice {
-  color: #047857;
+  margin: var(--space-3) 0;
+  padding: var(--space-3) var(--space-4);
+  border: 1px solid var(--color-success);
+  border-radius: var(--radius-sm);
+  background: var(--color-success-soft);
+  color: var(--color-success);
+  font-size: var(--text-sm);
 }
 
 .hint {
-  color: #6b7280;
-  font-size: 0.9rem;
+  margin: var(--space-3) 0;
+  font-size: var(--text-sm);
+  line-height: var(--leading-sm);
+  color: var(--color-text-secondary);
+}
+
+.block > .hint:last-child {
+  padding: var(--space-4);
+  border-radius: var(--radius-sm);
+  background: var(--color-surface-sunken);
+  text-align: center;
 }
 </style>

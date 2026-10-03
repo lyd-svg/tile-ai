@@ -21,7 +21,9 @@ const denied = computed(() => PERMISSIONS.filter((permission) => !granted.value.
 
 <template>
   <section>
-    <h1>概览</h1>
+    <header class="page-head">
+      <h1 class="page-head__title">概览</h1>
+    </header>
 
     <dl class="facts">
       <dt>账号</dt>
@@ -33,13 +35,13 @@ const denied = computed(() => PERMISSIONS.filter((permission) => !granted.value.
     </dl>
 
     <h2>当前角色的权限点(架构 §4.4)</h2>
-    <p>
+    <p class="tags">
       <span v-for="permission in granted" :key="permission" class="tag">{{ permission }}</span>
     </p>
 
     <template v-if="denied.length">
       <h2>此角色不可做的</h2>
-      <p>
+      <p class="tags">
         <span v-for="permission in denied" :key="permission" class="tag tag--off">{{
           permission
         }}</span>
@@ -52,49 +54,86 @@ const denied = computed(() => PERMISSIONS.filter((permission) => !granted.value.
 </template>
 
 <style scoped>
-h1 {
-  margin-top: 0;
-  font-size: 1.15rem;
+/* 样式一律走设计令牌(`src/styles/tokens.css`)—— 本文件不出现任何十六进制。
+   ⚠️ 本页**没有测试用例** —— 改动无测试可证,只能等人眼验收(纪律 7)。 */
+
+.page-head {
+  margin-bottom: var(--space-4);
+}
+
+.page-head__title {
+  margin: 0;
+  font-size: var(--text-xl);
+  line-height: var(--leading-xl);
+  font-weight: 700;
+  color: var(--color-text);
 }
 
 h2 {
-  font-size: 0.95rem;
-  color: #374151;
+  margin: var(--space-5) 0 var(--space-2);
+  font-size: var(--text-sm);
+  line-height: var(--leading-sm);
+  font-weight: 600;
+  color: var(--color-text-secondary);
 }
 
+/* ── 账号事实 ───────────────────────────────────────────────────────────── */
 .facts {
   display: grid;
   grid-template-columns: auto 1fr;
-  gap: 0.25rem 1rem;
-  margin: 0 0 1.5rem;
+  gap: var(--space-2) var(--space-5);
+  margin: 0;
+  padding: var(--space-4);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-md);
+  background: var(--color-surface);
+  font-size: var(--text-sm);
+  line-height: var(--leading-sm);
 }
 
 .facts dt {
-  color: #6b7280;
+  color: var(--color-text-secondary);
+  white-space: nowrap;
 }
 
 .facts dd {
+  margin: 0;
+  color: var(--color-text);
+}
+
+/* ── 权限点 ─────────────────────────────────────────────────────────────── */
+.tags {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-2);
   margin: 0;
 }
 
 .tag {
   display: inline-block;
-  margin: 0 0.25rem 0.25rem 0;
-  padding: 0.1rem 0.4rem;
-  border-radius: 0.25rem;
-  background: #eff6ff;
-  color: #1d4ed8;
-  font-size: 0.8rem;
-  font-family: ui-monospace, monospace;
+  padding: 0.1rem var(--space-2);
+  border-radius: var(--radius-sm);
+  background: var(--color-primary-soft);
+  color: var(--color-primary);
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  font-size: var(--text-xs);
+  line-height: var(--leading-xs);
 }
 
+/* 不可做的用中性灰 —— **不靠红色**,它不是"错误",只是"不归你管" */
 .tag--off {
-  background: #f3f4f6;
-  color: #9ca3af;
+  background: var(--color-surface-sunken);
+  color: var(--color-text-muted);
 }
 
 .hint {
-  color: #6b7280;
-  font-size: 0.875rem;
+  margin: var(--space-3) 0 0;
+  font-size: var(--text-xs);
+  line-height: var(--leading-xs);
+  color: var(--color-text-muted);
+}
+
+.hint strong {
+  color: var(--color-text-secondary);
 }
 </style>

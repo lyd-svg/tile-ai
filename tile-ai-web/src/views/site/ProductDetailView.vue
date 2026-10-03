@@ -144,11 +144,11 @@ onMounted(async () => {
       </div>
 
       <div class="info">
-        <h1>{{ product.name }}</h1>
+        <h1 class="title">{{ product.name }}</h1>
         <p class="sku">编号 {{ product.sku }}</p>
         <p class="price">¥{{ product.pricePerSqm }}<small>/㎡</small></p>
 
-        <dl>
+        <dl class="specs">
           <template v-if="product.spec"><dt>规格</dt><dd>{{ product.spec }}</dd></template>
           <template v-if="product.material"><dt>材质</dt><dd>{{ product.material }}</dd></template>
           <template v-if="product.surface"><dt>光泽度</dt><dd>{{ product.surface }}</dd></template>
@@ -212,7 +212,7 @@ onMounted(async () => {
           >
             去录户型 →
           </button>
-          <RouterLink to="/products">继续选砖</RouterLink>
+          <RouterLink class="cta__alt" to="/products">继续选砖</RouterLink>
         </div>
       </div>
     </article>
@@ -220,32 +220,47 @@ onMounted(async () => {
 </template>
 
 <style scoped>
+/* 样式一律走设计令牌(`src/styles/tokens.css`)—— 本文件不出现任何十六进制。
+   ⚠️ 元素、class 名与绑定**一个没动**:`button.part` 等被测试依赖的选择器保持原样。 */
+
 .back {
-  padding: 0.25rem 0.6rem;
-  border: 1px solid #d1d5db;
-  border-radius: 0.25rem;
-  background: white;
+  margin-bottom: var(--space-4);
+  padding: var(--space-1) var(--space-3);
+  border: 1px solid var(--color-border-strong);
+  border-radius: var(--radius-sm);
+  background: var(--color-surface);
+  color: var(--color-text-secondary);
+  font: inherit;
+  font-size: var(--text-sm);
   cursor: pointer;
-  margin-bottom: 1rem;
 }
 
+.back:hover {
+  border-color: var(--color-primary);
+  color: var(--color-primary);
+}
+
+/* ── 两栏:左图右信息 ───────────────────────────────────────────────────── */
 .detail {
   display: grid;
-  grid-template-columns: minmax(16rem, 1fr) minmax(16rem, 1fr);
-  gap: 2rem;
+  grid-template-columns: minmax(16rem, 1fr) minmax(18rem, 1fr);
+  gap: var(--space-6);
+  align-items: start;
 }
 
-@media (max-width: 44rem) {
+@media (max-width: 768px) {
   .detail {
     grid-template-columns: 1fr;
+    gap: var(--space-5);
   }
 }
 
+/* ── 图 ─────────────────────────────────────────────────────────────────── */
 .main-image {
-  height: 20rem;
-  background: #f9fafb;
-  border: 1px solid #e5e7eb;
-  border-radius: 0.5rem;
+  aspect-ratio: 1 / 1;
+  background: var(--color-surface-sunken);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-lg);
   display: flex;
   align-items: center;
   justify-content: center;
@@ -259,28 +274,35 @@ onMounted(async () => {
 }
 
 .empty {
-  color: #9ca3af;
+  color: var(--color-text-muted);
+  font-size: var(--text-sm);
 }
 
 .thumbs {
   display: flex;
-  gap: 0.5rem;
-  margin-top: 0.6rem;
+  flex-wrap: wrap;
+  gap: var(--space-2);
+  margin-top: var(--space-3);
 }
 
 .thumb {
   width: 4rem;
   height: 4rem;
   padding: 0;
-  border: 2px solid #e5e7eb;
-  border-radius: 0.25rem;
+  border: 2px solid var(--color-border);
+  border-radius: var(--radius-sm);
   overflow: hidden;
-  background: white;
+  background: var(--color-surface);
   cursor: pointer;
+  transition: border-color var(--dur-fast) var(--ease-standard);
+}
+
+.thumb:hover {
+  border-color: var(--color-primary-hover);
 }
 
 .thumb--active {
-  border-color: #1d4ed8;
+  border-color: var(--color-primary);
 }
 
 .thumb img {
@@ -289,170 +311,238 @@ onMounted(async () => {
   object-fit: cover;
 }
 
-h1 {
-  margin: 0 0 0.25rem;
-  font-size: 1.4rem;
+/* ── 信息 ───────────────────────────────────────────────────────────────── */
+.title {
+  margin: 0 0 var(--space-1);
+  font-size: var(--text-2xl);
+  line-height: var(--leading-2xl);
+  font-weight: 700;
+  color: var(--color-text);
 }
 
 .sku {
-  color: #9ca3af;
-  font-size: 0.85rem;
-  margin: 0 0 0.75rem;
+  margin: 0 0 var(--space-3);
+  font-size: var(--text-xs);
+  line-height: var(--leading-xs);
+  color: var(--color-text-muted);
+  font-variant-numeric: tabular-nums;
 }
 
+/* 报价是这一页的重点 —— 用主色压住视线,数字等宽对齐 */
 .price {
-  color: #b45309;
-  font-size: 1.5rem;
-  font-weight: 600;
-  margin: 0 0 1rem;
+  margin: 0 0 var(--space-5);
+  font-size: var(--text-3xl);
+  line-height: var(--leading-3xl);
+  font-weight: 700;
+  font-variant-numeric: tabular-nums;
+  color: var(--color-primary);
 }
 
 .price small {
-  font-size: 0.9rem;
+  font-size: var(--text-base);
   font-weight: 400;
-  color: #9ca3af;
+  color: var(--color-text-muted);
 }
 
-dl {
+.specs {
   display: grid;
   grid-template-columns: auto 1fr;
-  gap: 0.35rem 1rem;
-  margin: 0 0 1.25rem;
-  font-size: 0.9rem;
+  gap: var(--space-2) var(--space-4);
+  margin: 0 0 var(--space-5);
+  padding: var(--space-4);
+  border-radius: var(--radius-md);
+  background: var(--color-surface-sunken);
+  font-size: var(--text-sm);
+  line-height: var(--leading-sm);
 }
 
-dt {
-  color: #6b7280;
+.specs dt {
+  color: var(--color-text-secondary);
+  white-space: nowrap;
 }
 
-dd {
+.specs dd {
   margin: 0;
+  color: var(--color-text);
 }
 
+/* ── 选部位 ─────────────────────────────────────────────────────────────── */
 .pick {
-  margin-bottom: 1rem;
+  margin-bottom: var(--space-4);
 }
 
 .pick-label {
-  margin: 0 0 0.5rem;
-  font-size: 0.9rem;
-  color: #374151;
+  margin: 0 0 var(--space-3);
+  font-size: var(--text-sm);
+  line-height: var(--leading-sm);
+  color: var(--color-text);
+  font-weight: 600;
 }
 
 .parts {
   display: flex;
   flex-wrap: wrap;
-  gap: 0.5rem;
+  gap: var(--space-2);
 }
 
 .part {
-  padding: 0.4rem 0.75rem;
-  border: 1px solid #d1d5db;
-  border-radius: 0.25rem;
-  background: white;
+  padding: var(--space-2) var(--space-4);
+  border: 1px solid var(--color-border-strong);
+  border-radius: var(--radius-full);
+  background: var(--color-surface);
+  color: var(--color-text);
+  font: inherit;
+  font-size: var(--text-sm);
   cursor: pointer;
-  font-size: 0.9rem;
+  transition:
+    border-color var(--dur-fast) var(--ease-standard),
+    background var(--dur-fast) var(--ease-standard);
+}
+
+.part:hover {
+  border-color: var(--color-primary);
+  color: var(--color-primary);
 }
 
 .part--active {
-  border-color: #1d4ed8;
-  color: #1d4ed8;
+  border-color: var(--color-primary);
+  color: var(--color-primary);
 }
 
 .part--chosen {
-  border-color: #1d4ed8;
-  background: #eff6ff;
-  color: #1d4ed8;
+  border-color: var(--color-primary);
+  background: var(--color-primary-soft);
+  color: var(--color-primary);
   font-weight: 600;
 }
 
 .tick {
-  margin-left: 0.25rem;
+  margin-left: var(--space-1);
 }
 
 .chosen {
-  margin: 0.5rem 0 0;
-  color: #15803d;
-  font-size: 0.85rem;
+  margin: var(--space-3) 0 0;
+  font-size: var(--text-sm);
+  color: var(--color-success);
 }
 
+/* ── 已选部位清单 ───────────────────────────────────────────────────────── */
 .draft {
-  border: 1px solid #e5e7eb;
-  border-radius: 0.25rem;
-  padding: 0.6rem 0.75rem;
-  margin-bottom: 1rem;
+  margin-bottom: var(--space-4);
+  padding: var(--space-3) var(--space-4);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-md);
+  background: var(--color-surface);
+  box-shadow: var(--shadow-sm);
 }
 
 .draft-title {
-  margin: 0 0 0.4rem;
-  font-size: 0.85rem;
-  color: #6b7280;
+  margin: 0 0 var(--space-2);
+  font-size: var(--text-xs);
+  line-height: var(--leading-xs);
+  color: var(--color-text-secondary);
 }
 
 .draft ul {
   margin: 0;
   padding: 0;
   list-style: none;
-  font-size: 0.9rem;
+  font-size: var(--text-sm);
 }
 
 .draft li {
   display: flex;
   justify-content: space-between;
   align-items: center;
-  gap: 0.5rem;
-  padding: 0.2rem 0;
+  gap: var(--space-2);
+  padding: var(--space-1) 0;
 }
 
+/* 移除是危险操作 —— 用危险色,不靠图标暗示 */
 .remove {
+  padding: 0;
   border: none;
   background: none;
-  color: #b91c1c;
+  color: var(--color-danger);
   cursor: pointer;
-  font-size: 0.85rem;
-  padding: 0;
+  font: inherit;
+  font-size: var(--text-xs);
+}
+
+.remove:hover {
+  text-decoration: underline;
 }
 
 .notice {
-  padding: 0.6rem 0.75rem;
-  background: #fffbeb;
-  border: 1px solid #fde68a;
-  border-radius: 0.25rem;
-  color: #92400e;
-  font-size: 0.85rem;
+  margin: 0 0 var(--space-4);
+  padding: var(--space-3) var(--space-4);
+  border: 1px solid var(--color-warning);
+  border-radius: var(--radius-sm);
+  background: var(--color-warning-soft);
+  color: var(--color-text);
+  font-size: var(--text-sm);
+  line-height: var(--leading-sm);
 }
 
+/* ── 行动点 ─────────────────────────────────────────────────────────────── */
 .cta {
   display: flex;
-  gap: 0.75rem;
+  gap: var(--space-4);
   align-items: center;
-  margin-top: 1rem;
+  margin-top: var(--space-5);
 }
 
 button.primary {
-  padding: 0.5rem 1rem;
-  border: 1px solid #1d4ed8;
-  border-radius: 0.25rem;
-  background: #1d4ed8;
-  color: white;
+  padding: var(--space-3) var(--space-5);
+  border: 1px solid var(--color-primary);
+  border-radius: var(--radius-sm);
+  background: var(--color-primary);
+  color: var(--color-on-primary);
+  font: inherit;
+  font-size: var(--text-base);
+  font-weight: 600;
+  cursor: pointer;
+}
+
+button.primary:hover:not(:disabled) {
+  background: var(--color-primary-hover);
+  border-color: var(--color-primary-hover);
 }
 
 button.primary:disabled {
-  opacity: 0.5;
+  opacity: 0.45;
   cursor: not-allowed;
 }
 
-.cta a {
-  color: #1d4ed8;
+.cta__alt {
+  color: var(--color-primary);
   text-decoration: none;
-  font-size: 0.9rem;
+  font-size: var(--text-sm);
+  font-weight: 600;
 }
 
+.cta__alt:hover {
+  text-decoration: underline;
+}
+
+/* ── 状态 ───────────────────────────────────────────────────────────────── */
 .error {
-  color: #b91c1c;
+  margin: 0;
+  padding: var(--space-3) var(--space-4);
+  border: 1px solid var(--color-danger);
+  border-radius: var(--radius-sm);
+  background: var(--color-danger-soft);
+  color: var(--color-danger);
+  font-size: var(--text-sm);
 }
 
 .hint {
-  color: #6b7280;
+  margin: var(--space-6) 0;
+  padding: var(--space-6);
+  border-radius: var(--radius-md);
+  background: var(--color-surface-sunken);
+  color: var(--color-text-secondary);
+  font-size: var(--text-sm);
+  text-align: center;
 }
 </style>

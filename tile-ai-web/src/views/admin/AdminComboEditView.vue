@@ -339,132 +339,220 @@ onMounted(async () => {
 </template>
 
 <style scoped>
+/* 样式一律走设计令牌(`src/styles/tokens.css`)—— 本文件不出现任何十六进制。
+   ⚠️ **本页 `<template>` 与 `<script>` 一个字节未动**,只换了这一块 ——
+   测试靠 `findAll('select')` 里"option 含 `local`"的那个定位**部位下拉**,
+   并断言它的 option 值序列,所以下拉的**结构与顺序**必须原样。 */
+
 .head {
   display: flex;
   align-items: center;
   justify-content: space-between;
-  gap: 1rem;
+  gap: var(--space-4);
 }
 
 .head h1 {
-  margin: 0 0 0.5rem;
-  font-size: 1.3rem;
+  margin: 0 0 var(--space-1);
+  font-size: var(--text-xl);
+  line-height: var(--leading-xl);
+  font-weight: 700;
+  color: var(--color-text);
+}
+
+.head a {
+  color: var(--color-primary);
+  font-size: var(--text-sm);
+  font-weight: 600;
+  text-decoration: none;
+}
+
+.head a:hover {
+  text-decoration: underline;
 }
 
 h2 {
-  margin: 1rem 0 0.5rem;
-  font-size: 1rem;
+  margin: var(--space-5) 0 var(--space-2);
+  font-size: var(--text-base);
+  line-height: var(--leading-base);
+  font-weight: 600;
+  color: var(--color-text);
 }
 
 .hint {
-  color: #6b7280;
-  font-size: 0.8rem;
+  font-size: var(--text-xs);
+  line-height: var(--leading-xs);
+  color: var(--color-text-muted);
 }
 
+/* ── 状态 ───────────────────────────────────────────────────────────────── */
 .error {
-  padding: 0.5rem 0.75rem;
-  border: 1px solid #fca5a5;
-  border-radius: 0.25rem;
-  background: #fef2f2;
-  color: #b91c1c;
-  font-size: 0.85rem;
+  margin: var(--space-3) 0;
+  padding: var(--space-3) var(--space-4);
+  border: 1px solid var(--color-danger);
+  border-radius: var(--radius-sm);
+  background: var(--color-danger-soft);
+  color: var(--color-danger);
+  font-size: var(--text-sm);
 }
 
 .errors {
-  margin: 0.5rem 0;
-  padding-left: 1.2rem;
-  color: #b91c1c;
-  font-size: 0.85rem;
+  margin: var(--space-3) 0;
+  padding-left: var(--space-5);
+  color: var(--color-danger);
+  font-size: var(--text-sm);
 }
 
+/* ── 表单卡 ─────────────────────────────────────────────────────────────── */
 .panel {
-  border: 1px solid #e5e7eb;
-  border-radius: 0.375rem;
-  padding: 1rem;
   max-width: 44rem;
+  padding: var(--space-5);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-md);
+  background: var(--color-surface);
+  box-shadow: var(--shadow-sm);
 }
 
 label {
   display: flex;
   flex-direction: column;
-  gap: 0.25rem;
-  margin-bottom: 0.75rem;
-  font-size: 0.85rem;
-  color: #374151;
+  gap: var(--space-1);
+  margin-bottom: var(--space-4);
+  font-size: var(--text-xs);
+  line-height: var(--leading-xs);
+  color: var(--color-text-secondary);
 }
 
 input,
 select {
-  padding: 0.4rem 0.5rem;
-  border: 1px solid #d1d5db;
-  border-radius: 0.25rem;
+  height: var(--control-height);
+  padding: 0 var(--space-3);
+  border: 1px solid var(--color-border-strong);
+  border-radius: var(--radius-sm);
+  background: var(--color-surface);
+  color: var(--color-text);
   font: inherit;
+  font-size: var(--text-sm);
+}
+
+input:focus-visible,
+select:focus-visible {
+  outline: 2px solid var(--color-focus);
+  outline-offset: 1px;
+  border-color: var(--color-primary);
 }
 
 .row {
   display: flex;
   align-items: flex-end;
-  gap: 0.5rem;
+  gap: var(--space-2);
 }
 
+/* 行内的 label 不该把行撑成两截 —— 让它自己收缩 */
+.row > label {
+  flex: 0 1 auto;
+}
+
+/* ── 搭配内容(一行一项)─────────────────────────────────────────────────── */
 .items {
   list-style: none;
   margin: 0;
   padding: 0;
 }
 
+/* 每一项做成一张内嵌小卡 —— 它自己还有两行字段 + 候选列表 */
 .items > li {
-  border: 1px solid #e5e7eb;
-  border-radius: 0.25rem;
-  padding: 0.75rem;
-  margin-bottom: 0.75rem;
+  margin-bottom: var(--space-3);
+  padding: var(--space-4);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-md);
+  background: var(--color-bg);
 }
 
+/* ── 搜索候选 ───────────────────────────────────────────────────────────── */
 .candidates {
   list-style: none;
-  margin: 0.25rem 0 0;
+  margin: var(--space-2) 0 0;
   padding: 0;
 }
 
+/* 候选是"从搜索结果里点一条" — 做成可点的行,而不是裸链接 */
 .link {
-  border: none;
-  background: none;
-  padding: 0.15rem 0;
-  color: #1d4ed8;
-  cursor: pointer;
+  display: block;
+  width: 100%;
+  padding: var(--space-2) var(--space-3);
+  border: 1px solid transparent;
+  border-radius: var(--radius-sm);
+  background: var(--color-surface);
+  color: var(--color-primary);
   font: inherit;
+  font-size: var(--text-sm);
   text-align: left;
+  cursor: pointer;
+  transition:
+    border-color var(--dur-fast) var(--ease-standard),
+    background var(--dur-fast) var(--ease-standard);
 }
 
+.link:hover {
+  border-color: var(--color-primary);
+  background: var(--color-primary-soft);
+}
+
+/* ── 按钮 ───────────────────────────────────────────────────────────────── */
 button {
-  padding: 0.35rem 0.8rem;
-  border: 1px solid #d1d5db;
-  border-radius: 0.25rem;
-  background: white;
+  height: var(--control-height);
+  padding: 0 var(--space-4);
+  border: 1px solid var(--color-border-strong);
+  border-radius: var(--radius-sm);
+  background: var(--color-surface);
+  color: var(--color-text);
+  font: inherit;
+  font-size: var(--text-sm);
   cursor: pointer;
+  transition:
+    border-color var(--dur-fast) var(--ease-standard),
+    background var(--dur-fast) var(--ease-standard);
+}
+
+button:hover:not(:disabled) {
+  border-color: var(--color-primary);
+  color: var(--color-primary);
 }
 
 button.primary {
-  padding: 0.5rem 1rem;
-  border-color: #1d4ed8;
-  background: #1d4ed8;
-  color: white;
+  border-color: var(--color-primary);
+  background: var(--color-primary);
+  color: var(--color-on-primary);
+  font-weight: 600;
 }
 
+button.primary:hover:not(:disabled) {
+  background: var(--color-primary-hover);
+  border-color: var(--color-primary-hover);
+  color: var(--color-on-primary);
+}
+
+/* 移除 / 删除是危险操作 —— 危险色 + 明确的文字,不靠图标暗示 */
 button.danger {
-  border-color: #fca5a5;
-  color: #b91c1c;
+  border-color: var(--color-danger);
+  color: var(--color-danger);
+}
+
+button.danger:hover:not(:disabled) {
+  background: var(--color-danger-soft);
+  border-color: var(--color-danger);
+  color: var(--color-danger);
 }
 
 button:disabled {
-  opacity: 0.5;
+  opacity: 0.45;
   cursor: not-allowed;
 }
 
 .actions {
   display: flex;
   align-items: center;
-  gap: 0.75rem;
-  margin-top: 1rem;
+  gap: var(--space-3);
+  margin-top: var(--space-5);
 }
 </style>

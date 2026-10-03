@@ -379,73 +379,98 @@ onBeforeUnmount(interrupt)
 </template>
 
 <style scoped>
+/* 样式一律走设计令牌(`src/styles/tokens.css`)—— 本文件不出现任何十六进制。
+   ⚠️ **本页 `<template>` 与 `<script>` 一个字节未动**,只换了这一块 ——
+   测试依赖 `find('input')`(必须是发送输入框)、`find('form')`、逐 class 的
+   `.bubble.assistant` / `.text strong` / `.refs` / `.notice` …,而且有一条硬约束:
+   **整页 HTML 不得出现 `<img`** —— 所以这里不许引入任何图片元素。 */
+
 h1 {
-  margin: 0 0 0.5rem;
-  font-size: 1.4rem;
+  margin: 0 0 var(--space-2);
+  font-size: var(--text-2xl);
+  line-height: var(--leading-2xl);
+  font-weight: 700;
+  color: var(--color-text);
 }
 
 h3 {
-  margin: 0 0 0.5rem;
-  font-size: 0.9rem;
+  margin: 0 0 var(--space-2);
+  font-size: var(--text-sm);
+  line-height: var(--leading-sm);
+  font-weight: 600;
+  color: var(--color-text);
 }
 
 .note {
-  color: #6b7280;
-  font-size: 0.8rem;
+  font-size: var(--text-xs);
+  line-height: var(--leading-xs);
+  color: var(--color-text-muted);
 }
 
 .empty {
-  border: 1px dashed #d1d5db;
-  border-radius: 0.375rem;
-  padding: 1rem;
-  color: #6b7280;
-  font-size: 0.9rem;
+  margin: 0;
+  padding: var(--space-5);
+  border: 1px dashed var(--color-border-strong);
+  border-radius: var(--radius-md);
+  background: var(--color-surface-sunken);
+  color: var(--color-text-secondary);
+  font-size: var(--text-sm);
+  text-align: center;
 }
 
+/* ── 对话流 ─────────────────────────────────────────────────────────────── */
 .stream {
   list-style: none;
-  margin: 0 0 1rem;
+  margin: var(--space-4) 0;
   padding: 0;
 }
 
 .bubble {
-  border: 1px solid #e5e7eb;
-  border-radius: 0.375rem;
-  padding: 0.75rem;
-  margin-bottom: 0.75rem;
+  margin-bottom: var(--space-3);
+  padding: var(--space-4);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-md);
+  background: var(--color-surface);
 }
 
+/* 用户的话用主色浅底区分;AI 的回答是白卡(它才是要读的内容) */
 .bubble.user {
-  background: #f9fafb;
+  background: var(--color-primary-soft);
+  border-color: var(--color-primary-soft);
 }
 
 .who {
-  font-size: 0.75rem;
-  color: #6b7280;
-  margin-bottom: 0.25rem;
+  margin-bottom: var(--space-2);
+  font-size: var(--text-xs);
+  line-height: var(--leading-xs);
+  color: var(--color-text-muted);
 }
 
 .text {
   margin: 0;
   white-space: pre-wrap;
-  font-size: 0.95rem;
+  font-size: var(--text-sm);
+  line-height: var(--leading-base);
+  color: var(--color-text);
 }
 
 /* ⚠️ 必须用 `:deep()`:`v-html` 注入的元素**拿不到 scoped 属性**,
    直接写 `.text strong` 是不匹配的 —— 而且这种不匹配不会报错,只会"样式没生效"。 */
 .text :deep(strong) {
   font-weight: 600;
+  color: var(--color-text);
 }
 
 .text :deep(code) {
-  padding: 0.05rem 0.25rem;
-  border-radius: 0.2rem;
-  background: #f3f4f6;
+  padding: 0.05rem var(--space-1);
+  border-radius: var(--radius-sm);
+  background: var(--color-surface-sunken);
   font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
   font-size: 0.85em;
 }
 
 .caret {
+  color: var(--color-primary);
   animation: blink 1s step-start infinite;
 }
 
@@ -455,28 +480,34 @@ h3 {
   }
 }
 
+/* 拒答是**提示**,不是故障 —— 用中性色块,别用危险红 */
 .notice {
-  margin: 0.5rem 0 0;
-  padding: 0.5rem 0.75rem;
-  border-left: 3px solid #d1d5db;
-  background: #f9fafb;
-  color: #374151;
-  font-size: 0.85rem;
+  margin: var(--space-3) 0 0;
+  padding: var(--space-3) var(--space-4);
+  border-left: 3px solid var(--color-accent);
+  border-radius: var(--radius-sm);
+  background: var(--color-surface-sunken);
+  color: var(--color-text-secondary);
+  font-size: var(--text-sm);
+  line-height: var(--leading-sm);
 }
 
+/* 真·连接故障才用危险色 */
 .error {
-  padding: 0.5rem 0.75rem;
-  border: 1px solid #fca5a5;
-  border-radius: 0.25rem;
-  background: #fef2f2;
-  color: #b91c1c;
-  font-size: 0.85rem;
+  margin: var(--space-3) 0;
+  padding: var(--space-3) var(--space-4);
+  border: 1px solid var(--color-danger);
+  border-radius: var(--radius-sm);
+  background: var(--color-danger-soft);
+  color: var(--color-danger);
+  font-size: var(--text-sm);
 }
 
+/* ── 可采纳的推荐 ───────────────────────────────────────────────────────── */
 .refs {
-  margin-top: 0.75rem;
-  border-top: 1px dashed #e5e7eb;
-  padding-top: 0.75rem;
+  margin-top: var(--space-4);
+  padding-top: var(--space-3);
+  border-top: 1px dashed var(--color-border);
 }
 
 .refs ul {
@@ -489,99 +520,138 @@ h3 {
   display: flex;
   flex-wrap: wrap;
   align-items: center;
-  gap: 0.5rem;
-  padding: 0.5rem 0;
-  border-bottom: 1px solid #f3f4f6;
+  gap: var(--space-3);
+  padding: var(--space-3) 0;
+  border-bottom: 1px solid var(--color-border);
+}
+
+.ref:last-child {
+  border-bottom: none;
 }
 
 .ref-name {
   display: flex;
   align-items: baseline;
-  gap: 0.4rem;
+  gap: var(--space-2);
 }
 
+/* 编号等宽 —— 乱码商品名下面,sku 才是真正可靠的主标识 */
 .sku {
-  color: #6b7280;
   font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
-  font-size: 0.75rem;
+  font-size: var(--text-xs);
+  color: var(--color-text-muted);
 }
 
 .ref .note {
   margin: 0;
 }
 
+/* ── 输入区 ─────────────────────────────────────────────────────────────── */
 .composer {
   display: flex;
-  gap: 0.5rem;
-  margin-bottom: 1rem;
+  gap: var(--space-2);
+  margin-bottom: var(--space-4);
 }
 
 .composer input {
   flex: 1;
-  padding: 0.5rem;
-  border: 1px solid #d1d5db;
-  border-radius: 0.25rem;
+  padding: var(--space-3) var(--space-4);
+  border: 1px solid var(--color-border-strong);
+  border-radius: var(--radius-sm);
+  background: var(--color-surface);
+  color: var(--color-text);
   font: inherit;
+  font-size: var(--text-sm);
+}
+
+.composer input:focus-visible {
+  outline: 2px solid var(--color-focus);
+  outline-offset: 1px;
+  border-color: var(--color-primary);
 }
 
 button.primary {
-  padding: 0.5rem 1rem;
-  border: 1px solid #1d4ed8;
-  border-radius: 0.25rem;
-  background: #1d4ed8;
-  color: white;
+  padding: var(--space-3) var(--space-5);
+  border: 1px solid var(--color-primary);
+  border-radius: var(--radius-sm);
+  background: var(--color-primary);
+  color: var(--color-on-primary);
+  font: inherit;
+  font-size: var(--text-sm);
+  font-weight: 600;
   cursor: pointer;
 }
 
+button.primary:hover:not(:disabled) {
+  background: var(--color-primary-hover);
+  border-color: var(--color-primary-hover);
+}
+
 button.primary:disabled {
-  opacity: 0.5;
+  opacity: 0.45;
   cursor: not-allowed;
 }
 
 button.ghost {
-  padding: 0.5rem 1rem;
-  border: 1px solid #d1d5db;
-  border-radius: 0.25rem;
-  background: white;
+  padding: var(--space-2) var(--space-4);
+  border: 1px solid var(--color-border-strong);
+  border-radius: var(--radius-sm);
+  background: var(--color-surface);
+  color: var(--color-text);
+  font: inherit;
+  font-size: var(--text-sm);
   cursor: pointer;
 }
 
+button.ghost:hover:not(:disabled) {
+  border-color: var(--color-primary);
+  color: var(--color-primary);
+}
+
 button.ghost:disabled {
-  opacity: 0.5;
+  opacity: 0.45;
   cursor: not-allowed;
 }
 
 .actions {
   display: flex;
   align-items: center;
-  gap: 0.75rem;
-  margin-bottom: 1rem;
+  gap: var(--space-3);
+  margin-bottom: var(--space-4);
 }
 
+/* ── 历史对话 ───────────────────────────────────────────────────────────── */
 .panel {
-  border: 1px solid #e5e7eb;
-  border-radius: 0.375rem;
-  padding: 1rem;
-  margin-bottom: 1rem;
+  margin-bottom: var(--space-4);
+  padding: var(--space-4);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-md);
+  background: var(--color-surface);
+  box-shadow: var(--shadow-sm);
 }
 
 .history {
   list-style: none;
-  margin: 0.75rem 0 0;
+  margin: var(--space-3) 0 0;
   padding: 0;
 }
 
 .history li {
-  padding: 0.25rem 0;
+  padding: var(--space-1) 0;
 }
 
 .link {
+  padding: 0;
   border: none;
   background: none;
-  padding: 0;
-  color: #1d4ed8;
-  cursor: pointer;
+  color: var(--color-primary);
   font: inherit;
+  font-size: var(--text-sm);
   text-align: left;
+  cursor: pointer;
+}
+
+.link:hover {
+  text-decoration: underline;
 }
 </style>

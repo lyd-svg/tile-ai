@@ -203,141 +203,212 @@ onMounted(async () => {
 </template>
 
 <style scoped>
+/* 样式一律走设计令牌(`src/styles/tokens.css`)—— 本文件不出现任何十六进制。
+   ⚠️ **本页 `<template>` 与 `<script>` 一个字节未动**,只换了这一块。
+   ⚠️ 本页**列表上不做上下架按钮**(契约没有 PATCH status,toggle 会覆盖别的字段)——
+   那是逻辑取舍,样式改动不碰它。 */
+
 .head {
   display: flex;
   align-items: center;
   justify-content: space-between;
-  gap: 1rem;
+  gap: var(--space-4);
 }
 
 .head h1 {
-  margin: 0 0 0.5rem;
-  font-size: 1.3rem;
+  margin: 0 0 var(--space-1);
+  font-size: var(--text-xl);
+  line-height: var(--leading-xl);
+  font-weight: 700;
+  color: var(--color-text);
 }
 
 .hint {
-  color: #6b7280;
-  font-size: 0.8rem;
+  font-size: var(--text-xs);
+  line-height: var(--leading-xs);
+  color: var(--color-text-muted);
 }
 
+/* ── 筛选 ───────────────────────────────────────────────────────────────── */
 .filters {
   display: flex;
+  flex-wrap: wrap;
   align-items: flex-end;
-  gap: 0.75rem;
-  margin: 0.75rem 0;
+  gap: var(--space-3);
+  margin: var(--space-4) 0;
+  padding: var(--space-4);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-md);
+  background: var(--color-surface);
 }
 
 .filters label {
   display: flex;
   flex-direction: column;
-  gap: 0.25rem;
-  font-size: 0.85rem;
-  color: #374151;
+  gap: var(--space-1);
+  font-size: var(--text-xs);
+  line-height: var(--leading-xs);
+  color: var(--color-text-secondary);
 }
 
 .filters select {
-  padding: 0.35rem 0.5rem;
-  border: 1px solid #d1d5db;
-  border-radius: 0.25rem;
+  height: var(--control-height);
+  padding: 0 var(--space-3);
+  border: 1px solid var(--color-border-strong);
+  border-radius: var(--radius-sm);
+  background: var(--color-surface);
+  color: var(--color-text);
   font: inherit;
+  font-size: var(--text-sm);
 }
 
+/* ── 状态 ───────────────────────────────────────────────────────────────── */
 .error {
-  padding: 0.5rem 0.75rem;
-  border: 1px solid #fca5a5;
-  border-radius: 0.25rem;
-  background: #fef2f2;
-  color: #b91c1c;
-  font-size: 0.85rem;
+  margin: var(--space-3) 0;
+  padding: var(--space-3) var(--space-4);
+  border: 1px solid var(--color-danger);
+  border-radius: var(--radius-sm);
+  background: var(--color-danger-soft);
+  color: var(--color-danger);
+  font-size: var(--text-sm);
 }
 
 .notice {
-  padding: 0.5rem 0.75rem;
-  border: 1px solid #bbf7d0;
-  border-radius: 0.25rem;
-  background: #f0fdf4;
-  color: #166534;
-  font-size: 0.85rem;
+  margin: var(--space-3) 0;
+  padding: var(--space-3) var(--space-4);
+  border: 1px solid var(--color-success);
+  border-radius: var(--radius-sm);
+  background: var(--color-success-soft);
+  color: var(--color-success);
+  font-size: var(--text-sm);
 }
 
+/* ── 表格 ───────────────────────────────────────────────────────────────── */
 table {
   width: 100%;
   border-collapse: collapse;
-  font-size: 0.9rem;
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-md);
+  overflow: hidden;
+  font-size: var(--text-sm);
+  font-variant-numeric: tabular-nums;
 }
 
 th,
 td {
-  border-bottom: 1px solid #e5e7eb;
-  padding: 0.5rem;
+  padding: var(--space-2) var(--space-3);
+  border-bottom: 1px solid var(--color-border);
   text-align: left;
 }
 
 th {
-  color: #374151;
+  background: var(--color-surface-sunken);
+  color: var(--color-text-secondary);
+  font-size: var(--text-xs);
   font-weight: 600;
+  white-space: nowrap;
 }
 
+tbody tr:hover {
+  background: var(--color-bg);
+}
+
+/* 参考价区间右对齐 —— 数字要能竖着比 */
 .num {
   text-align: right;
 }
 
+/* 状态标签:上架=暖绿、下架=中性灰。**下架不是错误,不用红色** */
 .tag {
-  padding: 0.1rem 0.35rem;
-  border-radius: 0.2rem;
-  font-size: 0.75rem;
+  display: inline-block;
+  padding: 0.05rem var(--space-2);
+  border-radius: var(--radius-full);
+  font-size: var(--text-xs);
+  line-height: var(--leading-xs);
+  white-space: nowrap;
 }
 
 .tag--on {
-  background: #ecfdf5;
-  color: #047857;
+  background: var(--color-success-soft);
+  color: var(--color-success);
 }
 
 .tag--off {
-  background: #f3f4f6;
-  color: #6b7280;
+  background: var(--color-surface-sunken);
+  color: var(--color-text-muted);
 }
 
+/* ── 按钮 ───────────────────────────────────────────────────────────────── */
 .actions {
   display: flex;
-  gap: 0.4rem;
+  gap: var(--space-1);
 }
 
 .actions button,
 .pager button,
 .filters button {
-  padding: 0.3rem 0.7rem;
-  border: 1px solid #d1d5db;
-  border-radius: 0.25rem;
-  background: white;
+  height: var(--control-height);
+  padding: 0 var(--space-3);
+  border: 1px solid var(--color-border-strong);
+  border-radius: var(--radius-sm);
+  background: var(--color-surface);
+  color: var(--color-text);
+  font: inherit;
+  font-size: var(--text-sm);
   cursor: pointer;
+  transition: border-color var(--dur-fast) var(--ease-standard);
 }
 
+.actions button:hover:not(:disabled),
+.pager button:hover:not(:disabled),
+.filters button:hover:not(:disabled) {
+  border-color: var(--color-primary);
+  color: var(--color-primary);
+}
+
+/* 删除是危险操作 —— 危险色 + 明确的文字 */
 .actions button.danger {
-  border-color: #fca5a5;
-  color: #b91c1c;
+  border-color: var(--color-danger);
+  color: var(--color-danger);
+}
+
+.actions button.danger:hover:not(:disabled) {
+  background: var(--color-danger-soft);
+  border-color: var(--color-danger);
+  color: var(--color-danger);
 }
 
 button.primary {
-  padding: 0.5rem 1rem;
-  border: 1px solid #1d4ed8;
-  border-radius: 0.25rem;
-  background: #1d4ed8;
-  color: white;
+  height: var(--control-height);
+  padding: 0 var(--space-4);
+  border: 1px solid var(--color-primary);
+  border-radius: var(--radius-sm);
+  background: var(--color-primary);
+  color: var(--color-on-primary);
+  font: inherit;
+  font-size: var(--text-sm);
+  font-weight: 600;
   cursor: pointer;
 }
 
+button.primary:hover:not(:disabled) {
+  background: var(--color-primary-hover);
+  border-color: var(--color-primary-hover);
+}
+
+/* ── 分页 ───────────────────────────────────────────────────────────────── */
 .pager {
   display: flex;
   align-items: center;
-  gap: 0.75rem;
-  margin-top: 1rem;
-  font-size: 0.85rem;
-  color: #374151;
+  justify-content: center;
+  gap: var(--space-4);
+  margin-top: var(--space-5);
+  font-size: var(--text-sm);
+  color: var(--color-text-secondary);
 }
 
 .pager button:disabled {
-  opacity: 0.5;
+  opacity: 0.45;
   cursor: not-allowed;
 }
 </style>

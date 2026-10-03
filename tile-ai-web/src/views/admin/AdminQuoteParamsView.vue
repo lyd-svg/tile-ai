@@ -207,106 +207,162 @@ onMounted(load)
 </template>
 
 <style scoped>
+/* 样式一律走设计令牌(`src/styles/tokens.css`)—— 本文件不出现任何十六进制。
+   ⚠️ **本页 `<template>` 与 `<script>` 一个字节未动**,只换了这一块 ——
+   测试靠 `findAll('tr')` 找含某个 paramKey 的行,并在行内找 `input` / `button`,
+   还断言行文案含 `元/㎡` 与 `0.06 表示 6%`,所以行的**结构必须原样**。
+   ⚠️ 这一页**直接影响报价能否算出**(辅料单价缺了整单不出)——
+   所以量纲单位与小数口径的提示保持醒目,不做弱化。 */
+
 .head {
   display: flex;
   align-items: center;
   justify-content: space-between;
-  gap: 1rem;
+  gap: var(--space-4);
 }
 
 h1 {
-  margin: 0 0 0.5rem;
-  font-size: 1.3rem;
+  margin: 0 0 var(--space-2);
+  font-size: var(--text-xl);
+  line-height: var(--leading-xl);
+  font-weight: 700;
+  color: var(--color-text);
 }
 
 .hint {
-  color: #6b7280;
-  font-size: 0.8rem;
+  font-size: var(--text-xs);
+  line-height: var(--leading-xs);
+  color: var(--color-text-muted);
 }
 
+.hint b {
+  color: var(--color-text-secondary);
+}
+
+/* 「辅料单价未配置 ⇒ 整单不出」—— 这是警告,用暖黄,与"错误"区分开 */
 .warn {
-  padding: 0.5rem 0.75rem;
-  border: 1px solid #fcd34d;
-  border-radius: 0.25rem;
-  background: #fffbeb;
-  color: #92400e;
-  font-size: 0.85rem;
+  margin: var(--space-3) 0;
+  padding: var(--space-3) var(--space-4);
+  border: 1px solid var(--color-warning);
+  border-radius: var(--radius-sm);
+  background: var(--color-warning-soft);
+  color: var(--color-text);
+  font-size: var(--text-sm);
+  line-height: var(--leading-sm);
+}
+
+.warn b {
+  color: var(--color-warning);
 }
 
 .error {
-  padding: 0.5rem 0.75rem;
-  border: 1px solid #fca5a5;
-  border-radius: 0.25rem;
-  background: #fef2f2;
-  color: #b91c1c;
-  font-size: 0.85rem;
+  margin: var(--space-3) 0;
+  padding: var(--space-3) var(--space-4);
+  border: 1px solid var(--color-danger);
+  border-radius: var(--radius-sm);
+  background: var(--color-danger-soft);
+  color: var(--color-danger);
+  font-size: var(--text-sm);
 }
 
 .notice {
-  padding: 0.5rem 0.75rem;
-  border: 1px solid #bbf7d0;
-  border-radius: 0.25rem;
-  background: #f0fdf4;
-  color: #166534;
-  font-size: 0.85rem;
+  margin: var(--space-3) 0;
+  padding: var(--space-3) var(--space-4);
+  border: 1px solid var(--color-success);
+  border-radius: var(--radius-sm);
+  background: var(--color-success-soft);
+  color: var(--color-success);
+  font-size: var(--text-sm);
 }
 
 .errors {
-  margin: 0.5rem 0;
-  padding-left: 1.2rem;
-  color: #b91c1c;
-  font-size: 0.85rem;
+  margin: var(--space-3) 0;
+  padding-left: var(--space-5);
+  color: var(--color-danger);
+  font-size: var(--text-sm);
 }
 
+/* ── 参数表 ─────────────────────────────────────────────────────────────── */
 table {
   width: 100%;
   border-collapse: collapse;
-  font-size: 0.9rem;
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-md);
+  overflow: hidden;
+  font-size: var(--text-sm);
+  font-variant-numeric: tabular-nums;
 }
 
 th,
 td {
-  border-bottom: 1px solid #e5e7eb;
-  padding: 0.5rem;
+  padding: var(--space-3);
+  border-bottom: 1px solid var(--color-border);
   text-align: left;
   vertical-align: top;
 }
 
 th {
-  color: #374151;
+  background: var(--color-surface-sunken);
+  color: var(--color-text-secondary);
+  font-size: var(--text-xs);
   font-weight: 600;
+  white-space: nowrap;
 }
 
+/* 参数键是代码 —— 等宽,和展示名一眼分开 */
 .key {
-  color: #9ca3af;
+  margin-top: var(--space-1);
+  color: var(--color-text-muted);
   font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
-  font-size: 0.75rem;
+  font-size: var(--text-xs);
 }
 
 td input {
   width: 8rem;
-  padding: 0.3rem 0.4rem;
-  border: 1px solid #d1d5db;
-  border-radius: 0.25rem;
+  height: var(--control-height);
+  padding: 0 var(--space-3);
+  border: 1px solid var(--color-border-strong);
+  border-radius: var(--radius-sm);
+  background: var(--color-surface);
+  color: var(--color-text);
   font: inherit;
+  font-size: var(--text-sm);
 }
 
+td input:focus-visible {
+  outline: 2px solid var(--color-focus);
+  outline-offset: 1px;
+  border-color: var(--color-primary);
+}
+
+/* 单位紧跟输入框 —— 填错量纲不报错,只会算出一份离谱报价,所以它必须显眼 */
 .unit {
-  margin-left: 0.35rem;
-  color: #374151;
-  font-size: 0.8rem;
+  margin-left: var(--space-2);
+  color: var(--color-text);
+  font-size: var(--text-xs);
+  font-weight: 600;
 }
 
 button {
-  padding: 0.35rem 0.75rem;
-  border: 1px solid #d1d5db;
-  border-radius: 0.25rem;
-  background: white;
+  height: var(--control-height);
+  padding: 0 var(--space-4);
+  border: 1px solid var(--color-border-strong);
+  border-radius: var(--radius-sm);
+  background: var(--color-surface);
+  color: var(--color-text);
+  font: inherit;
+  font-size: var(--text-sm);
   cursor: pointer;
+  transition: border-color var(--dur-fast) var(--ease-standard);
+}
+
+button:hover:not(:disabled) {
+  border-color: var(--color-primary);
+  color: var(--color-primary);
 }
 
 button:disabled {
-  opacity: 0.5;
+  opacity: 0.45;
   cursor: not-allowed;
 }
 </style>

@@ -29,14 +29,16 @@ onMounted(async () => {
 
 <template>
   <section>
-    <h1>到店看砖</h1>
-    <p class="sub">线上挑好后,欢迎到店看实物、摸手感 —— 瓷砖的质感看照片替代不了。</p>
+    <header class="page-head">
+      <h1 class="page-head__title">到店看砖</h1>
+      <p class="sub">线上挑好后,欢迎到店看实物、摸手感 —— 瓷砖的质感看照片替代不了。</p>
+    </header>
 
     <p v-if="loading" class="hint">加载中…</p>
 
     <div v-else-if="store" class="card">
-      <h2>{{ store.name }}</h2>
-      <dl>
+      <h2 class="card__name">{{ store.name }}</h2>
+      <dl class="info">
         <dt>地址</dt>
         <dd>{{ store.address }}</dd>
         <dt>电话</dt>
@@ -53,70 +55,113 @@ onMounted(async () => {
 </template>
 
 <style scoped>
-h1 {
-  margin: 0 0 0.25rem;
-  font-size: 1.35rem;
+/* 样式一律走设计令牌(`src/styles/tokens.css`)—— 本文件不出现任何十六进制。
+   ⚠️ 本页**没有测试用例** —— 改动无测试可证,只能等人眼验收(纪律 7)。 */
+
+.page-head {
+  margin-bottom: var(--space-5);
+}
+
+.page-head__title {
+  margin: 0 0 var(--space-2);
+  font-size: var(--text-2xl);
+  line-height: var(--leading-2xl);
+  font-weight: 700;
+  color: var(--color-text);
 }
 
 .sub {
-  color: #6b7280;
-  margin: 0 0 1.25rem;
-  font-size: 0.9rem;
+  margin: 0;
+  max-width: 38rem;
+  font-size: var(--text-sm);
+  line-height: var(--leading-sm);
+  color: var(--color-text-secondary);
 }
 
+/* ── 门店卡 ─────────────────────────────────────────────────────────────── */
 .card {
-  border: 1px solid #e5e7eb;
-  border-radius: 0.5rem;
-  padding: 1.25rem;
   max-width: 32rem;
+  padding: var(--space-5);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-lg);
+  background: var(--color-surface);
+  box-shadow: var(--shadow-sm);
 }
 
-h2 {
-  margin: 0 0 0.75rem;
-  font-size: 1.1rem;
+.card__name {
+  margin: 0 0 var(--space-4);
+  font-size: var(--text-xl);
+  line-height: var(--leading-xl);
+  font-weight: 600;
+  color: var(--color-text);
 }
 
-dl {
+.info {
   display: grid;
   grid-template-columns: auto 1fr;
-  gap: 0.35rem 1rem;
-  margin: 0 0 1rem;
-  font-size: 0.95rem;
+  gap: var(--space-2) var(--space-4);
+  margin: 0 0 var(--space-5);
+  padding: var(--space-4);
+  border-radius: var(--radius-md);
+  background: var(--color-surface-sunken);
+  font-size: var(--text-sm);
+  line-height: var(--leading-sm);
 }
 
-dt {
-  color: #6b7280;
+.info dt {
+  color: var(--color-text-secondary);
+  white-space: nowrap;
 }
 
-dd {
+.info dd {
   margin: 0;
+  color: var(--color-text);
 }
 
-dd a {
-  color: #1d4ed8;
+.info dd a {
+  color: var(--color-primary);
+  font-weight: 600;
+  font-variant-numeric: tabular-nums;
 }
 
+/* ── 地图入口 ───────────────────────────────────────────────────────────── */
 .map {
   display: inline-block;
-  padding: 0.4rem 0.8rem;
-  border: 1px solid #1d4ed8;
-  border-radius: 0.25rem;
-  color: #1d4ed8;
+  padding: var(--space-2) var(--space-4);
+  border: 1px solid var(--color-primary);
+  border-radius: var(--radius-sm);
+  background: var(--color-surface);
+  color: var(--color-primary);
   text-decoration: none;
-  font-size: 0.9rem;
+  font-size: var(--text-sm);
+  font-weight: 600;
+  transition: background var(--dur-fast) var(--ease-standard);
 }
 
+.map:hover {
+  background: var(--color-primary-soft);
+}
+
+/* ── 边界说明 ───────────────────────────────────────────────────────────── */
 .notice {
-  margin: 1rem 0 0;
-  color: #92400e;
-  background: #fffbeb;
-  border: 1px solid #fde68a;
-  border-radius: 0.25rem;
-  padding: 0.5rem 0.7rem;
-  font-size: 0.85rem;
+  margin: var(--space-4) 0 0;
+  padding: var(--space-3) var(--space-4);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-sm);
+  background: var(--color-bg);
+  color: var(--color-text-secondary);
+  font-size: var(--text-xs);
+  line-height: var(--leading-xs);
 }
 
+/* ── 状态 ───────────────────────────────────────────────────────────────── */
 .hint {
-  color: #6b7280;
+  margin: 0;
+  padding: var(--space-6);
+  border-radius: var(--radius-md);
+  background: var(--color-surface-sunken);
+  color: var(--color-text-secondary);
+  font-size: var(--text-sm);
+  text-align: center;
 }
 </style>

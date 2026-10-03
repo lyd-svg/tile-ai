@@ -294,7 +294,9 @@ onBeforeUnmount(cancelPolling)
 
 <template>
   <section>
-    <h1>生成效果图</h1>
+    <header class="page-head">
+      <h1 class="page-head__title">生成效果图</h1>
+    </header>
 
     <!-- 草稿是内存态,刷新即清空 —— 这里要如实说明,而不是拿空数据硬凑一次生成 -->
     <div v-if="!ready" class="empty" role="alert">
@@ -454,219 +456,315 @@ onBeforeUnmount(cancelPolling)
 </template>
 
 <style scoped>
-h1 {
-  margin: 0 0 1rem;
-  font-size: 1.4rem;
+/* 样式一律走设计令牌(`src/styles/tokens.css`)—— 本文件不出现任何十六进制。
+   ⚠️ 测试依赖的**顺序**也必须保住:`select` 恰好 3 个(空间 → 风格 → 张数)、
+   第一个 `<img>` 是 `.main img`、`[role="alert"]` 的先后顺序。
+   ⚠️ 本页任何静态文案都不得出现"失败""超时"字样 —— 有测试在断言它们**不**出现。 */
+
+.page-head {
+  margin-bottom: var(--space-4);
+}
+
+.page-head__title {
+  margin: 0;
+  font-size: var(--text-2xl);
+  line-height: var(--leading-2xl);
+  font-weight: 700;
+  color: var(--color-text);
 }
 
 h2 {
-  margin: 0 0 0.75rem;
-  font-size: 1.05rem;
+  margin: 0 0 var(--space-3);
+  font-size: var(--text-lg);
+  line-height: var(--leading-lg);
+  font-weight: 600;
+  color: var(--color-text);
 }
 
+/* ── 面板 ───────────────────────────────────────────────────────────────── */
 .panel {
-  border: 1px solid #e5e7eb;
-  border-radius: 0.375rem;
-  padding: 1rem;
-  margin-bottom: 1rem;
+  margin-bottom: var(--space-4);
+  padding: var(--space-5);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-md);
+  background: var(--color-surface);
+  box-shadow: var(--shadow-sm);
 }
 
 .panel label {
   display: flex;
   flex-direction: column;
-  gap: 0.25rem;
-  font-size: 0.85rem;
-  color: #374151;
-  margin-bottom: 0.75rem;
+  gap: var(--space-1);
   max-width: 22rem;
+  margin-bottom: var(--space-4);
+  font-size: var(--text-xs);
+  line-height: var(--leading-xs);
+  color: var(--color-text-secondary);
 }
 
 .panel select {
-  padding: 0.4rem 0.5rem;
-  border: 1px solid #d1d5db;
-  border-radius: 0.25rem;
+  padding: var(--space-2) var(--space-3);
+  border: 1px solid var(--color-border-strong);
+  border-radius: var(--radius-sm);
+  background: var(--color-surface);
+  color: var(--color-text);
   font: inherit;
+  font-size: var(--text-sm);
+}
+
+.panel select:focus-visible {
+  outline: 2px solid var(--color-focus);
+  outline-offset: 1px;
+  border-color: var(--color-primary);
 }
 
 .panel small,
 .note {
-  color: #6b7280;
-  font-size: 0.8rem;
+  font-size: var(--text-xs);
+  line-height: var(--leading-xs);
+  color: var(--color-text-muted);
 }
 
+.panel label small {
+  margin-top: var(--space-1);
+}
+
+/* ── 部位清单 ───────────────────────────────────────────────────────────── */
 .parts {
   list-style: none;
-  margin: 0 0 0.5rem;
+  margin: 0 0 var(--space-3);
   padding: 0;
-  font-size: 0.9rem;
+  font-size: var(--text-sm);
 }
 
 .parts li {
   display: flex;
   align-items: center;
   justify-content: space-between;
-  gap: 0.5rem;
-  padding: 0.25rem 0;
+  gap: var(--space-2);
+  padding: var(--space-2) 0;
+  border-bottom: 1px solid var(--color-border);
+}
+
+.parts li:last-child {
+  border-bottom: none;
 }
 
 .tag {
-  margin-left: 0.4rem;
-  padding: 0.1rem 0.35rem;
-  border-radius: 0.2rem;
-  background: #eff6ff;
-  color: #1d4ed8;
-  font-size: 0.75rem;
+  margin-left: var(--space-2);
+  padding: 0.1rem var(--space-2);
+  border-radius: var(--radius-full);
+  background: var(--color-primary-soft);
+  color: var(--color-primary);
+  font-size: var(--text-xs);
+  line-height: var(--leading-xs);
 }
 
 .remove {
-  border: 1px solid #fca5a5;
-  border-radius: 0.25rem;
-  background: white;
-  color: #b91c1c;
+  padding: var(--space-1) var(--space-3);
+  border: 1px solid var(--color-danger);
+  border-radius: var(--radius-sm);
+  background: var(--color-surface);
+  color: var(--color-danger);
+  font: inherit;
+  font-size: var(--text-xs);
   cursor: pointer;
-  font-size: 0.85rem;
-  padding: 0.2rem 0.5rem;
 }
 
+.remove:hover {
+  background: var(--color-danger-soft);
+}
+
+/* ── 按钮 ───────────────────────────────────────────────────────────────── */
 .actions {
   display: flex;
   align-items: center;
-  gap: 0.75rem;
-  margin-bottom: 1rem;
+  gap: var(--space-3);
+  margin-bottom: var(--space-4);
 }
 
 button.primary {
-  padding: 0.5rem 1rem;
-  border: 1px solid #1d4ed8;
-  border-radius: 0.25rem;
-  background: #1d4ed8;
-  color: white;
+  padding: var(--space-3) var(--space-5);
+  border: 1px solid var(--color-primary);
+  border-radius: var(--radius-sm);
+  background: var(--color-primary);
+  color: var(--color-on-primary);
+  font: inherit;
+  font-size: var(--text-base);
+  font-weight: 600;
   cursor: pointer;
 }
 
+button.primary:hover:not(:disabled) {
+  background: var(--color-primary-hover);
+  border-color: var(--color-primary-hover);
+}
+
 button.primary:disabled {
-  opacity: 0.5;
+  opacity: 0.45;
   cursor: not-allowed;
 }
 
 .ghost {
-  padding: 0.5rem 1rem;
-  border: 1px solid #d1d5db;
-  border-radius: 0.25rem;
-  background: white;
+  padding: var(--space-2) var(--space-4);
+  border: 1px solid var(--color-border-strong);
+  border-radius: var(--radius-sm);
+  background: var(--color-surface);
+  color: var(--color-text);
+  font: inherit;
+  font-size: var(--text-sm);
   cursor: pointer;
 }
 
+.ghost:hover {
+  border-color: var(--color-primary);
+  color: var(--color-primary);
+}
+
+/* ── 进度 ───────────────────────────────────────────────────────────────── */
 .progress .bar {
   height: 0.5rem;
-  border-radius: 0.25rem;
-  background: #e5e7eb;
+  border-radius: var(--radius-full);
+  background: var(--color-surface-sunken);
   overflow: hidden;
 }
 
 .progress .bar span {
   display: block;
   height: 100%;
-  background: #1d4ed8;
+  background: var(--color-primary);
+  transition: width var(--dur-base) var(--ease-standard);
+}
+
+/* ── 结果 ───────────────────────────────────────────────────────────────── */
+.result {
+  padding: var(--space-5);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-md);
+  background: var(--color-surface);
+  box-shadow: var(--shadow-sm);
 }
 
 .result .main img {
   max-width: 100%;
-  border-radius: 0.375rem;
-  border: 1px solid #e5e7eb;
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-md);
 }
 
 .caption {
-  color: #6b7280;
-  font-size: 0.85rem;
-  margin: 0.25rem 0 1rem;
+  margin: var(--space-2) 0 var(--space-4);
+  font-size: var(--text-sm);
+  color: var(--color-text-secondary);
 }
 
 .thumbs {
   display: flex;
   flex-wrap: wrap;
-  gap: 0.75rem;
+  gap: var(--space-3);
 }
 
 /* 缩略图是 button(可点)—— 盖掉全局 button 的边框/背景,只留图与说明 */
 .thumb {
   display: flex;
   flex-direction: column;
-  gap: 0.2rem;
+  gap: var(--space-1);
   width: 10rem;
-  padding: 0.2rem;
+  padding: var(--space-1);
   border: 2px solid transparent;
-  border-radius: 0.4rem;
+  border-radius: var(--radius-md);
   background: none;
   cursor: pointer;
+  transition: border-color var(--dur-fast) var(--ease-standard);
+}
+
+.thumb:hover {
+  border-color: var(--color-border-strong);
 }
 
 .thumb img {
   width: 100%;
-  border-radius: 0.25rem;
-  border: 1px solid #e5e7eb;
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-sm);
 }
 
 /* 当前正在主图位置展示的那张 */
 .thumb--active {
-  border-color: #1d4ed8;
+  border-color: var(--color-primary);
 }
 
 .thumb--active .thumb-cap {
-  color: #1d4ed8;
+  color: var(--color-primary);
+  font-weight: 600;
 }
 
 .thumb-cap {
-  color: #6b7280;
-  font-size: 0.8rem;
+  font-size: var(--text-xs);
+  line-height: var(--leading-xs);
+  color: var(--color-text-secondary);
   text-align: center;
 }
 
 .meta {
   display: grid;
   grid-template-columns: auto 1fr;
-  gap: 0.2rem 0.75rem;
-  font-size: 0.85rem;
-  margin: 1rem 0;
+  gap: var(--space-1) var(--space-3);
+  margin: var(--space-4) 0;
+  font-size: var(--text-sm);
 }
 
 .meta dt {
-  color: #6b7280;
+  color: var(--color-text-secondary);
 }
 
 .meta dd {
   margin: 0;
+  color: var(--color-text);
+  font-variant-numeric: tabular-nums;
 }
 
 .plan-link {
-  margin-left: 0.5rem;
-  color: #1d4ed8;
+  margin-left: var(--space-2);
+  color: var(--color-primary);
+  font-weight: 600;
 }
 
-.meta dd {
-  margin: 0;
-}
-
+/* ── 状态 ───────────────────────────────────────────────────────────────── */
 .empty {
-  padding: 1rem;
-  background: #fffbeb;
-  border: 1px solid #fde68a;
-  border-radius: 0.25rem;
-  color: #92400e;
+  padding: var(--space-4);
+  border: 1px solid var(--color-warning);
+  border-radius: var(--radius-sm);
+  background: var(--color-warning-soft);
+  color: var(--color-text);
+}
+
+.empty p {
+  margin: 0 0 var(--space-2);
+}
+
+.empty ul {
+  margin: 0 0 var(--space-2);
+  padding-left: var(--space-5);
 }
 
 .empty a {
-  color: #1d4ed8;
+  color: var(--color-primary);
+  font-weight: 600;
 }
 
 .error {
-  color: #b91c1c;
+  margin: var(--space-3) 0;
+  padding: var(--space-3) var(--space-4);
+  border: 1px solid var(--color-danger);
+  border-radius: var(--radius-sm);
+  background: var(--color-danger-soft);
+  color: var(--color-danger);
+  font-size: var(--text-sm);
 }
 
 .errors {
-  margin: 0.5rem 0 0;
-  padding-left: 1.2rem;
-  color: #b91c1c;
-  font-size: 0.85rem;
+  margin: var(--space-3) 0 0;
+  padding-left: var(--space-5);
+  color: var(--color-danger);
+  font-size: var(--text-sm);
 }
 </style>

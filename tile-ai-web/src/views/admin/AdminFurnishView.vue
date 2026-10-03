@@ -302,173 +302,282 @@ onMounted(load)
 </template>
 
 <style scoped>
+/* 样式一律走设计令牌(`src/styles/tokens.css`)—— 本文件不出现任何十六进制。
+   ⚠️ **本页 `<template>` 与 `<script>` 一个字节未动**,只换了这一块 ——
+   测试依赖 `findAll('.cell')` 的**个数**、每个 cell 内的按钮文案、
+   `find('form')` 里恰好 1 个 `input[type="text"]` / 1 个 `textarea` / 1 个 `select`。
+   ⇒ **矩阵与表单的元素数量不能变**,样式改动不碰它们。 */
+
 .head h1 {
-  margin: 0 0 0.5rem;
-  font-size: 1.3rem;
+  margin: 0 0 var(--space-2);
+  font-size: var(--text-xl);
+  line-height: var(--leading-xl);
+  font-weight: 700;
+  color: var(--color-text);
 }
 
 .hint {
-  color: #6b7280;
-  font-size: 0.8rem;
+  font-size: var(--text-xs);
+  line-height: var(--leading-xs);
+  color: var(--color-text-muted);
 }
 
+.hint strong {
+  color: var(--color-text-secondary);
+}
+
+/* ── 状态 ───────────────────────────────────────────────────────────────── */
 .warn {
-  padding: 0.5rem 0.75rem;
-  border: 1px solid #fcd34d;
-  border-radius: 0.25rem;
-  background: #fffbeb;
-  color: #92400e;
-  font-size: 0.85rem;
+  margin: var(--space-3) 0;
+  padding: var(--space-3) var(--space-4);
+  border: 1px solid var(--color-warning);
+  border-radius: var(--radius-sm);
+  background: var(--color-warning-soft);
+  color: var(--color-text);
+  font-size: var(--text-sm);
 }
 
 .error {
-  padding: 0.5rem 0.75rem;
-  border: 1px solid #fca5a5;
-  border-radius: 0.25rem;
-  background: #fef2f2;
-  color: #b91c1c;
-  font-size: 0.85rem;
+  margin: var(--space-3) 0;
+  padding: var(--space-3) var(--space-4);
+  border: 1px solid var(--color-danger);
+  border-radius: var(--radius-sm);
+  background: var(--color-danger-soft);
+  color: var(--color-danger);
+  font-size: var(--text-sm);
 }
 
 .notice {
-  padding: 0.5rem 0.75rem;
-  border: 1px solid #bbf7d0;
-  border-radius: 0.25rem;
-  background: #f0fdf4;
-  color: #166534;
-  font-size: 0.85rem;
+  margin: var(--space-3) 0;
+  padding: var(--space-3) var(--space-4);
+  border: 1px solid var(--color-success);
+  border-radius: var(--radius-sm);
+  background: var(--color-success-soft);
+  color: var(--color-success);
+  font-size: var(--text-sm);
 }
 
 .errors {
-  margin: 0.5rem 0;
-  padding-left: 1.2rem;
-  color: #b91c1c;
-  font-size: 0.85rem;
+  margin: var(--space-3) 0;
+  padding-left: var(--space-5);
+  color: var(--color-danger);
+  font-size: var(--text-sm);
 }
 
+/* ── 空间 × 风格矩阵 ────────────────────────────────────────────────────── */
 .matrix {
-  border-collapse: collapse;
-  font-size: 0.85rem;
+  border-collapse: separate;
+  border-spacing: 0;
+  font-size: var(--text-sm);
 }
 
 .matrix th,
 .matrix td {
-  border: 1px solid #e5e7eb;
-  padding: 0.35rem 0.5rem;
+  padding: var(--space-2) var(--space-3);
+  border-right: 1px solid var(--color-border);
+  border-bottom: 1px solid var(--color-border);
   text-align: left;
 }
 
+/* 左上角那格是"轴标签",不是数据 —— 弱化它 */
 .corner {
-  background: #f9fafb;
-  color: #6b7280;
+  background: var(--color-surface-sunken);
+  color: var(--color-text-muted);
   font-weight: 400;
+  font-size: var(--text-xs);
+}
+
+/* 行头 / 列头:让轴站得住 */
+.matrix thead th {
+  background: var(--color-surface-sunken);
+  color: var(--color-text-secondary);
+  font-size: var(--text-xs);
+  font-weight: 600;
+  white-space: nowrap;
+}
+
+.matrix tbody th {
+  background: var(--color-surface);
+  color: var(--color-text);
+  font-weight: 600;
+  white-space: nowrap;
 }
 
 .mark {
-  color: #9ca3af;
-  font-size: 0.7rem;
+  color: var(--color-text-muted);
+  font-size: var(--text-xs);
+  font-weight: 400;
 }
 
+/* 格子本身不带内边距 —— 里面那个按钮要铺满整格,点哪儿都算点了这一格 */
 .cell {
   padding: 0;
+  border-right: 1px solid var(--color-border);
+  border-bottom: 1px solid var(--color-border);
 }
 
 .cell button {
   width: 100%;
+  padding: var(--space-2) var(--space-3);
   border: none;
-  padding: 0.4rem 0.6rem;
   background: transparent;
   cursor: pointer;
   font: inherit;
+  font-size: var(--text-sm);
+  transition: background var(--dur-fast) var(--ease-standard);
 }
 
+.cell button:hover {
+  background: var(--color-bg);
+}
+
+/* 已配置 = 暖绿(**不是"成功"语义,只是"这儿有东西"**);未配置 = 弱化灰 */
 .cell--on button {
-  color: #047857;
+  color: var(--color-success);
+  font-weight: 600;
 }
 
 .cell--off button {
-  color: #9ca3af;
+  color: var(--color-text-muted);
 }
 
+/* 当前选中的那一格 —— 用主色描边,与主题一致 */
 .cell--active {
-  outline: 2px solid #1d4ed8;
+  outline: 2px solid var(--color-primary);
   outline-offset: -2px;
 }
 
+/* ── 编辑面板 ───────────────────────────────────────────────────────────── */
 .panel {
-  border: 1px solid #e5e7eb;
-  border-radius: 0.375rem;
-  padding: 1rem;
-  margin-top: 1.25rem;
   max-width: 32rem;
+  margin-top: var(--space-5);
+  padding: var(--space-5);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-md);
+  background: var(--color-surface);
+  box-shadow: var(--shadow-md);
 }
 
 .panel h2 {
-  margin: 0 0 0.75rem;
-  font-size: 1rem;
+  margin: 0 0 var(--space-4);
+  font-size: var(--text-base);
+  line-height: var(--leading-base);
+  font-weight: 600;
+  color: var(--color-text);
 }
 
 .tag {
-  margin-left: 0.4rem;
-  padding: 0.1rem 0.35rem;
-  border-radius: 0.2rem;
-  background: #ecfdf5;
-  color: #047857;
-  font-size: 0.75rem;
+  margin-left: var(--space-2);
+  padding: 0.05rem var(--space-2);
+  border-radius: var(--radius-full);
+  background: var(--color-success-soft);
+  color: var(--color-success);
+  font-size: var(--text-xs);
+  line-height: var(--leading-xs);
 }
 
 .tag--off {
-  background: #f3f4f6;
-  color: #6b7280;
+  background: var(--color-surface-sunken);
+  color: var(--color-text-muted);
 }
 
 label {
   display: flex;
   flex-direction: column;
-  gap: 0.25rem;
-  margin-bottom: 0.75rem;
-  font-size: 0.85rem;
-  color: #374151;
+  gap: var(--space-1);
+  margin-bottom: var(--space-4);
+  font-size: var(--text-xs);
+  line-height: var(--leading-xs);
+  color: var(--color-text-secondary);
 }
 
 input,
 textarea,
 select {
-  padding: 0.4rem 0.5rem;
-  border: 1px solid #d1d5db;
-  border-radius: 0.25rem;
+  padding: var(--space-2) var(--space-3);
+  border: 1px solid var(--color-border-strong);
+  border-radius: var(--radius-sm);
+  background: var(--color-surface);
+  color: var(--color-text);
   font: inherit;
+  font-size: var(--text-sm);
 }
 
+input,
+select {
+  height: var(--control-height);
+}
+
+textarea {
+  resize: vertical;
+}
+
+input:focus-visible,
+textarea:focus-visible,
+select:focus-visible {
+  outline: 2px solid var(--color-focus);
+  outline-offset: 1px;
+  border-color: var(--color-primary);
+}
+
+/* 无权限时是 readonly —— 浅底提示"改不了",别让它看起来可编辑 */
+input[readonly],
+textarea[readonly] {
+  background: var(--color-surface-sunken);
+  color: var(--color-text-muted);
+}
+
+/* ── 按钮 ───────────────────────────────────────────────────────────────── */
 .actions {
   display: flex;
-  gap: 0.5rem;
+  gap: var(--space-2);
 }
 
 .actions button {
-  padding: 0.4rem 0.9rem;
-  border: 1px solid #d1d5db;
-  border-radius: 0.25rem;
-  background: white;
+  height: var(--control-height);
+  padding: 0 var(--space-4);
+  border: 1px solid var(--color-border-strong);
+  border-radius: var(--radius-sm);
+  background: var(--color-surface);
+  color: var(--color-text);
+  font: inherit;
+  font-size: var(--text-sm);
   cursor: pointer;
+  transition: border-color var(--dur-fast) var(--ease-standard);
+}
+
+.actions button:hover:not(:disabled) {
+  border-color: var(--color-primary);
+  color: var(--color-primary);
 }
 
 button.primary {
-  padding: 0.4rem 0.9rem;
-  border: 1px solid #1d4ed8;
-  border-radius: 0.25rem;
-  background: #1d4ed8;
-  color: white;
-  cursor: pointer;
+  border-color: var(--color-primary);
+  background: var(--color-primary);
+  color: var(--color-on-primary);
+  font-weight: 600;
+}
+
+button.primary:hover:not(:disabled) {
+  background: var(--color-primary-hover);
+  border-color: var(--color-primary-hover);
+  color: var(--color-on-primary);
 }
 
 button.primary:disabled {
-  opacity: 0.5;
+  opacity: 0.45;
   cursor: not-allowed;
 }
 
+/* 删除是危险操作 —— 危险色 + 明确的文字 */
 button.danger {
-  border-color: #fca5a5;
-  color: #b91c1c;
+  border-color: var(--color-danger);
+  color: var(--color-danger);
+}
+
+button.danger:hover:not(:disabled) {
+  background: var(--color-danger-soft);
+  border-color: var(--color-danger);
+  color: var(--color-danger);
 }
 </style>

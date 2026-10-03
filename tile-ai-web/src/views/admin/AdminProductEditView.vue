@@ -153,101 +153,111 @@ onMounted(async () => {
 
 <template>
   <section>
-    <h1>{{ isEdit ? '编辑 SKU' : '新增 SKU' }}</h1>
+    <header class="page-head">
+      <h1 class="page-head__title">{{ isEdit ? '编辑 SKU' : '新增 SKU' }}</h1>
+    </header>
 
     <p v-if="loading" class="hint">加载中…</p>
 
     <form v-else class="form" @submit.prevent="submit">
-      <label>
-        产品编号 <em>*</em>
-        <input v-model="form.sku" type="text" placeholder="如 TL-2043" />
-        <small>业务主键,唯一</small>
-      </label>
+      <!-- 标量字段:DOM 顺序不变(制表顺序跟着走),只是两列排开 -->
+      <div class="grid">
+        <label>
+          产品编号 <em>*</em>
+          <input v-model="form.sku" type="text" placeholder="如 TL-2043" />
+          <small>业务主键,唯一</small>
+        </label>
 
-      <label>
-        名称 <em>*</em>
-        <input v-model="form.name" type="text" placeholder="如 雅灰石纹" />
-      </label>
+        <label>
+          名称 <em>*</em>
+          <input v-model="form.name" type="text" placeholder="如 雅灰石纹" />
+        </label>
 
-      <label>
-        单价(元/㎡) <em>*</em>
-        <input v-model.number="form.pricePerSqm" type="number" step="0.01" min="0" />
-        <small>元/㎡ —— 报价引擎按此乘面积与损耗率</small>
-      </label>
+        <label>
+          单价(元/㎡) <em>*</em>
+          <input v-model.number="form.pricePerSqm" type="number" step="0.01" min="0" />
+          <small>元/㎡ —— 报价引擎按此乘面积与损耗率</small>
+        </label>
 
-      <label>
-        规格
-        <input v-model="form.spec" type="text" placeholder="如 750×1500mm" />
-      </label>
+        <label>
+          规格
+          <input v-model="form.spec" type="text" placeholder="如 750×1500mm" />
+        </label>
 
-      <label>
-        材质
-        <input v-model="form.material" type="text" placeholder="如 釉面砖" />
-      </label>
+        <label>
+          材质
+          <input v-model="form.material" type="text" placeholder="如 釉面砖" />
+        </label>
 
-      <label>
-        光泽度
-        <input v-model="form.surface" type="text" placeholder="如 柔光" />
-      </label>
+        <label>
+          光泽度
+          <input v-model="form.surface" type="text" placeholder="如 柔光" />
+        </label>
 
-      <label>
-        花色 / 纹理
-        <input v-model="form.colorPattern" type="text" placeholder="如 浅灰细石纹" />
-      </label>
+        <label>
+          花色 / 纹理
+          <input v-model="form.colorPattern" type="text" placeholder="如 浅灰细石纹" />
+        </label>
+
+        <label>
+          状态
+          <select v-model="form.status">
+            <option value="on_sale">上架</option>
+            <option value="off_sale">下架</option>
+          </select>
+        </label>
+      </div>
 
       <fieldset>
         <legend>适用空间</legend>
         <p v-if="!spaces.length" class="hint">字典未配置空间项</p>
-        <label v-for="item in spaces" :key="item.key" class="check">
-          <input
-            type="checkbox"
-            :checked="(form.applicableSpaces ?? []).includes(item.key)"
-            @change="toggle(form.applicableSpaces, item.key)"
-          />
-          {{ item.label }}
-        </label>
+        <div class="checks">
+          <label v-for="item in spaces" :key="item.key" class="check">
+            <input
+              type="checkbox"
+              :checked="(form.applicableSpaces ?? []).includes(item.key)"
+              @change="toggle(form.applicableSpaces, item.key)"
+            />
+            {{ item.label }}
+          </label>
+        </div>
       </fieldset>
 
       <fieldset>
         <legend>风格标签</legend>
         <p v-if="!styles.length" class="hint">字典未配置风格项</p>
-        <label v-for="item in styles" :key="item.key" class="check">
-          <input
-            type="checkbox"
-            :checked="(form.styleTags ?? []).includes(item.key)"
-            @change="toggle(form.styleTags, item.key)"
-          />
-          {{ item.label }}
-        </label>
+        <div class="checks">
+          <label v-for="item in styles" :key="item.key" class="check">
+            <input
+              type="checkbox"
+              :checked="(form.styleTags ?? []).includes(item.key)"
+              @change="toggle(form.styleTags, item.key)"
+            />
+            {{ item.label }}
+          </label>
+        </div>
       </fieldset>
 
-      <label>
-        封面图 URL
-        <input v-model="form.coverImage" type="text" placeholder="https://oss/..." />
-        <small>图片一律存对象存储,库里只存 URL</small>
-      </label>
-
       <fieldset>
-        <legend>多角度图</legend>
+        <legend>图片</legend>
+        <label class="full">
+          封面图 URL
+          <input v-model="form.coverImage" type="text" placeholder="https://oss/..." />
+          <small>图片一律存对象存储,库里只存 URL</small>
+        </label>
+
+        <p class="sub-legend">多角度图</p>
         <div v-for="(image, index) in form.images ?? []" :key="index" class="image-row">
           <input v-model="image.url" type="text" placeholder="图片 URL" />
           <input v-model="image.angle" type="text" placeholder="角度,如 side" class="narrow" />
           <input v-model.number="image.sort" type="number" class="narrow" />
           <button type="button" class="danger" @click="removeImage(index)">移除</button>
         </div>
-        <button type="button" @click="addImage">添加一张</button>
+        <button type="button" class="ghost" @click="addImage">添加一张</button>
       </fieldset>
 
-      <label>
-        状态
-        <select v-model="form.status">
-          <option value="on_sale">上架</option>
-          <option value="off_sale">下架</option>
-        </select>
-      </label>
-
       <p v-if="errorText" class="error" role="alert">{{ errorText }}</p>
-      <ul v-if="fieldErrors.length" class="error">
+      <ul v-if="fieldErrors.length" class="error errors">
         <li v-for="item in fieldErrors" :key="item">{{ item }}</li>
       </ul>
 
@@ -262,64 +272,134 @@ onMounted(async () => {
 </template>
 
 <style scoped>
-h1 {
-  margin-top: 0;
-  font-size: 1.15rem;
+/* 样式一律走设计令牌(`src/styles/tokens.css`)—— 本文件不出现任何十六进制。
+   ⚠️ 本页**没有测试用例** —— 改动无测试可证,只能等人眼验收(纪律 7)。 */
+
+.page-head {
+  margin-bottom: var(--space-4);
+}
+
+.page-head__title {
+  margin: 0;
+  font-size: var(--text-xl);
+  line-height: var(--leading-xl);
+  font-weight: 700;
+  color: var(--color-text);
 }
 
 .form {
   display: flex;
   flex-direction: column;
-  gap: 0.75rem;
-  max-width: 40rem;
+  gap: var(--space-4);
+  max-width: 46rem;
+}
+
+/* ── 标量字段:两列,窄屏自动落回一列 ───────────────────────────────────── */
+.grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(14rem, 1fr));
+  gap: var(--space-4);
+  padding: var(--space-5);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-md);
+  background: var(--color-surface);
+  box-shadow: var(--shadow-sm);
 }
 
 label {
   display: flex;
   flex-direction: column;
-  gap: 0.2rem;
-  font-size: 0.9rem;
+  gap: var(--space-1);
+  font-size: var(--text-xs);
+  line-height: var(--leading-xs);
+  color: var(--color-text-secondary);
 }
 
+label.full {
+  max-width: none;
+  margin-bottom: var(--space-3);
+}
+
+/* 必填星号 —— 红色 + 星号,**不靠颜色单独承载信息** */
 em {
-  color: #b91c1c;
+  color: var(--color-danger);
   font-style: normal;
 }
 
 small {
-  color: #6b7280;
+  color: var(--color-text-muted);
 }
 
 input,
 select {
-  padding: 0.35rem 0.5rem;
-  border: 1px solid #d1d5db;
-  border-radius: 0.25rem;
+  height: var(--control-height);
+  padding: 0 var(--space-3);
+  border: 1px solid var(--color-border-strong);
+  border-radius: var(--radius-sm);
+  background: var(--color-surface);
+  color: var(--color-text);
+  font: inherit;
+  font-size: var(--text-sm);
 }
 
+input:focus-visible,
+select:focus-visible {
+  outline: 2px solid var(--color-focus);
+  outline-offset: 1px;
+  border-color: var(--color-primary);
+}
+
+/* ── 分组 ───────────────────────────────────────────────────────────────── */
 fieldset {
   display: flex;
-  flex-wrap: wrap;
-  gap: 0.75rem;
-  border: 1px solid #e5e7eb;
-  border-radius: 0.25rem;
-  padding: 0.6rem;
+  flex-direction: column;
+  gap: var(--space-3);
+  margin: 0;
+  padding: var(--space-5);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-md);
+  background: var(--color-surface);
+  box-shadow: var(--shadow-sm);
 }
 
 legend {
-  font-size: 0.9rem;
-  color: #374151;
+  padding: 0 var(--space-2);
+  font-size: var(--text-sm);
+  font-weight: 600;
+  color: var(--color-text);
+}
+
+.sub-legend {
+  margin: 0;
+  font-size: var(--text-xs);
+  font-weight: 600;
+  color: var(--color-text-secondary);
+}
+
+.checks {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-2) var(--space-4);
 }
 
 .check {
   flex-direction: row;
   align-items: center;
-  gap: 0.3rem;
+  gap: var(--space-2);
+  font-size: var(--text-sm);
 }
 
+/* 多选/单选不该被拉成整行高 —— 覆盖上面的 input 规则 */
+.check input {
+  height: auto;
+  padding: 0;
+  width: auto;
+}
+
+/* ── 多角度图行 ─────────────────────────────────────────────────────────── */
 .image-row {
   display: flex;
-  gap: 0.4rem;
+  gap: var(--space-2);
   width: 100%;
 }
 
@@ -331,35 +411,85 @@ legend {
   width: 6rem;
 }
 
+/* ── 按钮 ───────────────────────────────────────────────────────────────── */
 .buttons {
   display: flex;
-  gap: 0.5rem;
+  gap: var(--space-2);
 }
 
 button {
-  padding: 0.4rem 0.8rem;
-  border: 1px solid #d1d5db;
-  border-radius: 0.25rem;
-  background: white;
+  height: var(--control-height);
+  padding: 0 var(--space-4);
+  border: 1px solid var(--color-border-strong);
+  border-radius: var(--radius-sm);
+  background: var(--color-surface);
+  color: var(--color-text);
+  font: inherit;
+  font-size: var(--text-sm);
   cursor: pointer;
+  transition:
+    border-color var(--dur-fast) var(--ease-standard),
+    background var(--dur-fast) var(--ease-standard);
 }
 
-.primary {
-  background: #1d4ed8;
-  border-color: #1d4ed8;
-  color: white;
+button:hover:not(:disabled) {
+  border-color: var(--color-primary);
+  color: var(--color-primary);
 }
 
+button.primary {
+  border-color: var(--color-primary);
+  background: var(--color-primary);
+  color: var(--color-on-primary);
+  font-weight: 600;
+}
+
+button.primary:hover:not(:disabled) {
+  background: var(--color-primary-hover);
+  border-color: var(--color-primary-hover);
+  color: var(--color-on-primary);
+}
+
+button:disabled {
+  opacity: 0.45;
+  cursor: not-allowed;
+}
+
+.ghost {
+  align-self: flex-start;
+}
+
+/* 移除是危险操作 —— 危险色 + 明确的文字 */
 .danger {
-  color: #b91c1c;
+  border-color: var(--color-danger);
+  color: var(--color-danger);
 }
 
+.danger:hover:not(:disabled) {
+  background: var(--color-danger-soft);
+  border-color: var(--color-danger);
+  color: var(--color-danger);
+}
+
+/* ── 状态 ───────────────────────────────────────────────────────────────── */
 .error {
-  color: #b91c1c;
   margin: 0;
+  padding: var(--space-3) var(--space-4);
+  border: 1px solid var(--color-danger);
+  border-radius: var(--radius-sm);
+  background: var(--color-danger-soft);
+  color: var(--color-danger);
+  font-size: var(--text-sm);
+}
+
+.errors {
+  padding-left: var(--space-6);
 }
 
 .hint {
-  color: #6b7280;
+  margin: 0;
+  font-size: var(--text-xs);
+  line-height: var(--leading-xs);
+  color: var(--color-text-muted);
 }
 </style>

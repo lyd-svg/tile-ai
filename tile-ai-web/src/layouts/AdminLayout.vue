@@ -58,63 +58,117 @@ async function handleLogout() {
 </template>
 
 <style scoped>
+/* 样式一律走设计令牌(`src/styles/tokens.css`)—— 本文件不出现任何十六进制。
+   主题由 `App.vue` 按 `/admin` 前缀挂上 `data-theme="admin"`,自动取 B 端那套
+   更紧凑的密度与更小的圆角(`tile-ai-design.md` §4)。
+
+   ⚠️ **两条测试约束,别动**:
+     ① `findAll('a')` 会取菜单项的文字与 href —— 不要新增文字里含菜单名的链接;
+     ② `find('button')` **必须是「退出登录」那一个** ⇒ **不能加汉堡菜单之类的按钮**。
+        所以窄屏下侧栏不做抽屉折叠(那是被测试钉住的取舍,不是遗漏)。 */
+
 .shell {
   display: flex;
   min-height: 100vh;
+  background: var(--color-bg);
 }
 
+/* ── 侧栏 ───────────────────────────────────────────────────────────────── */
 .sidebar {
   width: 12rem;
   flex-shrink: 0;
-  border-right: 1px solid #e5e7eb;
-  padding: 1rem 0.75rem;
+  padding: var(--space-4) var(--space-3);
+  border-right: 1px solid var(--color-border);
+  background: var(--color-surface);
 }
 
 .brand {
-  font-weight: 600;
-  padding: 0 0.5rem 0.75rem;
+  padding: 0 var(--space-2) var(--space-4);
+  font-size: var(--text-base);
+  font-weight: 700;
+  color: var(--color-text);
 }
 
 .sidebar nav {
   display: flex;
   flex-direction: column;
-  gap: 0.25rem;
+  gap: var(--space-1);
 }
 
 .item {
-  padding: 0.4rem 0.5rem;
-  border-radius: 0.25rem;
-  color: #374151;
+  padding: var(--space-2) var(--space-3);
+  border-radius: var(--radius-sm);
+  color: var(--color-text-secondary);
   text-decoration: none;
+  font-size: var(--text-sm);
+  transition:
+    background var(--dur-fast) var(--ease-standard),
+    color var(--dur-fast) var(--ease-standard);
+}
+
+.item:hover {
+  background: var(--color-surface-sunken);
+  color: var(--color-text);
 }
 
 .item--active {
-  background: #eff6ff;
-  color: #1d4ed8;
+  background: var(--color-primary-soft);
+  color: var(--color-primary);
+  font-weight: 600;
 }
 
+/* ── 内容区 ─────────────────────────────────────────────────────────────── */
 .content {
   flex: 1;
   display: flex;
   flex-direction: column;
+  min-width: 0;
 }
 
 .topbar {
   display: flex;
   justify-content: space-between;
   align-items: center;
-  padding: 0.75rem 1.25rem;
-  border-bottom: 1px solid #e5e7eb;
+  gap: var(--space-4);
+  padding: var(--space-3) var(--space-5);
+  border-bottom: 1px solid var(--color-border);
+  background: var(--color-surface);
+}
+
+.who {
+  font-size: var(--text-sm);
+  color: var(--color-text);
 }
 
 .role {
-  margin-left: 0.5rem;
-  color: #6b7280;
+  margin-left: var(--space-2);
+  padding: 0.05rem var(--space-2);
+  border-radius: var(--radius-full);
+  background: var(--color-surface-sunken);
+  color: var(--color-text-secondary);
   font-style: normal;
-  font-size: 0.85em;
+  font-size: var(--text-xs);
+}
+
+.topbar button {
+  padding: var(--space-2) var(--space-4);
+  border: 1px solid var(--color-border-strong);
+  border-radius: var(--radius-sm);
+  background: var(--color-surface);
+  color: var(--color-text-secondary);
+  font: inherit;
+  font-size: var(--text-sm);
+  cursor: pointer;
+  transition: border-color var(--dur-fast) var(--ease-standard);
+}
+
+.topbar button:hover {
+  border-color: var(--color-primary);
+  color: var(--color-primary);
 }
 
 .page {
-  padding: 1.25rem;
+  flex: 1;
+  padding: var(--space-5);
 }
 </style>

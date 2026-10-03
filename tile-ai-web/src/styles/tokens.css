@@ -1,0 +1,193 @@
+/* =============================================================================
+ * 设计令牌(Design Tokens)
+ *
+ * 权威来源:`tile-ai-design.md` §3(值)。改任何值必须**同时**改三处:
+ *   ① `tile-ai-design.md` §3 的表格  ② 本文件  ③ `antdTheme.ts`
+ *
+ * 三层结构(见 `tile-ai-style-foundation.md` §2.1):
+ *   L1 原始令牌  —— 只描述"是什么色",**业务代码禁止使用**
+ *   L2 语义令牌  —— 只描述"用在哪",**组件与页面只准用这一层**
+ *   L3 组件令牌  —— 按需创建,仅 `components/base` 使用(当前为空)
+ *
+ * ⚠️ 本文件是全站**唯一**允许写十六进制色值的样式文件。
+ * ⚠️ 当前阶段:令牌已定义但**尚无页面引用** —— 故引入本文件不改变任何现有外观。
+ * ========================================================================== */
+
+/* ══════════════════════════════════════════════════════════════════════════
+ * L1 · 原始令牌(Primitive)—— 不要直接在组件里用
+ * ══════════════════════════════════════════════════════════════════════════ */
+:root {
+  /* 陶土 Terracotta —— 品牌主色 */
+  --terracotta-50: #FBF2ED;
+  --terracotta-100: #F6E0D4;
+  --terracotta-200: #EBC0A9;
+  --terracotta-300: #DD9B7B;
+  --terracotta-400: #CD7550;
+  --terracotta-500: #B4552F;
+  --terracotta-600: #974626;
+  --terracotta-700: #75371E;
+  --terracotta-800: #5A2A17;
+
+  /* 暖灰 Stone —— 中性 */
+  --stone-50: #F7F4EF;
+  --stone-100: #EDE8E0;
+  --stone-200: #DBD4C9;
+  --stone-300: #C0B6A7;
+  --stone-400: #9F9280;
+  --stone-500: #7A6A55;
+  --stone-600: #5E5140;
+  --stone-700: #463C2F;
+  --stone-800: #2B2621;
+
+  /* 米白 Sand —— 表面 */
+  --sand-50: #FCFAF6;
+  --sand-100: #FAF7F2;
+  --sand-200: #F3EFE8;
+  --white: #FFFFFF;
+
+  /* 黄铜 Brass —— 点缀 */
+  --brass-400: #D9B44A;
+  --brass-500: #C9A227;
+
+  /* 语义色(已暖化,勿用纯饱和色) */
+  --green-500: #4F7D4A;
+  --green-50: #EEF5EC;
+  --amber-500: #C98A1B;
+  --amber-50: #FBF3E2;
+  /* ⚠️ 危险色与主色同属暖红系,天然接近 —— 危险状态**不得只靠颜色区分**,
+     必须同时给图标或文案(`tile-ai-design.md` §3.1)。 */
+  --red-500: #A32B1E;
+  --red-50: #F9E9E6;
+  --slate-500: #4A6274;
+  --slate-50: #EDF1F4;
+}
+
+/* ══════════════════════════════════════════════════════════════════════════
+ * L2 · 语义令牌(Semantic)—— 组件与页面只准用这一层
+ * 默认值 = C 端(site)。B 端覆盖见文件末尾的 [data-theme="admin"]。
+ * ══════════════════════════════════════════════════════════════════════════ */
+:root {
+  /* 表面与文字 */
+  --color-bg: var(--sand-100);
+  --color-surface: var(--white);
+  --color-surface-sunken: var(--sand-200);
+  --color-border: var(--stone-200);
+  --color-border-strong: var(--stone-300);
+  --color-text: var(--stone-800);
+  --color-text-secondary: var(--stone-600);
+  --color-text-muted: var(--stone-400);
+
+  /* 主色与行动 */
+  --color-primary: var(--terracotta-500);
+  --color-primary-hover: var(--terracotta-400);
+  --color-primary-active: var(--terracotta-600);
+  --color-primary-soft: var(--terracotta-50);
+  --color-on-primary: var(--white);
+  --color-accent: var(--brass-500);
+  --color-focus: var(--brass-500);
+
+  /* 语义状态 */
+  --color-success: var(--green-500);
+  --color-success-soft: var(--green-50);
+  --color-warning: var(--amber-500);
+  --color-warning-soft: var(--amber-50);
+  --color-danger: var(--red-500);
+  --color-danger-soft: var(--red-50);
+  --color-info: var(--slate-500);
+  --color-info-soft: var(--slate-50);
+}
+
+/* ── 字体与排版 ─────────────────────────────────────────────────────────── */
+:root {
+  --font-sans: -apple-system, BlinkMacSystemFont, "Segoe UI",
+    "PingFang SC", "Microsoft YaHei", "Noto Sans SC",
+    Roboto, "Helvetica Neue", Arial, sans-serif;
+  --font-num: var(--font-sans);
+
+  --text-xs: 12px;   --leading-xs: 18px;
+  --text-sm: 14px;   --leading-sm: 22px;
+  --text-base: 16px; --leading-base: 26px;
+  --text-lg: 18px;   --leading-lg: 28px;
+  --text-xl: 22px;   --leading-xl: 32px;
+  --text-2xl: 28px;  --leading-2xl: 38px;
+  --text-3xl: 36px;  --leading-3xl: 46px;
+}
+
+/* ── 间距(4px 基准;数字是**刻度索引**,不是像素)───────────────────── */
+:root {
+  --space-1: 4px;
+  --space-2: 8px;
+  --space-3: 12px;
+  --space-4: 16px;
+  --space-5: 24px;
+  --space-6: 32px;
+  --space-7: 48px;
+  --space-8: 64px;
+}
+
+/* ── 圆角 / 控件高度 ───────────────────────────────────────────────────── */
+:root {
+  --radius-sm: 6px;
+  --radius-md: 10px;
+  --radius-lg: 16px;
+  --radius-full: 999px;
+  --control-height: 40px;
+}
+
+/* ── 阴影(带暖色调,不用纯黑)────────────────────────────────────────── */
+:root {
+  --shadow-sm: 0 1px 2px rgba(43, 38, 33, 0.06);
+  --shadow-md: 0 4px 12px rgba(43, 38, 33, 0.08);
+  --shadow-lg: 0 12px 32px rgba(43, 38, 33, 0.12);
+}
+
+/* ── 层级与动效 ─────────────────────────────────────────────────────────── */
+:root {
+  --z-dropdown: 1000;
+  --z-sticky: 1020;
+  --z-drawer: 1040;
+  --z-modal: 1050;
+  --z-toast: 1080;
+
+  --dur-fast: 120ms;
+  --dur-base: 200ms;
+  --dur-slow: 320ms;
+  --ease-standard: cubic-bezier(0.2, 0, 0, 1);
+}
+
+/* ══════════════════════════════════════════════════════════════════════════
+ * L3 · 组件令牌(Component)—— 按需创建,仅 components/base 使用
+ * 当前为空:不为"还没有的组件"预先造令牌(`tile-ai-frontend-structure.md` §边界)。
+ * ══════════════════════════════════════════════════════════════════════════ */
+
+/* ══════════════════════════════════════════════════════════════════════════
+ * 主题覆盖 —— B 端(admin)
+ *
+ * 主题只覆盖 **L2**;L1 永不变,L3 随 L2 自动跟变。
+ * 品牌色(陶土)两端统一,差异在密度、圆角、背景中性度(`tile-ai-design.md` §4)。
+ *
+ * ⚠️ 新增主题必须覆盖**全部** L2 语义令牌 —— 漏一个会静默落到默认值,
+ *    页面"看着差不多对"其实有块地方是错的。完整性检查脚本见计划待办。
+ * ══════════════════════════════════════════════════════════════════════════ */
+[data-theme="admin"] {
+  /* 背景更中性,降装饰感 */
+  --color-bg: #F7F6F4;
+  --color-surface-sunken: var(--stone-50);
+
+  /* 控件更紧凑、圆角更小 —— 工具感 */
+  --radius-sm: 4px;
+  --radius-md: 6px;
+  --radius-lg: 8px;
+  --control-height: 32px;
+
+  /* 字号整体降一档(正文 16 → 14) */
+  --text-sm: 13px;   --leading-sm: 20px;
+  --text-base: 14px; --leading-base: 22px;
+  --text-lg: 16px;   --leading-lg: 24px;
+  --text-xl: 20px;   --leading-xl: 28px;
+  --text-2xl: 22px;  --leading-2xl: 30px;
+}
+
+/* ── 暗色模式:一期不做,位置预留(`tile-ai-design.md` §3.4 已要求颜色成对设计)。
+ * [data-theme="dark"] { ... }
+ * ────────────────────────────────────────────────────────────────────────── */

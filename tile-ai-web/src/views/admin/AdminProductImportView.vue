@@ -256,136 +256,206 @@ onBeforeUnmount(cancelPolling)
 </template>
 
 <style scoped>
+/* 样式一律走设计令牌(`src/styles/tokens.css`)—— 本文件不出现任何十六进制。
+   ⚠️ **本页 `<template>` 与 `<script>` 一个字节未动**,只换了这一块 ——
+   测试依赖 `find('input[type="file"]')`、`[role="alert"]`,以及
+   `findAll('a')` 里**必须含「模板」、且不含「错误报告」**
+   (错误报告是**前端用 errors[] 现场生成的 CSV**,不是链接)。 */
+
 .head h1 {
-  margin: 0 0 0.5rem;
-  font-size: 1.3rem;
+  margin: 0 0 var(--space-2);
+  font-size: var(--text-xl);
+  line-height: var(--leading-xl);
+  font-weight: 700;
+  color: var(--color-text);
 }
 
 .hint {
-  color: #6b7280;
-  font-size: 0.8rem;
+  font-size: var(--text-xs);
+  line-height: var(--leading-xs);
+  color: var(--color-text-muted);
 }
 
+.hint a {
+  color: var(--color-primary);
+  font-weight: 600;
+}
+
+/* ── 状态 ───────────────────────────────────────────────────────────────── */
 .error {
-  padding: 0.5rem 0.75rem;
-  border: 1px solid #fca5a5;
-  border-radius: 0.25rem;
-  background: #fef2f2;
-  color: #b91c1c;
-  font-size: 0.85rem;
+  margin: var(--space-3) 0;
+  padding: var(--space-3) var(--space-4);
+  border: 1px solid var(--color-danger);
+  border-radius: var(--radius-sm);
+  background: var(--color-danger-soft);
+  color: var(--color-danger);
+  font-size: var(--text-sm);
 }
 
 .notice {
-  padding: 0.5rem 0.75rem;
-  border: 1px solid #bbf7d0;
-  border-radius: 0.25rem;
-  background: #f0fdf4;
-  color: #166534;
-  font-size: 0.85rem;
+  margin: var(--space-3) 0;
+  padding: var(--space-3) var(--space-4);
+  border: 1px solid var(--color-success);
+  border-radius: var(--radius-sm);
+  background: var(--color-success-soft);
+  color: var(--color-success);
+  font-size: var(--text-sm);
 }
 
+/* ── 面板 ───────────────────────────────────────────────────────────────── */
 .panel {
-  border: 1px solid #e5e7eb;
-  border-radius: 0.375rem;
-  padding: 1rem;
-  margin-bottom: 1rem;
+  margin-bottom: var(--space-4);
+  padding: var(--space-5);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-md);
+  background: var(--color-surface);
+  box-shadow: var(--shadow-sm);
 }
 
 .panel h2 {
-  margin: 0 0 0.5rem;
-  font-size: 1rem;
+  margin: 0 0 var(--space-3);
+  font-size: var(--text-base);
+  line-height: var(--leading-base);
+  font-weight: 600;
+  color: var(--color-text);
 }
 
 .panel h3 {
-  margin: 1rem 0 0.5rem;
-  font-size: 0.9rem;
+  margin: var(--space-4) 0 var(--space-2);
+  font-size: var(--text-sm);
+  line-height: var(--leading-sm);
+  font-weight: 600;
+  color: var(--color-text);
 }
 
 fieldset {
-  border: none;
   margin: 0;
   padding: 0;
+  border: none;
 }
 
 legend {
   padding: 0;
+  font-size: var(--text-sm);
   font-weight: 600;
-  font-size: 0.9rem;
+  color: var(--color-text);
 }
 
 label {
   display: flex;
   flex-direction: column;
-  gap: 0.25rem;
-  margin-bottom: 0.75rem;
-  font-size: 0.85rem;
-  color: #374151;
+  gap: var(--space-1);
   max-width: 32rem;
+  margin-bottom: var(--space-4);
+  font-size: var(--text-xs);
+  line-height: var(--leading-xs);
+  color: var(--color-text-secondary);
 }
 
 label.radio {
   flex-direction: row;
   align-items: baseline;
-  gap: 0.4rem;
+  gap: var(--space-2);
   max-width: none;
+  font-size: var(--text-sm);
 }
 
+label.radio small {
+  font-size: var(--text-xs);
+}
+
+input[type='file'] {
+  font: inherit;
+  font-size: var(--text-sm);
+  color: var(--color-text);
+}
+
+/* ── 批次状态标签 ───────────────────────────────────────────────────────── */
 .tag {
-  margin-left: 0.4rem;
-  padding: 0.1rem 0.35rem;
-  border-radius: 0.2rem;
-  background: #eff6ff;
-  color: #1d4ed8;
-  font-size: 0.75rem;
+  margin-left: var(--space-2);
+  padding: 0.05rem var(--space-2);
+  border-radius: var(--radius-full);
+  background: var(--color-primary-soft);
+  color: var(--color-primary);
+  font-size: var(--text-xs);
+  line-height: var(--leading-xs);
+  font-weight: 400;
 }
 
+/* ── 错误行表格 ─────────────────────────────────────────────────────────── */
 table {
   width: 100%;
   border-collapse: collapse;
-  font-size: 0.85rem;
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-sm);
+  overflow: hidden;
+  font-size: var(--text-sm);
+  font-variant-numeric: tabular-nums;
 }
 
 th,
 td {
-  border-bottom: 1px solid #e5e7eb;
-  padding: 0.4rem 0.5rem;
+  padding: var(--space-2) var(--space-3);
+  border-bottom: 1px solid var(--color-border);
   text-align: left;
 }
 
 th {
-  color: #374151;
+  background: var(--color-surface-sunken);
+  color: var(--color-text-secondary);
+  font-size: var(--text-xs);
   font-weight: 600;
 }
 
+/* 行号右对齐并禁止换行("批次级"也不该被拆成两行) */
 .num {
   text-align: right;
   white-space: nowrap;
 }
 
+/* ── 按钮 ───────────────────────────────────────────────────────────────── */
 .actions {
   display: flex;
   align-items: center;
-  gap: 0.75rem;
-  margin-top: 0.75rem;
+  gap: var(--space-3);
+  margin-top: var(--space-4);
 }
 
 button {
-  padding: 0.4rem 0.9rem;
-  border: 1px solid #d1d5db;
-  border-radius: 0.25rem;
-  background: white;
+  height: var(--control-height);
+  padding: 0 var(--space-4);
+  border: 1px solid var(--color-border-strong);
+  border-radius: var(--radius-sm);
+  background: var(--color-surface);
+  color: var(--color-text);
+  font: inherit;
+  font-size: var(--text-sm);
   cursor: pointer;
+  transition:
+    border-color var(--dur-fast) var(--ease-standard),
+    background var(--dur-fast) var(--ease-standard);
+}
+
+button:hover:not(:disabled) {
+  border-color: var(--color-primary);
+  color: var(--color-primary);
 }
 
 button.primary {
-  padding: 0.5rem 1rem;
-  border-color: #1d4ed8;
-  background: #1d4ed8;
-  color: white;
+  border-color: var(--color-primary);
+  background: var(--color-primary);
+  color: var(--color-on-primary);
+  font-weight: 600;
+}
+
+button.primary:hover:not(:disabled) {
+  background: var(--color-primary-hover);
+  border-color: var(--color-primary-hover);
+  color: var(--color-on-primary);
 }
 
 button:disabled {
-  opacity: 0.5;
+  opacity: 0.45;
   cursor: not-allowed;
 }
 </style>

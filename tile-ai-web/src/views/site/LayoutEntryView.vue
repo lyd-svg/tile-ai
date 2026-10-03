@@ -193,8 +193,10 @@ onMounted(async () => {
 
 <template>
   <section>
-    <h1>录入户型</h1>
-    <p class="lead">选一个现成模板,或用手动录入描述你的空间。面积由系统按尺寸算出。</p>
+    <header class="page-head">
+      <h1 class="page-head__title">录入户型</h1>
+      <p class="lead">选一个现成模板,或用手动录入描述你的空间。面积由系统按尺寸算出。</p>
+    </header>
 
     <!-- 先选砖再录户型 —— 草稿为空时给出回去的路 -->
     <p v-if="!draft.hasParts" class="warn" role="alert">
@@ -365,179 +367,270 @@ onMounted(async () => {
 </template>
 
 <style scoped>
-h1 {
-  margin: 0 0 0.25rem;
-  font-size: 1.4rem;
+/* 样式一律走设计令牌(`src/styles/tokens.css`)—— 本文件不出现任何十六进制。
+   ⚠️ 测试依赖的选择器**全部保留**:`button.tab` · `button.template` ·
+   `button.primary`(两个,顺序不变)· `textarea` · `input[type="number"]` ·
+   `.errors li` · `[role="alert"]`(顺序不变)。 */
+
+.page-head {
+  margin-bottom: var(--space-4);
+}
+
+.page-head__title {
+  margin: 0 0 var(--space-2);
+  font-size: var(--text-2xl);
+  line-height: var(--leading-2xl);
+  font-weight: 700;
+  color: var(--color-text);
 }
 
 .lead {
-  color: #6b7280;
-  font-size: 0.9rem;
-  margin: 0 0 1rem;
+  margin: 0;
+  font-size: var(--text-sm);
+  line-height: var(--leading-sm);
+  color: var(--color-text-secondary);
 }
 
 .warn {
-  padding: 0.6rem 0.75rem;
-  background: #fffbeb;
-  border: 1px solid #fde68a;
-  border-radius: 0.25rem;
-  color: #92400e;
-  font-size: 0.9rem;
+  margin: 0 0 var(--space-4);
+  padding: var(--space-3) var(--space-4);
+  border: 1px solid var(--color-warning);
+  border-radius: var(--radius-sm);
+  background: var(--color-warning-soft);
+  color: var(--color-text);
+  font-size: var(--text-sm);
 }
 
 .warn a {
-  color: #1d4ed8;
-}
-
-.tabs,
-.subtabs {
-  display: flex;
-  gap: 0.5rem;
-  margin-bottom: 1rem;
-}
-
-.subtabs {
-  margin-bottom: 0.75rem;
-}
-
-.tab {
-  padding: 0.4rem 0.9rem;
-  border: 1px solid #d1d5db;
-  border-radius: 0.25rem;
-  background: white;
-  cursor: pointer;
-}
-
-.tab--active {
-  border-color: #1d4ed8;
-  color: #1d4ed8;
+  color: var(--color-primary);
   font-weight: 600;
 }
 
-.panel {
-  border: 1px solid #e5e7eb;
-  border-radius: 0.375rem;
-  padding: 1rem;
-  margin-bottom: 1.5rem;
+/* ── 标签页 ─────────────────────────────────────────────────────────────── */
+.tabs,
+.subtabs {
+  display: flex;
+  gap: var(--space-2);
+  margin-bottom: var(--space-4);
 }
 
+.subtabs {
+  margin-bottom: var(--space-3);
+}
+
+.tab {
+  padding: var(--space-2) var(--space-4);
+  border: 1px solid var(--color-border-strong);
+  border-radius: var(--radius-full);
+  background: var(--color-surface);
+  color: var(--color-text-secondary);
+  font: inherit;
+  font-size: var(--text-sm);
+  cursor: pointer;
+  transition:
+    border-color var(--dur-fast) var(--ease-standard),
+    background var(--dur-fast) var(--ease-standard);
+}
+
+.tab:hover {
+  border-color: var(--color-primary);
+  color: var(--color-primary);
+}
+
+.tab--active {
+  border-color: var(--color-primary);
+  background: var(--color-primary-soft);
+  color: var(--color-primary);
+  font-weight: 600;
+}
+
+/* ── 面板 ───────────────────────────────────────────────────────────────── */
+.panel {
+  margin-bottom: var(--space-5);
+  padding: var(--space-5);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-md);
+  background: var(--color-surface);
+  box-shadow: var(--shadow-sm);
+}
+
+/* ── 模板卡 ─────────────────────────────────────────────────────────────── */
 .templates {
   list-style: none;
   margin: 0;
   padding: 0;
   display: grid;
   grid-template-columns: repeat(auto-fill, minmax(14rem, 1fr));
-  gap: 0.75rem;
+  gap: var(--space-3);
 }
 
 .template {
   width: 100%;
-  text-align: left;
-  padding: 0.75rem;
-  border: 1px solid #d1d5db;
-  border-radius: 0.25rem;
-  background: white;
-  cursor: pointer;
   display: flex;
   flex-direction: column;
-  gap: 0.25rem;
+  gap: var(--space-1);
+  padding: var(--space-4);
+  border: 1px solid var(--color-border-strong);
+  border-radius: var(--radius-md);
+  background: var(--color-surface);
+  text-align: left;
+  font: inherit;
+  color: var(--color-text);
+  cursor: pointer;
+  transition:
+    border-color var(--dur-fast) var(--ease-standard),
+    background var(--dur-fast) var(--ease-standard);
+}
+
+.template:hover {
+  border-color: var(--color-primary);
 }
 
 .template--active {
-  border-color: #1d4ed8;
-  background: #eff6ff;
+  border-color: var(--color-primary);
+  background: var(--color-primary-soft);
 }
 
 .template .meta {
-  color: #6b7280;
-  font-size: 0.8rem;
+  color: var(--color-text-muted);
+  font-size: var(--text-xs);
+  line-height: var(--leading-xs);
 }
 
+/* ── 手动录入表单 ───────────────────────────────────────────────────────── */
 .manual label {
   display: flex;
   flex-direction: column;
-  gap: 0.25rem;
-  font-size: 0.85rem;
-  color: #374151;
+  gap: var(--space-1);
+  font-size: var(--text-xs);
+  line-height: var(--leading-xs);
+  color: var(--color-text-secondary);
 }
 
 .manual textarea,
 .manual input,
 .manual select {
-  padding: 0.4rem 0.5rem;
-  border: 1px solid #d1d5db;
-  border-radius: 0.25rem;
+  padding: var(--space-2) var(--space-3);
+  border: 1px solid var(--color-border-strong);
+  border-radius: var(--radius-sm);
+  background: var(--color-surface);
+  color: var(--color-text);
   font: inherit;
+  font-size: var(--text-sm);
+}
+
+.manual textarea:focus-visible,
+.manual input:focus-visible,
+.manual select:focus-visible {
+  outline: 2px solid var(--color-focus);
+  outline-offset: 1px;
+  border-color: var(--color-primary);
 }
 
 .space-row {
   display: grid;
   grid-template-columns: repeat(auto-fit, minmax(8rem, 1fr));
-  gap: 0.6rem;
-  padding: 0.75rem;
-  border: 1px dashed #e5e7eb;
-  border-radius: 0.25rem;
-  margin-bottom: 0.75rem;
+  gap: var(--space-3);
+  margin-bottom: var(--space-3);
+  padding: var(--space-4);
+  border: 1px dashed var(--color-border-strong);
+  border-radius: var(--radius-md);
+  background: var(--color-bg);
 }
 
 .space-title {
   grid-column: 1 / -1;
   margin: 0;
-  font-size: 0.85rem;
-  color: #6b7280;
+  font-size: var(--text-xs);
+  line-height: var(--leading-xs);
+  color: var(--color-text-secondary);
+  font-weight: 600;
 }
 
 .actions {
   display: flex;
   align-items: center;
-  gap: 0.75rem;
-  margin-top: 1rem;
+  gap: var(--space-3);
+  margin-top: var(--space-4);
 }
 
+.actions a {
+  color: var(--color-primary);
+  font-size: var(--text-sm);
+  font-weight: 600;
+}
+
+/* ── 按钮 ───────────────────────────────────────────────────────────────── */
 button.primary {
-  padding: 0.5rem 1rem;
-  border: 1px solid #1d4ed8;
-  border-radius: 0.25rem;
-  background: #1d4ed8;
-  color: white;
+  padding: var(--space-3) var(--space-5);
+  border: 1px solid var(--color-primary);
+  border-radius: var(--radius-sm);
+  background: var(--color-primary);
+  color: var(--color-on-primary);
+  font: inherit;
+  font-size: var(--text-sm);
+  font-weight: 600;
   cursor: pointer;
 }
 
+button.primary:hover:not(:disabled) {
+  background: var(--color-primary-hover);
+  border-color: var(--color-primary-hover);
+}
+
 button.primary:disabled {
-  opacity: 0.5;
+  opacity: 0.45;
   cursor: not-allowed;
 }
 
 .ghost,
 .remove {
-  padding: 0.35rem 0.7rem;
-  border: 1px solid #d1d5db;
-  border-radius: 0.25rem;
-  background: white;
+  padding: var(--space-2) var(--space-4);
+  border: 1px solid var(--color-border-strong);
+  border-radius: var(--radius-sm);
+  background: var(--color-surface);
+  color: var(--color-text);
+  font: inherit;
+  font-size: var(--text-sm);
   cursor: pointer;
-  font-size: 0.85rem;
 }
 
+.ghost:hover {
+  border-color: var(--color-primary);
+  color: var(--color-primary);
+}
+
+/* 删除是危险操作 —— 危险色,并靠文案说清(不单靠颜色) */
 .remove {
-  border-color: #fca5a5;
-  color: #b91c1c;
+  border-color: var(--color-danger);
+  color: var(--color-danger);
   align-self: end;
 }
 
+.remove:hover {
+  background: var(--color-danger-soft);
+}
+
+/* ── 结果 ───────────────────────────────────────────────────────────────── */
 .result {
-  border-top: 1px solid #e5e7eb;
-  padding-top: 1rem;
+  margin-top: var(--space-5);
+  padding-top: var(--space-5);
+  border-top: 1px solid var(--color-border);
 }
 
 .result h2 {
-  margin: 0 0 0.25rem;
-  font-size: 1.1rem;
+  margin: 0 0 var(--space-1);
+  font-size: var(--text-lg);
+  line-height: var(--leading-lg);
+  font-weight: 600;
+  color: var(--color-text);
 }
 
 .note {
-  color: #6b7280;
-  font-size: 0.8rem;
-  margin: 0 0 0.75rem;
+  margin: 0 0 var(--space-3);
+  font-size: var(--text-xs);
+  line-height: var(--leading-xs);
+  color: var(--color-text-muted);
 }
 
 .spaces {
@@ -546,65 +639,85 @@ button.primary:disabled {
   padding: 0;
   display: grid;
   grid-template-columns: repeat(auto-fill, minmax(15rem, 1fr));
-  gap: 0.75rem;
+  gap: var(--space-3);
 }
 
 .spaces > li {
-  border: 1px solid #e5e7eb;
-  border-radius: 0.25rem;
-  padding: 0.75rem;
+  padding: var(--space-4);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-md);
+  background: var(--color-surface);
+  box-shadow: var(--shadow-sm);
 }
 
 .space-name {
-  margin: 0 0 0.25rem;
+  margin: 0 0 var(--space-1);
   font-weight: 600;
+  color: var(--color-text);
 }
 
 .space-name small {
-  color: #9ca3af;
+  margin-left: var(--space-2);
+  color: var(--color-text-muted);
   font-weight: 400;
-  margin-left: 0.4rem;
 }
 
 .dims {
-  margin: 0 0 0.5rem;
-  color: #6b7280;
-  font-size: 0.85rem;
+  margin: 0 0 var(--space-3);
+  font-size: var(--text-xs);
+  line-height: var(--leading-xs);
+  color: var(--color-text-secondary);
 }
 
 .spaces dl {
   display: grid;
   grid-template-columns: auto 1fr;
-  gap: 0.2rem 0.75rem;
+  gap: var(--space-1) var(--space-3);
   margin: 0;
-  font-size: 0.85rem;
+  padding-top: var(--space-2);
+  border-top: 1px solid var(--color-border);
+  font-size: var(--text-xs);
 }
 
 .spaces dt {
-  color: #6b7280;
+  color: var(--color-text-secondary);
 }
 
 .spaces dd {
   margin: 0;
+  color: var(--color-text);
+  font-variant-numeric: tabular-nums;
 }
 
+/* ── 状态 ───────────────────────────────────────────────────────────────── */
 .error {
-  color: #b91c1c;
+  margin: var(--space-3) 0 0;
+  padding: var(--space-3) var(--space-4);
+  border: 1px solid var(--color-danger);
+  border-radius: var(--radius-sm);
+  background: var(--color-danger-soft);
+  color: var(--color-danger);
+  font-size: var(--text-sm);
+}
+
+.panel .error:first-child {
+  margin-top: 0;
 }
 
 .errors {
-  margin: 0.5rem 0 0;
-  padding-left: 1.2rem;
-  color: #b91c1c;
-  font-size: 0.85rem;
+  margin: var(--space-3) 0 0;
+  padding-left: var(--space-5);
+  color: var(--color-danger);
+  font-size: var(--text-sm);
 }
 
 .hint {
-  color: #6b7280;
-}
-
-.actions a {
-  color: #1d4ed8;
-  font-size: 0.9rem;
+  margin: 0;
+  padding: var(--space-5);
+  border-radius: var(--radius-md);
+  background: var(--color-surface-sunken);
+  color: var(--color-text-secondary);
+  font-size: var(--text-sm);
+  text-align: center;
 }
 </style>
