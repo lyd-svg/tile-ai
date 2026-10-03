@@ -16,7 +16,7 @@ import { fileURLToPath } from 'node:url'
 import { flushPromises, mount } from '@vue/test-utils'
 import { load } from 'js-yaml'
 import { createPinia, setActivePinia } from 'pinia'
-import { beforeEach, describe, expect, it, vi } from 'vitest'
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { createMemoryHistory, createRouter } from 'vue-router'
 
 import { BusinessError, ErrorCode } from '../src/api/errors'
@@ -148,6 +148,14 @@ beforeEach(() => {
   )
 })
 
+afterEach(() => {
+  // ⚠️ **必须清**:antd 的 portal 组件(Select 的下拉 / Modal)渲染到 `document.body`,
+  // **不会被自动回收**。不清掉的话,上一条用例打开的下拉会**漏到下一条里** ——
+  // 实测:本文件里"筛选下拉"那条打开的两个下拉漏进了"部位下拉恒为三个值",
+  // 让它收到 5 个选项而红。
+  document.body.innerHTML = ''
+})
+
 describe('契约一致性', () => {
   it('GET /combos 的 query 是 space/style 加公共分页参数', () => {
     expect(queryParamNames(adminContract().paths['/combos'].get)).toEqual([
@@ -182,8 +190,22 @@ describe('列表', () => {
     const { wrapper } = await mountList()
 
     expect(listAdminDicts).toHaveBeenCalledWith('space')
-    expect(wrapper.text()).toContain('卫生间')
-    expect(wrapper.text()).toContain('现代')
+
+    // ⚠️ 下拉换成 antd 之后,选项**要打开才存在**,而且渲染在 **portal** 里
+    // (`document.body`)—— 原来那句 `wrapper.text()` **再也拿不到它们**。
+    // 注意:这条断言里**没有 "select" / "option" 字样**,所以"搜 select"式的
+    // 成本扫描**抓不到它** —— 是一次真实的漏网(`openapi-verification.md` §70.8)。
+    // 改写:真的把两个下拉打开,读 portal 里的选项(用具已备,见 tests/helpers/antd.ts)。
+    const selects = wrapper.findAll('.ant-select')
+    expect(selects).toHaveLength(2)
+
+    await openSelect(selects[0]!)
+    await flushPromises()
+    expect(openedSelectOptionTexts()).toContain('卫生间')
+
+    await openSelect(selects[1]!)
+    await flushPromises()
+    expect(openedSelectOptionTexts()).toContain('现代')
   })
 
   it('删除要二次确认;取消则不发请求', async () => {

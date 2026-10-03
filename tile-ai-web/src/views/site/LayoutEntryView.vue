@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { Skeleton } from 'ant-design-vue'
+import { Select, Skeleton } from 'ant-design-vue'
 import { computed, onMounted, ref } from 'vue'
 import { useRouter } from 'vue-router'
 
@@ -287,12 +287,11 @@ onMounted(async () => {
           <p class="space-title">空间 {{ index + 1 }}</p>
           <label>
             类型
-            <select v-model="space.type">
-              <option value="">请选择</option>
-              <option v-for="option in spaceOptions" :key="option.key" :value="option.key">
+            <Select v-model:value="space.type" placeholder="请选择" allow-clear>
+              <Select.Option v-for="option in spaceOptions" :key="option.key" :value="option.key">
                 {{ option.label }}
-              </option>
-            </select>
+              </Select.Option>
+            </Select>
           </label>
           <label>
             名称(可选)
@@ -508,8 +507,13 @@ onMounted(async () => {
   color: var(--color-text-secondary);
 }
 
+/* ⚠️ `:not([class*='ant-'])` 是**必需的**,不是装饰 —— 见 `tile-ai-design.md` §5.6。
+   antd 的 `Select` **内部就是一个 `<input>`**(带 antd 的类)。
+   而 `.manual input`(特异性 0,1,1)**压得过** `.ant-select-selection-search-input`(0,1,0),
+   于是会给下拉里的搜索框套上边框与内边距 —— **看起来就是坏的**,而且不报错。
+   ⇒ 把带 antd 类的元素**排除掉**。 */
 .manual textarea,
-.manual input,
+.manual input:not([class*='ant-']),
 .manual select {
   padding: var(--space-2) var(--space-3);
   border: 1px solid var(--color-border-strong);
@@ -521,7 +525,7 @@ onMounted(async () => {
 }
 
 .manual textarea:focus-visible,
-.manual input:focus-visible,
+.manual input:not([class*='ant-']):focus-visible,
 .manual select:focus-visible {
   outline: 2px solid var(--color-focus);
   outline-offset: 1px;

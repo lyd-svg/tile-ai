@@ -241,22 +241,20 @@ onMounted(async () => {
 
       <label>
         空间
-        <select v-model="form.space">
-          <option value="">请选择</option>
-          <option v-for="item in spaceOptions" :key="item.key" :value="item.key">
+        <Select v-model:value="form.space" placeholder="请选择" allow-clear>
+          <Select.Option v-for="item in spaceOptions" :key="item.key" :value="item.key">
             {{ item.label }}
-          </option>
-        </select>
+          </Select.Option>
+        </Select>
       </label>
 
       <label>
         风格
-        <select v-model="form.style">
-          <option value="">请选择</option>
-          <option v-for="item in styleOptions" :key="item.key" :value="item.key">
+        <Select v-model:value="form.style" placeholder="请选择" allow-clear>
+          <Select.Option v-for="item in styleOptions" :key="item.key" :value="item.key">
             {{ item.label }}
-          </option>
-        </select>
+          </Select.Option>
+        </Select>
       </label>
 
       <div class="row">
@@ -277,10 +275,10 @@ onMounted(async () => {
 
       <label>
         状态
-        <select v-model="form.status">
-          <option value="on_sale">上架</option>
-          <option value="off_sale">下架</option>
-        </select>
+        <Select v-model:value="form.status">
+          <Select.Option value="on_sale">上架</Select.Option>
+          <Select.Option value="off_sale">下架</Select.Option>
+        </Select>
       </label>
 
       <h2>搭配内容</h2>

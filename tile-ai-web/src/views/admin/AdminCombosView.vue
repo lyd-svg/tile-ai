@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { Skeleton } from 'ant-design-vue'
+import { Select, Skeleton } from 'ant-design-vue'
 import { computed, onMounted, ref } from 'vue'
 import { useRouter } from 'vue-router'
 
@@ -148,21 +148,19 @@ onMounted(async () => {
     <form class="filters" @submit.prevent="search">
       <label>
         空间
-        <select v-model="space">
-          <option value="">全部</option>
-          <option v-for="item in spaceOptions" :key="item.key" :value="item.key">
+        <Select v-model:value="space" placeholder="全部" allow-clear>
+          <Select.Option v-for="item in spaceOptions" :key="item.key" :value="item.key">
             {{ item.label }}
-          </option>
-        </select>
+          </Select.Option>
+        </Select>
       </label>
       <label>
         风格
-        <select v-model="style">
-          <option value="">全部</option>
-          <option v-for="item in styleOptions" :key="item.key" :value="item.key">
+        <Select v-model:value="style" placeholder="全部" allow-clear>
+          <Select.Option v-for="item in styleOptions" :key="item.key" :value="item.key">
             {{ item.label }}
-          </option>
-        </select>
+          </Select.Option>
+        </Select>
       </label>
       <button type="submit">查询</button>
     </form>

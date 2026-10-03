@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { Skeleton } from 'ant-design-vue'
+import { Select, Skeleton } from 'ant-design-vue'
 import { computed, onMounted, ref } from 'vue'
 
 import { createAccount, deleteAccount, listAccounts, updateAccount } from '@/api/admin/accounts'
@@ -278,18 +278,18 @@ onMounted(load)
       </label>
       <label>
         角色
-        <select v-model="role">
-          <option value="super_admin">超级管理员</option>
-          <option value="operator">运营</option>
-          <option value="editor">内容编辑</option>
-        </select>
+        <Select v-model:value="role">
+          <Select.Option value="super_admin">超级管理员</Select.Option>
+          <Select.Option value="operator">运营</Select.Option>
+          <Select.Option value="editor">内容编辑</Select.Option>
+        </Select>
       </label>
       <label>
         状态
-        <select v-model="status">
-          <option value="enabled">启用</option>
-          <option value="disabled">停用</option>
-        </select>
+        <Select v-model:value="status">
+          <Select.Option value="enabled">启用</Select.Option>
+          <Select.Option value="disabled">停用</Select.Option>
+        </Select>
       </label>
 
       <div class="panel-actions">
