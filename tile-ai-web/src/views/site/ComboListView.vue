@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import { Button, Empty, Select, Skeleton } from 'ant-design-vue'
 import { onMounted, reactive, ref } from 'vue'
 
 import { listCombos } from '@/api/c/catalog'
@@ -74,23 +75,25 @@ onMounted(async () => {
     <form class="filters" @submit.prevent="load">
       <label class="field">
         <span class="field__label">空间</span>
-        <select v-model="filters.space">
-          <option value="">全部</option>
-          <option v-for="item in spaces" :key="item.key" :value="item.key">{{ item.label }}</option>
-        </select>
+        <Select v-model:value="filters.space" placeholder="全部" allow-clear>
+          <Select.Option v-for="item in spaces" :key="item.key" :value="item.key">
+            {{ item.label }}
+          </Select.Option>
+        </Select>
       </label>
       <label class="field">
         <span class="field__label">风格</span>
-        <select v-model="filters.style">
-          <option value="">全部</option>
-          <option v-for="item in styles" :key="item.key" :value="item.key">{{ item.label }}</option>
-        </select>
+        <Select v-model:value="filters.style" placeholder="全部" allow-clear>
+          <Select.Option v-for="item in styles" :key="item.key" :value="item.key">
+            {{ item.label }}
+          </Select.Option>
+        </Select>
       </label>
-      <button type="submit" class="primary">查询</button>
+      <Button type="primary" html-type="submit">查询</Button>
     </form>
 
     <p v-if="errorText" class="error" role="alert">{{ errorText }}</p>
-    <p v-if="loading" class="hint">加载中…</p>
+    <Skeleton v-if="loading" active :paragraph="{ rows: 6 }" />
 
     <template v-else-if="combos.length">
       <p class="count">共 {{ total }} 套</p>
@@ -121,7 +124,10 @@ onMounted(async () => {
       </ul>
     </template>
 
-    <p v-else class="hint">还没有符合条件的搭配。搭配由后台人工维护,可在「后台管理」中添加。</p>
+    <div v-else class="empty">
+      <Empty description="还没有符合条件的搭配" />
+      <p class="hint">搭配由后台人工维护,可在「后台管理」中添加。</p>
+    </div>
   </section>
 </template>
 
@@ -173,45 +179,10 @@ onMounted(async () => {
   color: var(--color-text-secondary);
 }
 
-select {
-  height: var(--control-height);
-  padding: 0 var(--space-3);
-  border: 1px solid var(--color-border-strong);
-  border-radius: var(--radius-sm);
-  background: var(--color-surface);
-  color: var(--color-text);
-  font: inherit;
-  font-size: var(--text-sm);
-}
-
-select:focus-visible {
-  outline: 2px solid var(--color-focus);
-  outline-offset: 1px;
-  border-color: var(--color-primary);
-}
-
-button {
-  height: var(--control-height);
-  padding: 0 var(--space-4);
-  border: 1px solid var(--color-border-strong);
-  border-radius: var(--radius-sm);
-  background: var(--color-surface);
-  color: var(--color-text);
-  font: inherit;
-  font-size: var(--text-sm);
-  cursor: pointer;
-}
-
-.primary {
-  border-color: var(--color-primary);
-  background: var(--color-primary);
-  color: var(--color-on-primary);
-  font-weight: 600;
-}
-
-.primary:hover {
-  background: var(--color-primary-hover);
-  border-color: var(--color-primary-hover);
+/* ⚠️ 下拉与按钮**交给 antd** —— 这里**不再给它们写样式**(写了会和 antd 打架)。
+   见 `openapi-verification.md` §68。 */
+.filters :deep(.ant-select) {
+  min-width: 9rem;
 }
 
 /* ── 搭配卡 ─────────────────────────────────────────────────────────────── */
@@ -336,13 +307,21 @@ button {
   font-size: var(--text-sm);
 }
 
-.hint {
+/* 空态:主文案与插图由 antd 的 `Empty` 出,补充说明放在它下面。
+   背景与内边距归**容器**,别让 `.hint` 再叠一层色块。 */
+.empty {
   margin: var(--space-6) 0;
   padding: var(--space-6);
   border-radius: var(--radius-md);
   background: var(--color-surface-sunken);
+  text-align: center;
+}
+
+.empty .hint {
+  margin: var(--space-3) 0 0;
+  padding: 0;
+  background: none;
   color: var(--color-text-secondary);
   font-size: var(--text-sm);
-  text-align: center;
 }
 </style>

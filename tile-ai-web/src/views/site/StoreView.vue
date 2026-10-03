@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import { Button, Empty, Skeleton } from 'ant-design-vue'
 import { onMounted, ref } from 'vue'
 
 import { getStore } from '@/api/c/catalog'
@@ -34,7 +35,7 @@ onMounted(async () => {
       <p class="sub">线上挑好后,欢迎到店看实物、摸手感 —— 瓷砖的质感看照片替代不了。</p>
     </header>
 
-    <p v-if="loading" class="hint">加载中…</p>
+    <Skeleton v-if="loading" active :paragraph="{ rows: 4 }" />
 
     <div v-else-if="store" class="card">
       <h2 class="card__name">{{ store.name }}</h2>
@@ -44,13 +45,15 @@ onMounted(async () => {
         <dt>电话</dt>
         <dd><a :href="`tel:${store.phone}`">{{ store.phone }}</a></dd>
       </dl>
-      <a v-if="store.mapUrl" class="map" :href="store.mapUrl" target="_blank" rel="noopener">
+      <Button v-if="store.mapUrl" type="primary" :href="store.mapUrl" target="_blank" rel="noopener">
         打开地图导航
-      </a>
+      </Button>
       <p class="notice">一期不支持线上下单与支付,请到店选购。</p>
     </div>
 
-    <p v-else class="hint">{{ errorText || '门店信息暂未配置。' }}</p>
+    <div v-else class="empty">
+      <Empty :description="errorText || '门店信息暂未配置。'" />
+    </div>
   </section>
 </template>
 
@@ -124,23 +127,8 @@ onMounted(async () => {
   font-variant-numeric: tabular-nums;
 }
 
-/* ── 地图入口 ───────────────────────────────────────────────────────────── */
-.map {
-  display: inline-block;
-  padding: var(--space-2) var(--space-4);
-  border: 1px solid var(--color-primary);
-  border-radius: var(--radius-sm);
-  background: var(--color-surface);
-  color: var(--color-primary);
-  text-decoration: none;
-  font-size: var(--text-sm);
-  font-weight: 600;
-  transition: background var(--dur-fast) var(--ease-standard);
-}
-
-.map:hover {
-  background: var(--color-primary-soft);
-}
+/* 地图入口改为 antd 的 `Button`(带 `href` 时它渲染成 `<a>`)——
+   **不再自己写按钮样式**,见 `openapi-verification.md` §68。 */
 
 /* ── 边界说明 ───────────────────────────────────────────────────────────── */
 .notice {
@@ -155,13 +143,11 @@ onMounted(async () => {
 }
 
 /* ── 状态 ───────────────────────────────────────────────────────────────── */
-.hint {
-  margin: 0;
+/* 空态:插图与文案由 antd 的 `Empty` 出,这里只给容器底色 */
+.empty {
   padding: var(--space-6);
   border-radius: var(--radius-md);
   background: var(--color-surface-sunken);
-  color: var(--color-text-secondary);
-  font-size: var(--text-sm);
   text-align: center;
 }
 </style>

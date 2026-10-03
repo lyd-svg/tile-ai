@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import { Descriptions, Tag } from 'ant-design-vue'
 import { computed } from 'vue'
 
 import { visibleMenu } from '@/auth/adminMenu'
@@ -25,26 +26,21 @@ const denied = computed(() => PERMISSIONS.filter((permission) => !granted.value.
       <h1 class="page-head__title">概览</h1>
     </header>
 
-    <dl class="facts">
-      <dt>账号</dt>
-      <dd>{{ auth.user?.username }}</dd>
-      <dt>角色</dt>
-      <dd>{{ auth.role }}</dd>
-      <dt>可见菜单</dt>
-      <dd>{{ menu.length }} 项</dd>
-    </dl>
+    <Descriptions :column="3" size="small" bordered>
+      <Descriptions.Item label="账号">{{ auth.user?.username }}</Descriptions.Item>
+      <Descriptions.Item label="角色">{{ auth.role }}</Descriptions.Item>
+      <Descriptions.Item label="可见菜单">{{ menu.length }} 项</Descriptions.Item>
+    </Descriptions>
 
     <h2>当前角色的权限点(架构 §4.4)</h2>
     <p class="tags">
-      <span v-for="permission in granted" :key="permission" class="tag">{{ permission }}</span>
+      <Tag v-for="permission in granted" :key="permission" color="success">{{ permission }}</Tag>
     </p>
 
     <template v-if="denied.length">
       <h2>此角色不可做的</h2>
       <p class="tags">
-        <span v-for="permission in denied" :key="permission" class="tag tag--off">{{
-          permission
-        }}</span>
+        <Tag v-for="permission in denied" :key="permission">{{ permission }}</Tag>
       </p>
       <p class="hint">
         前端隐藏入口只为避免误导;<strong>真正的拦截在服务端</strong>(403 / 10004)。
@@ -77,29 +73,8 @@ h2 {
   color: var(--color-text-secondary);
 }
 
-/* ── 账号事实 ───────────────────────────────────────────────────────────── */
-.facts {
-  display: grid;
-  grid-template-columns: auto 1fr;
-  gap: var(--space-2) var(--space-5);
-  margin: 0;
-  padding: var(--space-4);
-  border: 1px solid var(--color-border);
-  border-radius: var(--radius-md);
-  background: var(--color-surface);
-  font-size: var(--text-sm);
-  line-height: var(--leading-sm);
-}
-
-.facts dt {
-  color: var(--color-text-secondary);
-  white-space: nowrap;
-}
-
-.facts dd {
-  margin: 0;
-  color: var(--color-text);
-}
+/* 账号事实与权限点**交给 antd**(`Descriptions` / `Tag`)——
+   这里不再自己写它们的样式,见 `openapi-verification.md` §68。 */
 
 /* ── 权限点 ─────────────────────────────────────────────────────────────── */
 .tags {
@@ -107,23 +82,6 @@ h2 {
   flex-wrap: wrap;
   gap: var(--space-2);
   margin: 0;
-}
-
-.tag {
-  display: inline-block;
-  padding: 0.1rem var(--space-2);
-  border-radius: var(--radius-sm);
-  background: var(--color-primary-soft);
-  color: var(--color-primary);
-  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
-  font-size: var(--text-xs);
-  line-height: var(--leading-xs);
-}
-
-/* 不可做的用中性灰 —— **不靠红色**,它不是"错误",只是"不归你管" */
-.tag--off {
-  background: var(--color-surface-sunken);
-  color: var(--color-text-muted);
 }
 
 .hint {
