@@ -39,6 +39,11 @@ description: 改 tile-ai-web 前端之前必读。本项目前端的视觉铁律
    三档之一,**按用途选**(§3.10:反馈 120 / 进出 200 / 大块 320);
    不许超过 400ms、不许无限循环、不许回弹缓动;
    且**必须能被 `prefers-reduced-motion` 降级**(§3.11)。
+10. **迁 antd 控件时必须「清场」**:把原生控件换成 antd 之后,**原来的选择器不会自动失效** ——
+    `.field input` **照样命中** antd 渲染出的 `<input class="ant-input">`,与库样式打架。
+    它**不报错、测试也抓不到**,只是"看着怪"。
+    ⇒ 每迁一个控件,**回头搜一遍裸元素选择器**(`input` / `select` / `button` / `table`),
+    含 `base.css` / `tokens.css` 里的。见 §5.6。
 
 ---
 
@@ -64,6 +69,9 @@ description: 改 tile-ai-web 前端之前必读。本项目前端的视觉铁律
 - [ ] 动效时长取自 `--dur-*` 三档,且**按 §3.10 的用途表选**;
       **无无限循环、无回弹缓动、无 >400ms**。
 - [ ] 新增的动效**能被 `prefers-reduced-motion` 降级**(§3.11)。
+- [ ] **迁了 antd 控件的话,已清场**(§5.6):没有裸元素选择器
+      (`input` / `select` / `button` / `table`)会命中库渲染出的元素;
+      `base.css` / `tokens.css` 里的也查过。
 - [ ] 改了页面结构 ⇒ **同步重写该页的测试**(`tile-ai-web/tests/`),
       **不许靠删断言迁就**。
 - [ ] `cd tile-ai-web; npm run test; npm run build` 通过。
