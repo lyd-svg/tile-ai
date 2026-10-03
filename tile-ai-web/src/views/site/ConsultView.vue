@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import { Button } from 'ant-design-vue'
 import { computed, onBeforeUnmount, ref } from 'vue'
 import { useRouter } from 'vue-router'
 
@@ -322,9 +323,9 @@ onBeforeUnmount(interrupt)
                   <span class="sku">{{ candidate.sku }}</span>
                 </div>
                 <p class="note">将铺到:{{ PART_LABELS[candidate.part] ?? candidate.part }}</p>
-                <button type="button" class="ghost" :disabled="isAdopted(candidate)" @click="adopt(candidate)">
+                <Button size="small" :disabled="isAdopted(candidate)" @click="adopt(candidate)">
                   {{ isAdopted(candidate) ? '已采纳' : '采纳' }}
-                </button>
+                </Button>
               </li>
             </ul>
           </div>
@@ -346,21 +347,24 @@ onBeforeUnmount(interrupt)
         aria-label="你的问题"
         @keydown.enter="onEnter"
       />
-      <button type="submit" class="primary" :disabled="!canSend">
-        {{ turn === 'sending' ? '连接中…' : '发送' }}
-      </button>
-      <button v-if="busy" type="button" class="ghost" @click="stopStreaming">停止</button>
+      <Button
+        type="primary"
+        html-type="submit"
+        :loading="turn === 'sending'"
+        :disabled="!canSend"
+      >
+        发送
+      </Button>
+      <Button v-if="busy" @click="stopStreaming">停止</Button>
     </form>
 
     <div v-if="draft.hasParts" class="actions">
       <span class="note">已选部位:{{ selectedSummary }}</span>
-      <button type="button" class="primary" @click="goLayout">带着这些砖去录户型</button>
+      <Button type="primary" @click="goLayout">带着这些砖去录户型</Button>
     </div>
 
     <div class="panel">
-      <button type="button" class="ghost" @click="toggleHistory">
-        {{ historyOpen ? '收起历史' : '历史对话' }}
-      </button>
+      <Button @click="toggleHistory">{{ historyOpen ? '收起历史' : '历史对话' }}</Button>
 
       <template v-if="historyOpen">
         <p v-if="historyLoading" class="note">载入中…</p>
@@ -570,48 +574,9 @@ h3 {
   border-color: var(--color-primary);
 }
 
-button.primary {
-  padding: var(--space-3) var(--space-5);
-  border: 1px solid var(--color-primary);
-  border-radius: var(--radius-sm);
-  background: var(--color-primary);
-  color: var(--color-on-primary);
-  font: inherit;
-  font-size: var(--text-sm);
-  font-weight: 600;
-  cursor: pointer;
-}
-
-button.primary:hover:not(:disabled) {
-  background: var(--color-primary-hover);
-  border-color: var(--color-primary-hover);
-}
-
-button.primary:disabled {
-  opacity: 0.45;
-  cursor: not-allowed;
-}
-
-button.ghost {
-  padding: var(--space-2) var(--space-4);
-  border: 1px solid var(--color-border-strong);
-  border-radius: var(--radius-sm);
-  background: var(--color-surface);
-  color: var(--color-text);
-  font: inherit;
-  font-size: var(--text-sm);
-  cursor: pointer;
-}
-
-button.ghost:hover:not(:disabled) {
-  border-color: var(--color-primary);
-  color: var(--color-primary);
-}
-
-button.ghost:disabled {
-  opacity: 0.45;
-  cursor: not-allowed;
-}
+/* ⚠️ 本页的**常规按钮已迁 antd**(采纳 / 发送 / 停止 / 带着这些砖去录户型 / 历史对话)——
+   不再写样式(§70.9)。
+   ⚠️ 但下面的 **`.link`(历史对话列表项)是自定义交互元素**,刻意保留、**不迁**。 */
 
 .actions {
   display: flex;

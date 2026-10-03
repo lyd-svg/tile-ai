@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { Select, Skeleton } from 'ant-design-vue'
+import { Button, Select, Skeleton } from 'ant-design-vue'
 import { computed, onMounted, ref } from 'vue'
 import { useRouter } from 'vue-router'
 
@@ -313,18 +313,16 @@ onMounted(async () => {
             墙面数(可选)
             <input v-model.number="space.wallCount" type="number" min="1" />
           </label>
-          <button v-if="spaces.length > 1" type="button" class="remove" @click="removeSpace(index)">
+          <Button v-if="spaces.length > 1" danger class="remove" @click="removeSpace(index)">
             删除这个空间
-          </button>
+          </Button>
         </div>
 
-        <button type="button" class="ghost" @click="addSpace">+ 再加一个空间</button>
+        <Button @click="addSpace">+ 再加一个空间</Button>
       </div>
 
       <div class="actions">
-        <button type="button" class="primary" :disabled="parsing" @click="submitManual">
-          {{ parsing ? '解析中…' : '解析户型' }}
-        </button>
+        <Button type="primary" :loading="parsing" @click="submitManual">解析户型</Button>
       </div>
 
       <p v-if="errorText" class="error" role="alert">{{ errorText }}</p>
@@ -357,9 +355,9 @@ onMounted(async () => {
       </ul>
 
       <div class="actions">
-        <button type="button" class="primary" :disabled="!draft.hasParts" @click="goGenerate">
+        <Button type="primary" :disabled="!draft.hasParts" @click="goGenerate">
           下一步:去生成 →
-        </button>
+        </Button>
         <RouterLink v-if="!draft.hasParts" :to="{ name: 'products' }">请先选好砖</RouterLink>
       </div>
     </div>
@@ -566,54 +564,14 @@ onMounted(async () => {
 }
 
 /* ── 按钮 ───────────────────────────────────────────────────────────────── */
-button.primary {
-  padding: var(--space-3) var(--space-5);
-  border: 1px solid var(--color-primary);
-  border-radius: var(--radius-sm);
-  background: var(--color-primary);
-  color: var(--color-on-primary);
-  font: inherit;
-  font-size: var(--text-sm);
-  font-weight: 600;
-  cursor: pointer;
-}
+/* ⚠️ 本页的**常规按钮已迁 antd**(删除这个空间 / 加一个空间 / 解析户型 / 去生成)——
+   不再写样式(§70.9)。
+   ⚠️ 但 **`.tab`(页签)与 `.template`(模板卡)是自定义交互元素**,刻意保留、**不迁**:
+   页签是"两个胶囊切换视图",模板卡是"整块可点的卡片",都不是普通按钮。
 
-button.primary:hover:not(:disabled) {
-  background: var(--color-primary-hover);
-  border-color: var(--color-primary-hover);
-}
-
-button.primary:disabled {
-  opacity: 0.45;
-  cursor: not-allowed;
-}
-
-.ghost,
+   下面只剩一条**排版**:`.remove` 在 `.space-row` 这个网格里要贴底对齐。 */
 .remove {
-  padding: var(--space-2) var(--space-4);
-  border: 1px solid var(--color-border-strong);
-  border-radius: var(--radius-sm);
-  background: var(--color-surface);
-  color: var(--color-text);
-  font: inherit;
-  font-size: var(--text-sm);
-  cursor: pointer;
-}
-
-.ghost:hover {
-  border-color: var(--color-primary);
-  color: var(--color-primary);
-}
-
-/* 删除是危险操作 —— 危险色,并靠文案说清(不单靠颜色) */
-.remove {
-  border-color: var(--color-danger);
-  color: var(--color-danger);
   align-self: end;
-}
-
-.remove:hover {
-  background: var(--color-danger-soft);
 }
 
 /* ── 结果 ───────────────────────────────────────────────────────────────── */

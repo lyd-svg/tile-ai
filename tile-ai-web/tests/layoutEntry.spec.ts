@@ -89,6 +89,25 @@ async function switchMode(
   await tab.trigger('click')
 }
 
+/**
+ * 点「解析户型」。
+ *
+ * ⚠️ **原来是 `wrapper.find('button.primary')`** —— 一个 **class 选择器**。
+ * 那个按钮迁到 antd 之后,`primary` 这个 class **没了**(antd 用 `ant-btn-primary`),
+ * 于是**找不到按钮**,四条用例一起红。
+ * ⇒ 改成**按归一化后的文案找**(见 `tests/helpers/antd.ts`)。
+ *
+ * 这是同一类盲区的**第 4 次**:前三次是「断言里没有 select 字样」「测试 helper 名字不同」
+ * 「按 `.text().includes` 搜不到 `.text() ===`」。**按形状搜也会漏 —— 得按"依赖了什么"搜。**
+ */
+async function clickParse(wrapper: Awaited<ReturnType<typeof mountView>>['wrapper']) {
+  const target = wrapper
+    .findAll('button')
+    .find((b) => normalize(b.text()).includes(normalize('解析户型')))
+  if (!target) throw new Error('找不到「解析户型」按钮')
+  await target.trigger('click')
+}
+
 beforeEach(() => {
   vi.clearAllMocks()
   listLayoutTemplates.mockResolvedValue({ list: TEMPLATES, total: 2, page: 1, size: 20 })
@@ -127,7 +146,7 @@ describe('手动录入', () => {
     await switchMode(wrapper, '手动录入')
 
     await wrapper.find('textarea').setValue('卫生间 2m×1.8m')
-    await wrapper.find('button.primary').trigger('click')
+    await clickParse(wrapper)
     await flushPromises()
 
     expect(parseLayout).toHaveBeenCalledWith({ text: '卫生间 2m×1.8m' })
@@ -138,7 +157,7 @@ describe('手动录入', () => {
     const { wrapper } = await mountView()
     await switchMode(wrapper, '手动录入')
 
-    await wrapper.find('button.primary').trigger('click')
+    await clickParse(wrapper)
 
     expect(parseLayout).not.toHaveBeenCalled()
     expect(wrapper.find('[role="alert"]').text()).toContain('描述一下户型')
@@ -152,7 +171,7 @@ describe('手动录入', () => {
     const numbers = wrapper.findAll('input[type="number"]')
     await numbers[0].setValue('2') // 长
     // 宽 / 层高留空 → 不该提交
-    await wrapper.find('button.primary').trigger('click')
+    await clickParse(wrapper)
 
     expect(parseLayout).not.toHaveBeenCalled()
     expect(wrapper.find('[role="alert"]').text()).toContain('大于 0')
@@ -177,7 +196,7 @@ describe('解析失败', () => {
     await switchMode(wrapper, '手动录入')
 
     await wrapper.find('textarea').setValue('卫生间')
-    await wrapper.find('button.primary').trigger('click')
+    await clickParse(wrapper)
     await flushPromises()
 
     expect(wrapper.find('[role="alert"]').text()).toContain('参数校验失败')
