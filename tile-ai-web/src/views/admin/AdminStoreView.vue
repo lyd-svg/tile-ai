@@ -170,10 +170,8 @@ onMounted(load)
 /* ⚠️ **错误与成功提示已迁 antd `Alert`**(§71.2 —— 之前计划的 `Message` 是错的:
    它是"一闪而过的浮层",而这里要的是"页内常驻的状态块")。
    ✅ 关键:antd `Alert` 的**根元素自带 `role="alert"`**(实测源码 `alert/index.js:179`),
-   所以那 17 个文件里的 `[role="alert"]` 断言**不用改**。 */
-.alert-gap {
-  margin: var(--space-3) 0;
-}
+   所以那 17 个文件里的 `[role="alert"]` 断言**不用改**。
+   `.alert-gap` 的间距定义已收敛到 `src/styles/base.css` 一处(§71.3),本页不再重复。 */
 
 .errors {
   margin: var(--space-3) 0;

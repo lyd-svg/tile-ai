@@ -19,7 +19,7 @@ import { flushPromises, mount } from '@vue/test-utils'
 import { createPinia, setActivePinia } from 'pinia'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 
-import { normalize } from './helpers/antd'
+import { alertTexts, normalize } from './helpers/antd'
 import { createMemoryHistory, createRouter } from 'vue-router'
 
 import { BusinessError, ErrorCode } from '../src/api/errors'
@@ -399,7 +399,7 @@ describe('改名', () => {
     await submitRename(wrapper, '主卫方案 v2')
 
     expect(wrapper.find('h1').text()).toBe('主卫方案 v2')
-    expect(wrapper.find('.notice').text()).toBe('已改名')
+    expect(alertTexts(wrapper)).toContain('已改名')
   })
 })
 
@@ -507,7 +507,7 @@ describe('分享(F-1.10)', () => {
 
     expect(writeText).toHaveBeenCalledTimes(1)
     expect(writeText.mock.calls[0][0]).toContain('/share/Tok-42')
-    expect(wrapper.find('.notice').text()).toBe('链接已复制')
+    expect(alertTexts(wrapper)).toContain('链接已复制')
   })
 
   it('剪贴板不可用 ⇒ 退化成提示手动复制,**不把异常甩给用户**', async () => {
@@ -545,7 +545,7 @@ describe('分享(F-1.10)', () => {
 
     expect(revokeShare).toHaveBeenCalledWith(7)
     expect(wrapper.find('.share-link').exists()).toBe(false)
-    expect(wrapper.find('.notice').text()).toBe('分享链接已废除')
+    expect(alertTexts(wrapper)).toContain('分享链接已废除')
   })
 
   it('生成失败原样透出后端文案', async () => {

@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { Button, Skeleton } from 'ant-design-vue'
+import { Alert, Button, Skeleton } from 'ant-design-vue'
 import { computed, onMounted, ref } from 'vue'
 
 import { listLogs } from '@/api/admin/logs'
@@ -136,7 +136,7 @@ onMounted(load)
       <Button html-type="submit">查询</Button>
     </form>
 
-    <p v-if="errorText" class="error" role="alert">{{ errorText }}</p>
+    <Alert v-if="errorText" class="alert-gap" type="error" :message="errorText" show-icon />
 
     <Skeleton v-if="loading" active :paragraph="{ rows: 4 }" />
 
@@ -317,15 +317,6 @@ td:nth-child(3) {
 }
 
 /* ── 状态 ───────────────────────────────────────────────────────────────── */
-.error {
-  margin: var(--space-3) 0;
-  padding: var(--space-3) var(--space-4);
-  border: 1px solid var(--color-danger);
-  border-radius: var(--radius-sm);
-  background: var(--color-danger-soft);
-  color: var(--color-danger);
-  font-size: var(--text-sm);
-}
 
 .hint {
   margin: var(--space-4) 0;

@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { Button, Select, Skeleton } from 'ant-design-vue'
+import { Alert, Button, Select, Skeleton } from 'ant-design-vue'
 import { computed, onMounted, ref } from 'vue'
 import { useRouter } from 'vue-router'
 
@@ -225,7 +225,7 @@ onMounted(async () => {
     <!-- ============================ 模板 ============================ -->
     <div v-if="mode === 'template'" class="panel">
       <Skeleton v-if="templatesLoading" active :paragraph="{ rows: 4 }" />
-      <p v-else-if="templatesError" class="error" role="alert">{{ templatesError }}</p>
+      <Alert v-else-if="templatesError" class="alert-gap" type="error" :message="templatesError" show-icon />
 
       <p v-else-if="!templates.length" class="hint">还没有可用的户型模板,请改用手动录入。</p>
 
@@ -325,7 +325,7 @@ onMounted(async () => {
         <Button type="primary" :loading="parsing" @click="submitManual">解析户型</Button>
       </div>
 
-      <p v-if="errorText" class="error" role="alert">{{ errorText }}</p>
+      <Alert v-if="errorText" class="alert-gap" type="error" :message="errorText" show-icon />
       <ul v-if="fieldErrors.length" class="errors">
         <li v-for="item in fieldErrors" :key="item">{{ item }}</li>
       </ul>

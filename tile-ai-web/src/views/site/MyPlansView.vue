@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { Skeleton } from 'ant-design-vue'
+import { Alert, Skeleton } from 'ant-design-vue'
 import { computed, onMounted, ref } from 'vue'
 
 import { listPlans } from '@/api/c/plans'
@@ -126,7 +126,7 @@ onMounted(async () => {
       <h1 class="page-head__title">我的方案</h1>
     </header>
 
-    <p v-if="errorText" class="error" role="alert">{{ errorText }}</p>
+    <Alert v-if="errorText" class="alert-gap" type="error" :message="errorText" show-icon />
     <Skeleton v-if="loading" active :paragraph="{ rows: 4 }" />
 
     <template v-else-if="rows.length">
@@ -340,15 +340,6 @@ button:disabled {
 }
 
 /* ── 状态 ───────────────────────────────────────────────────────────────── */
-.error {
-  margin: 0;
-  padding: var(--space-3) var(--space-4);
-  border: 1px solid var(--color-danger);
-  border-radius: var(--radius-sm);
-  background: var(--color-danger-soft);
-  color: var(--color-danger);
-  font-size: var(--text-sm);
-}
 
 .hint {
   margin: var(--space-6) 0;

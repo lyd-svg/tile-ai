@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { Button, Skeleton } from 'ant-design-vue'
+import { Alert, Button, Skeleton } from 'ant-design-vue'
 import { computed, onMounted, ref } from 'vue'
 
 import { listQuoteParams, upsertQuoteParam } from '@/api/admin/quoteParams'
@@ -153,8 +153,8 @@ onMounted(load)
       辅料单价尚未配置 —— 报价会因为算不出辅料费而<b>整单不出</b>。填上它,报价才能算。
     </p>
 
-    <p v-if="errorText" class="error" role="alert">{{ errorText }}</p>
-    <p v-if="notice" class="notice">{{ notice }}</p>
+    <Alert v-if="errorText" class="alert-gap" type="error" :message="errorText" show-icon />
+    <Alert v-if="notice" class="alert-gap" type="success" :message="notice" show-icon />
     <ul v-if="fieldErrors.length" class="errors">
       <li v-for="item in fieldErrors" :key="item">{{ item }}</li>
     </ul>
@@ -251,25 +251,6 @@ h1 {
   color: var(--color-warning);
 }
 
-.error {
-  margin: var(--space-3) 0;
-  padding: var(--space-3) var(--space-4);
-  border: 1px solid var(--color-danger);
-  border-radius: var(--radius-sm);
-  background: var(--color-danger-soft);
-  color: var(--color-danger);
-  font-size: var(--text-sm);
-}
-
-.notice {
-  margin: var(--space-3) 0;
-  padding: var(--space-3) var(--space-4);
-  border: 1px solid var(--color-success);
-  border-radius: var(--radius-sm);
-  background: var(--color-success-soft);
-  color: var(--color-success);
-  font-size: var(--text-sm);
-}
 
 .errors {
   margin: var(--space-3) 0;

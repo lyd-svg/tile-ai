@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { Button, Skeleton } from 'ant-design-vue'
+import { Alert, Button, Skeleton } from 'ant-design-vue'
 import { computed, onMounted, ref } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 
@@ -118,7 +118,7 @@ onMounted(async () => {
     <Button class="back" @click="router.back()">← 返回</Button>
 
     <Skeleton v-if="loading" active :paragraph="{ rows: 4 }" />
-    <p v-else-if="errorText" class="error" role="alert">{{ errorText }}</p>
+    <Alert v-else-if="errorText" class="alert-gap" type="error" :message="errorText" show-icon />
 
     <article v-else-if="product" class="detail">
       <div class="gallery">
@@ -487,15 +487,6 @@ onMounted(async () => {
 }
 
 /* ── 状态 ───────────────────────────────────────────────────────────────── */
-.error {
-  margin: 0;
-  padding: var(--space-3) var(--space-4);
-  border: 1px solid var(--color-danger);
-  border-radius: var(--radius-sm);
-  background: var(--color-danger-soft);
-  color: var(--color-danger);
-  font-size: var(--text-sm);
-}
 
 .hint {
   margin: var(--space-6) 0;

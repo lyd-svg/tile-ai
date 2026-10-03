@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { Button } from 'ant-design-vue'
+import { Alert, Button } from 'ant-design-vue'
 import { computed, onBeforeUnmount, ref } from 'vue'
 import { useRouter } from 'vue-router'
 
@@ -309,7 +309,10 @@ onBeforeUnmount(interrupt)
             >▍</span>
           </p>
 
-          <!-- 拒答:照抄后端文案,提示态而不是故障态 -->
+          <!-- 拒答:照抄后端文案,提示态而不是故障态。
+               ⚠️ **这一块刻意不迁 antd `Alert`**(§71.3):它在聊天气泡**内部**,
+               是"气泡里的一个注记",不是页级状态块;而且拒答不是成功(绿)也不是故障(红),
+               任何 Alert 的语义色都是错的。 -->
           <p v-if="item.status === 'rejected'" class="notice">{{ item.errorText }}</p>
           <p v-if="item.status === 'aborted'" class="note">(已停止)</p>
           <p v-if="item.status === 'interrupted'" class="note">(不完整,连接中断)</p>
@@ -336,7 +339,7 @@ onBeforeUnmount(interrupt)
     </div>
 
     <!-- 真·故障与拒答分开:这一块只在连接出问题时出现 -->
-    <p v-if="interruptError" class="error" role="alert">{{ interruptError }}</p>
+    <Alert v-if="interruptError" class="alert-gap" type="error" :message="interruptError" show-icon />
 
     <form class="composer" @submit.prevent="send">
       <input
@@ -484,7 +487,7 @@ h3 {
   }
 }
 
-/* 拒答是**提示**,不是故障 —— 用中性色块,别用危险红 */
+/* 拒答是**提示**,不是故障 —— 用中性色块,别用危险红(§71.3:故这块不迁 Alert) */
 .notice {
   margin: var(--space-3) 0 0;
   padding: var(--space-3) var(--space-4);
@@ -496,16 +499,7 @@ h3 {
   line-height: var(--leading-sm);
 }
 
-/* 真·连接故障才用危险色 */
-.error {
-  margin: var(--space-3) 0;
-  padding: var(--space-3) var(--space-4);
-  border: 1px solid var(--color-danger);
-  border-radius: var(--radius-sm);
-  background: var(--color-danger-soft);
-  color: var(--color-danger);
-  font-size: var(--text-sm);
-}
+/* 真·连接故障已迁 antd `Alert`(§71.3),不再写样式 */
 
 /* ── 可采纳的推荐 ───────────────────────────────────────────────────────── */
 .refs {

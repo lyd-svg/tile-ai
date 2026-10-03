@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { Button, Select, Skeleton } from 'ant-design-vue'
+import { Alert, Button, Select, Skeleton } from 'ant-design-vue'
 import { computed, onMounted, reactive, ref } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 
@@ -226,7 +226,7 @@ onMounted(async () => {
       <RouterLink :to="{ name: 'admin-combos' }">返回列表</RouterLink>
     </header>
 
-    <p v-if="errorText" class="error" role="alert">{{ errorText }}</p>
+    <Alert v-if="errorText" class="alert-gap" type="error" :message="errorText" show-icon />
     <ul v-if="fieldErrors.length" class="errors">
       <li v-for="item in fieldErrors" :key="item">{{ item }}</li>
     </ul>
@@ -384,15 +384,6 @@ h2 {
 }
 
 /* ── 状态 ───────────────────────────────────────────────────────────────── */
-.error {
-  margin: var(--space-3) 0;
-  padding: var(--space-3) var(--space-4);
-  border: 1px solid var(--color-danger);
-  border-radius: var(--radius-sm);
-  background: var(--color-danger-soft);
-  color: var(--color-danger);
-  font-size: var(--text-sm);
-}
 
 .errors {
   margin: var(--space-3) 0;

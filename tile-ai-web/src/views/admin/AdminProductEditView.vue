@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { Button, Checkbox, Input, InputNumber, Select, Skeleton } from 'ant-design-vue'
+import { Alert, Button, Checkbox, Input, InputNumber, Select, Skeleton } from 'ant-design-vue'
 import { computed, onMounted, reactive, ref } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 
@@ -280,7 +280,7 @@ onMounted(async () => {
         <Button class="add-image" @click="addImage">添加一张</Button>
       </fieldset>
 
-      <p v-if="errorText" class="error" role="alert">{{ errorText }}</p>
+      <Alert v-if="errorText" class="alert-gap" type="error" :message="errorText" show-icon />
       <ul v-if="fieldErrors.length" class="error errors">
         <li v-for="item in fieldErrors" :key="item">{{ item }}</li>
       </ul>
@@ -427,15 +427,6 @@ legend {
 }
 
 /* ── 状态 ───────────────────────────────────────────────────────────────── */
-.error {
-  margin: 0;
-  padding: var(--space-3) var(--space-4);
-  border: 1px solid var(--color-danger);
-  border-radius: var(--radius-sm);
-  background: var(--color-danger-soft);
-  color: var(--color-danger);
-  font-size: var(--text-sm);
-}
 
 .errors {
   padding-left: var(--space-6);

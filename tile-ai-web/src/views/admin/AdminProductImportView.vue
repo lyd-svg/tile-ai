@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { Button } from 'ant-design-vue'
+import { Alert, Button } from 'ant-design-vue'
 import { computed, onBeforeUnmount, ref } from 'vue'
 
 import {
@@ -211,8 +211,8 @@ onBeforeUnmount(cancelPolling)
       </div>
     </div>
 
-    <p v-if="errorText" class="error" role="alert">{{ errorText }}</p>
-    <p v-if="notice" class="notice">{{ notice }}</p>
+    <Alert v-if="errorText" class="alert-gap" type="error" :message="errorText" show-icon />
+    <Alert v-if="notice" class="alert-gap" type="success" :message="notice" show-icon />
 
     <div v-if="batchId" class="panel">
       <h2>
@@ -283,25 +283,7 @@ onBeforeUnmount(cancelPolling)
 }
 
 /* ── 状态 ───────────────────────────────────────────────────────────────── */
-.error {
-  margin: var(--space-3) 0;
-  padding: var(--space-3) var(--space-4);
-  border: 1px solid var(--color-danger);
-  border-radius: var(--radius-sm);
-  background: var(--color-danger-soft);
-  color: var(--color-danger);
-  font-size: var(--text-sm);
-}
 
-.notice {
-  margin: var(--space-3) 0;
-  padding: var(--space-3) var(--space-4);
-  border: 1px solid var(--color-success);
-  border-radius: var(--radius-sm);
-  background: var(--color-success-soft);
-  color: var(--color-success);
-  font-size: var(--text-sm);
-}
 
 /* ── 面板 ───────────────────────────────────────────────────────────────── */
 .panel {

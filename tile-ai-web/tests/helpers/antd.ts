@@ -100,6 +100,17 @@ export function buttonTexts(wrapper: VueWrapper): string[] {
   return wrapper.findAll('button').map((node) => normalize(node.text()))
 }
 
+/**
+ * 读页内状态块(antd `Alert`)的文案,**已去掉空白**。
+ *
+ * ⚠️ **`Alert` 是"页内常驻"的,不在 portal 里** —— 所以用 `wrapper.find` 找得到,
+ *    不像 `Select` / `Modal` 要查 `document`。它同时自带 `role="alert"`,
+ *    所以原来 `[role="alert"]` 的断言**不用改**(见 `tile-ai-design.md` §5.5)。
+ */
+export function alertTexts(wrapper: VueWrapper): string[] {
+  return wrapper.findAll('.ant-alert-message').map((node) => normalize(node.text()))
+}
+
 /** 按文案找按钮(**去掉空白**后比)。找不到返回 `undefined`。 */
 export function findButton(wrapper: VueWrapper, text: string): DOMWrapper<Element> | undefined {
   const target = normalize(text)

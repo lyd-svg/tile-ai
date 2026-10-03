@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { Button } from 'ant-design-vue'
+import { Alert, Button } from 'ant-design-vue'
 import { computed, ref } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 
@@ -78,7 +78,7 @@ async function submit() {
         <small v-if="isRegister">6–20 位</small>
       </label>
 
-      <p v-if="errorText" class="error" role="alert">{{ errorText }}</p>
+      <Alert v-if="errorText" class="alert-gap" type="error" :message="errorText" show-icon />
 
       <Button type="primary" html-type="submit" :loading="auth.loading">{{ title }}</Button>
 
@@ -178,14 +178,4 @@ input:focus-visible {
   line-height: var(--leading-xs);
 }
 
-.error {
-  margin: 0;
-  padding: var(--space-3) var(--space-4);
-  border: 1px solid var(--color-danger);
-  border-radius: var(--radius-sm);
-  background: var(--color-danger-soft);
-  color: var(--color-danger);
-  font-size: var(--text-sm);
-  line-height: var(--leading-sm);
-}
 </style>

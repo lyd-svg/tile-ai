@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { Button, Select, Skeleton } from 'ant-design-vue'
+import { Alert, Button, Select, Skeleton } from 'ant-design-vue'
 import { computed, onMounted, ref } from 'vue'
 
 import { createAccount, deleteAccount, listAccounts, updateAccount } from '@/api/admin/accounts'
@@ -201,11 +201,11 @@ onMounted(load)
       <Button v-if="canManage" type="primary" @click="startCreate">新增账号</Button>
     </header>
 
-    <p v-if="errorText" class="error" role="alert">{{ errorText }}</p>
+    <Alert v-if="errorText" class="alert-gap" type="error" :message="errorText" show-icon />
     <ul v-if="fieldErrors.length" class="errors" role="alert">
       <li v-for="item in fieldErrors" :key="item.field">{{ item.field }}:{{ item.reason }}</li>
     </ul>
-    <p v-if="notice" class="notice">{{ notice }}</p>
+    <Alert v-if="notice" class="alert-gap" type="success" :message="notice" show-icon />
 
     <Skeleton v-if="loading" active :paragraph="{ rows: 4 }" />
 
@@ -476,15 +476,6 @@ tbody tr:hover {
 }
 
 /* ── 状态 ───────────────────────────────────────────────────────────────── */
-.error {
-  margin: var(--space-3) 0;
-  padding: var(--space-3) var(--space-4);
-  border: 1px solid var(--color-danger);
-  border-radius: var(--radius-sm);
-  background: var(--color-danger-soft);
-  color: var(--color-danger);
-  font-size: var(--text-sm);
-}
 
 .errors {
   margin: var(--space-3) 0;
@@ -493,15 +484,6 @@ tbody tr:hover {
   font-size: var(--text-sm);
 }
 
-.notice {
-  margin: var(--space-3) 0;
-  padding: var(--space-3) var(--space-4);
-  border: 1px solid var(--color-success);
-  border-radius: var(--radius-sm);
-  background: var(--color-success-soft);
-  color: var(--color-success);
-  font-size: var(--text-sm);
-}
 
 .hint {
   font-size: var(--text-xs);

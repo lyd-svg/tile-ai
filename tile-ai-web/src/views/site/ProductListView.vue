@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { Button, Input, InputNumber, Select, Skeleton } from 'ant-design-vue'
+import { Alert, Button, Input, InputNumber, Select, Skeleton } from 'ant-design-vue'
 import { computed, onMounted, reactive, ref } from 'vue'
 
 import { listProducts } from '@/api/c/catalog'
@@ -153,7 +153,7 @@ onMounted(async () => {
       </div>
     </form>
 
-    <p v-if="errorText" class="error" role="alert">{{ errorText }}</p>
+    <Alert v-if="errorText" class="alert-gap" type="error" :message="errorText" show-icon />
     <Skeleton v-if="loading" active :paragraph="{ rows: 4 }" />
 
     <template v-else-if="rows.length">
@@ -399,15 +399,6 @@ onMounted(async () => {
 }
 
 /* ── 状态 ───────────────────────────────────────────────────────────────── */
-.error {
-  margin: var(--space-5) 0 0;
-  padding: var(--space-3) var(--space-4);
-  border: 1px solid var(--color-danger);
-  border-radius: var(--radius-sm);
-  background: var(--color-danger-soft);
-  color: var(--color-danger);
-  font-size: var(--text-sm);
-}
 
 .hint {
   margin: var(--space-6) 0;

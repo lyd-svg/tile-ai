@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { Button, Skeleton } from 'ant-design-vue'
+import { Alert, Button, Skeleton } from 'ant-design-vue'
 import { computed, onMounted, reactive, ref } from 'vue'
 
 import { listAdminDicts } from '@/api/admin/dicts'
@@ -220,8 +220,8 @@ onMounted(load)
     <p v-if="duplicateCombo" class="warn" role="alert">
       服务端返回了重复的「空间 × 风格」组合,已只保留第一条显示。
     </p>
-    <p v-if="errorText" class="error" role="alert">{{ errorText }}</p>
-    <p v-if="notice" class="notice">{{ notice }}</p>
+    <Alert v-if="errorText" class="alert-gap" type="error" :message="errorText" show-icon />
+    <Alert v-if="notice" class="alert-gap" type="success" :message="notice" show-icon />
     <ul v-if="fieldErrors.length" class="errors">
       <li v-for="item in fieldErrors" :key="item">{{ item }}</li>
     </ul>
@@ -341,25 +341,6 @@ onMounted(load)
   font-size: var(--text-sm);
 }
 
-.error {
-  margin: var(--space-3) 0;
-  padding: var(--space-3) var(--space-4);
-  border: 1px solid var(--color-danger);
-  border-radius: var(--radius-sm);
-  background: var(--color-danger-soft);
-  color: var(--color-danger);
-  font-size: var(--text-sm);
-}
-
-.notice {
-  margin: var(--space-3) 0;
-  padding: var(--space-3) var(--space-4);
-  border: 1px solid var(--color-success);
-  border-radius: var(--radius-sm);
-  background: var(--color-success-soft);
-  color: var(--color-success);
-  font-size: var(--text-sm);
-}
 
 .errors {
   margin: var(--space-3) 0;

@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { Button, Empty, Select, Skeleton } from 'ant-design-vue'
+import { Alert, Button, Empty, Select, Skeleton } from 'ant-design-vue'
 import { onMounted, reactive, ref } from 'vue'
 
 import { listCombos } from '@/api/c/catalog'
@@ -92,7 +92,7 @@ onMounted(async () => {
       <Button type="primary" html-type="submit">查询</Button>
     </form>
 
-    <p v-if="errorText" class="error" role="alert">{{ errorText }}</p>
+    <Alert v-if="errorText" class="alert-gap" type="error" :message="errorText" show-icon />
     <Skeleton v-if="loading" active :paragraph="{ rows: 6 }" />
 
     <template v-else-if="combos.length">
@@ -297,15 +297,6 @@ onMounted(async () => {
 }
 
 /* ── 状态 ───────────────────────────────────────────────────────────────── */
-.error {
-  margin: var(--space-4) 0 0;
-  padding: var(--space-3) var(--space-4);
-  border: 1px solid var(--color-danger);
-  border-radius: var(--radius-sm);
-  background: var(--color-danger-soft);
-  color: var(--color-danger);
-  font-size: var(--text-sm);
-}
 
 /* 空态:主文案与插图由 antd 的 `Empty` 出,补充说明放在它下面。
    背景与内边距归**容器**,别让 `.hint` 再叠一层色块。 */

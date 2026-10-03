@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { Button } from 'ant-design-vue'
+import { Alert, Button } from 'ant-design-vue'
 import { computed, onBeforeUnmount, onMounted, ref } from 'vue'
 
 import { getGenerateProgress, submitGenerate } from '@/api/c/generate'
@@ -374,7 +374,7 @@ onBeforeUnmount(cancelPolling)
         <span v-if="!space" class="note">先选择空间。</span>
       </div>
 
-      <p v-if="errorText" class="error" role="alert">{{ errorText }}</p>
+      <Alert v-if="errorText" class="alert-gap" type="error" :message="errorText" show-icon />
       <ul v-if="fieldErrors.length" class="errors">
         <li v-for="item in fieldErrors" :key="item">{{ item }}</li>
       </ul>
@@ -388,7 +388,7 @@ onBeforeUnmount(cancelPolling)
         <p class="note">任务号 {{ taskId }}</p>
       </div>
 
-      <p v-if="failureReason" class="error" role="alert">{{ failureReason }}</p>
+      <Alert v-if="failureReason" class="alert-gap" type="error" :message="failureReason" show-icon />
       <div v-if="status === 'failed'" class="actions">
         <Button type="primary" @click="reset">重新生成</Button>
       </div>
@@ -702,15 +702,6 @@ h2 {
   font-weight: 600;
 }
 
-.error {
-  margin: var(--space-3) 0;
-  padding: var(--space-3) var(--space-4);
-  border: 1px solid var(--color-danger);
-  border-radius: var(--radius-sm);
-  background: var(--color-danger-soft);
-  color: var(--color-danger);
-  font-size: var(--text-sm);
-}
 
 .errors {
   margin: var(--space-3) 0 0;

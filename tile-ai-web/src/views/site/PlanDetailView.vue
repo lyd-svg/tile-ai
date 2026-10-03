@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { Button, Skeleton } from 'ant-design-vue'
+import { Alert, Button, Skeleton } from 'ant-design-vue'
 import { computed, onMounted, ref, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 
@@ -422,7 +422,7 @@ async function revokeShareLink() {
   <section>
     <Skeleton v-if="loading" active :paragraph="{ rows: 4 }" />
 
-    <p v-else-if="errorText && !plan" class="error" role="alert">{{ errorText }}</p>
+    <Alert v-else-if="errorText && !plan" class="alert-gap" type="error" :message="errorText" show-icon />
 
     <template v-else-if="plan">
       <header class="head">
@@ -430,11 +430,11 @@ async function revokeShareLink() {
         <span v-if="metaText" class="meta">{{ metaText }}</span>
       </header>
 
-      <p v-if="errorText" class="error" role="alert">{{ errorText }}</p>
+      <Alert v-if="errorText" class="alert-gap" type="error" :message="errorText" show-icon />
       <ul v-if="fieldErrors.length" class="errors">
         <li v-for="item in fieldErrors" :key="item.field">{{ item.field }}:{{ item.reason }}</li>
       </ul>
-      <p v-if="notice" class="notice">{{ notice }}</p>
+      <Alert v-if="notice" class="alert-gap" type="success" :message="notice" show-icon />
 
       <!-- ---------------------------- 效果图 ---------------------------- -->
       <section class="block">
@@ -881,25 +881,6 @@ th {
   font-size: var(--text-sm);
 }
 
-.error {
-  margin: var(--space-3) 0;
-  padding: var(--space-3) var(--space-4);
-  border: 1px solid var(--color-danger);
-  border-radius: var(--radius-sm);
-  background: var(--color-danger-soft);
-  color: var(--color-danger);
-  font-size: var(--text-sm);
-}
-
-.notice {
-  margin: var(--space-3) 0;
-  padding: var(--space-3) var(--space-4);
-  border: 1px solid var(--color-success);
-  border-radius: var(--radius-sm);
-  background: var(--color-success-soft);
-  color: var(--color-success);
-  font-size: var(--text-sm);
-}
 
 .hint {
   margin: var(--space-3) 0;

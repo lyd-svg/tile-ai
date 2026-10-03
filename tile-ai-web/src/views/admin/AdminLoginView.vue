@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { Button } from 'ant-design-vue'
+import { Alert, Button } from 'ant-design-vue'
 import { ref } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 
@@ -54,7 +54,7 @@ async function submit() {
         <input v-model="password" type="password" autocomplete="current-password" />
       </label>
 
-      <p v-if="errorText" class="error" role="alert">{{ errorText }}</p>
+      <Alert v-if="errorText" class="alert-gap" type="error" :message="errorText" show-icon />
 
       <Button type="primary" html-type="submit" :loading="auth.loading">登录</Button>
     </form>
@@ -119,16 +119,6 @@ input:focus-visible {
   border-color: var(--color-primary);
 }
 
-.error {
-  margin: 0;
-  padding: var(--space-3) var(--space-4);
-  border: 1px solid var(--color-danger);
-  border-radius: var(--radius-sm);
-  background: var(--color-danger-soft);
-  color: var(--color-danger);
-  font-size: var(--text-sm);
-  line-height: var(--leading-sm);
-}
 
 /* ⚠️ **「登录」按钮已迁 antd** —— 不再写样式(§70.9)。
    原来这里是**裸 `button {}`**,会照样命中 antd 的 `<button class="ant-btn">`。 */
