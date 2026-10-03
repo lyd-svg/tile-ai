@@ -7422,5 +7422,58 @@ antd 把 `#bodyCell` 的行标成 `Record<string, any>`,而页面上的函数收
 
 **验证**:`npm run build` ✓ / **389 测试全绿(8 页零改动)**。
 
+### 72.6 G2 最后一块:4 页下拉迁 `Select`(2026-10-03,提交 `3760297`)
+
+生成页(3)· 数据字典(2)· 陈设(1)· 模板编辑(3),共 **9 个**。
+迁完以后 **`src` 下再无原生 `<select>` / `<option>`**。
+
+**`<script>` 仍然只多一行 import** —— 选项一律**在模板里现算**(`option.key` / `.label`
+之类的映射写在 `:options` 里),**没有新增展示用常量**。
+
+#### 测试怎么改写(4 个 spec,断言一条没删)
+
+| 原来(钉着原生 `<select>`) | 现在 |
+| --- | --- |
+| `findAll('select')` / `form select` | `findAll('.ant-select')` + **测试锚点 class**(`.space-select` 等) |
+| `(el as HTMLSelectElement).value` | **新增助手 `selectedText()`** —— 读 `.ant-select-selection-item` 的文案 |
+| `element.attributes('disabled')` | `.classes()` 含 **`ant-select-disabled`** |
+| `select.findAll('option')` 读选项**值** | 开下拉读选项**文案**(`openSelect` + `openedSelectOptionTexts`);**值**由提交断言兜住 |
+| `findAll('select')[2].setValue('2')` | `openSelect` + `pickSelectOption('2 张')` |
+
+⚠️ **生成页那处必须在 `vi.useFakeTimers()` 之前操作** —— antd `Select` 的下拉要靠
+**真实的定时 / 动画帧**才渲染得出来,**假定时器下点不开**。
+
+#### ⚠️ 同一族坑的第 2 种形态:库的内部元素**顶掉了测试的下标**
+
+`adminDicts.spec.ts` 原来按**下标**取输入框(`findAll('form input')[0] / [1]`)。
+迁到 antd 后,`Select` 内部渲染的 `<input class="ant-select-selection-search-input">`
+**混进了 `findAll('input')` 的结果里** ⇒ 两个输入框错位 ⇒ 提交**静默失败**(0 次调用),
+而报错信息只说"没被调用",**不指向真正的原因**。
+
+⇒ 改成 `input:not([class*='ant-'])`。
+**与 §5.6「裸选择器命中库的元素」是同一族,只是这次发生在测试侧**:
+**`findAll('input')` 按下标取值,在引入任何带 `<input>` 的库组件后都不再可靠。**
+
+(已顺带扫过全库其余 `findAll('input')`:两处按 placeholder 找、其余所在页面无下拉,安全。) 
+
+#### ⚠️ 一条 CSS 上的连锁:容器里"只迁了下拉,输入框还是原生的"
+
+`AdminFurnishView` / `AdminTemplateEditView` 的表单里**输入框仍是原生**,但**同一个容器里
+已经有了 antd `Select`** —— 它内部的 `<input>` 会被裸 `input` 规则命中(§5.6)。
+⇒ 两页的输入框规则都收窄成 `input:not([class*='ant-'])`。
+(反例对照:`AdminTemplatesView` 的 `.filters input` 不需要加 —— 那个容器里**只有原生 input**。)
+
+**验证**:`npm run build` ✓ / **389 测试全绿**。
+
+### 72.7 G2 状态:全部收口
+
+| | |
+| --- | --- |
+| **已迁** | 确认框 · 加载态 · 按钮 · 下拉(含本节 4 页)· 输入 / 数字 / 复选 · `Tag`/`Descriptions`/`Empty` · **提示块** · **后台表格** |
+| **刻意不迁** | 图块式交互控件(缩略图 / 部位胶囊 / 模板卡 / 页签 / 矩阵格 / 历史项 / 分页)· C 端报价单与部位表 |
+| **仍未做** | 1 个**待验项**:`prefers-reduced-motion` 压不压得住 antd 自带动效(§68.5 第 3 条) |
+| **仍欠** | **视觉验收** —— 按钮 / 提示块 / 表格 / 下拉四批都还没进过人眼(纪律 7) |
+| 全程 | **389 条测试从未变红**;每一页 `<script setup>` 逐行比对**只差 import** |
+
 
 
