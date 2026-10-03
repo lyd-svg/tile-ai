@@ -648,6 +648,34 @@ class GenerateIntegrationTest {
         return sb.toString();
     }
 
+    /**
+     * 回归(2026-10-02):**带签名的超长图片地址必须被受理。**
+     *
+     * <p>真实图像模型返回的不是短地址,而是"临时地址 + 一长串 JWT 安全令牌"。
+     * 原先回调 DTO 与两列都卡在 500 字符,于是**成功回调被 10001 整个拒掉**,
+     * 用户看到的是"任务一直排队、图出不来"。实测 600 字符即被拒。
+     *
+     * <p>本类的 `tile.storage.enabled=false`,所以地址**原样入库** —— 正好顺带钉住
+     * "列宽也够"(V12 把 `t_plan_image.url` / `t_generation_task.result_ref` 放宽到 2048)。
+     * 开了转存的话,入库的是本机短地址,反而验不到列宽。
+     */
+    @Test
+    @DisplayName("回归:1500 字符的签名地址被受理并原样入库(不再被 10001 拒)")
+    void longSignedImageUrlIsAccepted() throws Exception {
+        String longUrl = "https://s3.siliconflow.cn/temporary/probe?" + "A".repeat(1500);
+        assertTrue(longUrl.length() > 500, "用例前提:必须比原来的上限长");
+
+        String taskId = taskIdOf(postGenerate(generateBody(null, 1)));
+        MvcResult result = callback("""
+                {"taskId":"%s","status":"success","progress":100,
+                 "imageUrls":[{"url":"%s","view":"default","isCover":true}]}
+                """.formatted(taskId, longUrl));
+
+        assertEquals(0, codeOf(result), "长地址不该被 10001 拒掉 —— 拒了图就永远进不来");
+        assertEquals(GenerationTask.STATUS_SUCCESS, taskOf(taskId).getStatus());
+        assertEquals(longUrl, taskOf(taskId).getResultRef(), "封面地址应当完整存下来,没有被截断");
+    }
+
     private String callbackBody(String taskId, String status, int progress, String error) {
         String errorJson = error == null ? "" : """
                 ,"error":{"code":40001,"message":"%s"}""".formatted(error);

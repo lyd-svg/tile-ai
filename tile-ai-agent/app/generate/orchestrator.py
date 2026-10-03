@@ -212,17 +212,48 @@ def run_generate_task(
 # ----------------------------------------------------------------------
 
 def ref_images_of(parts: Sequence[Mapping[str, Any]], sku_source: SkuSource) -> tuple[str, ...]:
-    """部位选定 → 参考图 URL 列表(**去重、保序**)。
+    """部位选定 → 参考图 URL 列表(**每个部位一张**,去重、保序)。
 
     公开是因为它是"照片确实交给了出图"这条验收的落点 —— 测试直接断言它。
     """
     return _ref_images_of(parts, sku_source)
 
 
+def representative_photo_of(sku_data: Mapping[str, Any]) -> str:
+    """该 SKU 的**一张代表图**:封面优先,没有封面才退回相册第一张。
+
+    "一张"是刻意的 —— 见 `_ref_images_of` 的说明。
+    """
+    cover = str(sku_data.get("coverImage") or "").strip()
+    if cover:
+        return cover
+    photos = _photo_urls_of(sku_data)
+    return photos[0] if photos else ""
+
+
 def _ref_images_of(parts: Sequence[Mapping[str, Any]], sku_source: SkuSource) -> tuple[str, ...]:
-    """改选的砖可能同时铺地面与墙面(`prompt.py` 的 `_map_parts` 已按部位展开),
-    同一块砖的照片在参考图里**只该出现一次** —— 重复的参考图不会让模型更"看见"它,
-    只是白花一次视觉 token(实测每张参考图约 5000 token,见 `dashscope_image.py`)。"""
+    """每个部位**一张**代表图(封面优先),同一块砖只出现一次。
+
+    <h2>⚠️ 为什么是"每部位一张",而不是把这个产品的相册都发过去</h2>
+    <p>**这里改过一次,原因值得留着。** 原先是把 `coverImage` + `images[].url` **全部**
+    当参考图发出去,于是:导入的真实产品每款有 5–6 张照片 ⇒ 选**一块砖**就发 6 张,
+    选两块就发 **12 张**(实测日志逐字:`收到 12 张 —— 保留前 4 张,丢弃 8 张`)。
+    后果有两个:
+
+    <p>① **超时出不了图**。参考图越多、模型越慢。实测单张 28 秒,而 4 张就超过了
+    `gateway_image_timeout_seconds`(默认 60 秒)⇒ 读超时 ⇒ 重试 ⇒ 熔断 ⇒
+    任务判失败。**用户看到的是"选了砖却怎么也生成不出来"。**
+
+    <p>② **偏离架构设计**。§15.3 定的形态是"同空间类型**底图 1 张** +
+    **各部位瓷砖切片**最多 3 张 = 最多 4 张",即**每个部位一张切片** ——
+    不是"每个部位把它整个相册发过去"。
+
+    <p>⇒ 改成"每部位一张"之后:选 1 块砖发 1 张(28 秒,出得来图)、
+    选 3 个部位发 3 张,加上底图正好是架构说的 4 张上限。
+
+    <p>顺带省钱:每张参考图约 5000 视觉 token(见 `dashscope_image.py`),
+    发 12 张等于白烧 6 万 token。
+    """
     urls: list[str] = []
     seen: set[str] = set()
     for selection in parts:
@@ -232,13 +263,12 @@ def _ref_images_of(parts: Sequence[Mapping[str, Any]], sku_source: SkuSource) ->
         data = sku_source.get(sku)
         if data is None:
             continue
-        # `coverImage` 是封面,`images[].url` 是多角度图 —— 两者都算参考图
-        # (契约 `Sku` 的形状),封面通常就是 images 里 `default` 那张,
-        # 所以去重不是可选的优化,是必须的。
-        for url in _photo_urls_of(data):
-            if url not in seen:
-                seen.add(url)
-                urls.append(url)
+        # 同一块砖可能同时铺地面与墙面(`prompt.py` 的 `_map_parts` 已按部位展开),
+        # 但它**只该出现一次** —— 重复的参考图不会让模型更"看见"它,只是白花一次视觉 token。
+        url = representative_photo_of(data)
+        if url and url not in seen:
+            seen.add(url)
+            urls.append(url)
     return tuple(urls)
 
 

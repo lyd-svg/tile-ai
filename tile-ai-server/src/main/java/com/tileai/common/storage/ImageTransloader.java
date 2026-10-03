@@ -16,7 +16,6 @@ import java.time.Duration;
 import java.util.ArrayList;
 import java.util.HexFormat;
 import java.util.List;
-import java.util.Locale;
 
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -161,10 +160,18 @@ public class ImageTransloader {
                 throw new IOException("HTTP " + status);
             }
 
-            String contentType = response.headers().firstValue("content-type").orElse("");
-            if (!contentType.toLowerCase(Locale.ROOT).startsWith("image/")) {
-                throw new IOException("Content-Type 不是图片: " + contentType);
-            }
+            // ⚠️ **刻意不校验 Content-Type。**
+            //
+            // 这里原先要求 `Content-Type` 必须是 `image/*`,2026-10-02 被真实数据打脸:
+            // **硅基流动的图床把生成结果标成 `application/octet-stream`**
+            // (Content-Type 是应用自己声明的,不是标准强制的)。
+            // 于是**转存整个失败、降级保留原地址** —— 存进库的是那个 24 小时过期的
+            // 签名地址,§53 想解决的问题原样复活。
+            //
+            // 判"是不是图"**只认字节**(下面的魔数校验),不认声明:
+            //   · 声明说是图、字节不是(200 + 一页 HTML 错误页)→ 魔数拦住 ✅
+            //   · 声明说不是图、字节是(本例)→ 放行 ✅
+            // 声明与事实冲突时,信事实。
 
             return readCapped(response.body());
         } finally {

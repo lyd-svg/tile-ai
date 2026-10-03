@@ -63,8 +63,13 @@ public class GenerateCallbackService {
     /** {@code t_generation_task.error} 的列宽,超出会被 MySQL 直接拒掉。 */
     private static final int ERROR_MAX = 1000;
 
-    /** {@code t_generation_task.result_ref} 的列宽。 */
-    private static final int RESULT_REF_MAX = 500;
+    /**
+     * {@code t_generation_task.result_ref} 的列宽。
+     *
+     * <p>⚠️ 与 V12 迁移**必须同步**(500 → 2048):真实图像模型返回的是带签名的临时地址
+     * (一长串 JWT),500 会把它截断成一个打不开的地址(2026-10-02)。
+     */
+    private static final int RESULT_REF_MAX = 2048;
 
     /**
      * 基准机位的视角名。

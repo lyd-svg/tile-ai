@@ -70,12 +70,12 @@ class SchemaMigrationTest {
             t_plan                 | id bigint unsigned ; user_id bigint unsigned ; name varchar(200) ; space varchar(50) ; style varchar(50) ; layout_enc varbinary(16384) ; total_amount decimal(12,2) ; share_token varchar(64) ; quote_expired tinyint(1) ; is_deleted tinyint(1) ; created_at datetime ; updated_at datetime
             t_plan_part            | id bigint unsigned ; plan_id bigint unsigned ; part varchar(10) ; product_id bigint unsigned ; sku_code varchar(64) ; product_name varchar(200) ; price_per_sqm decimal(10,2) ; gross_area decimal(10,4) ; area decimal(10,4) ; loss_rate decimal(5,4) ; material_fee decimal(12,2) ; source varchar(10)
             t_plan_quote           | id bigint unsigned ; plan_id bigint unsigned ; material_total decimal(12,2) ; aux_total decimal(12,2) ; aux_unit_price decimal(10,2) ; aux_area decimal(10,4) ; loss_rate decimal(5,4) ; total_amount decimal(12,2) ; rules_snapshot json
-            t_plan_image           | id bigint unsigned ; plan_id bigint unsigned ; url varchar(500) ; view varchar(30) ; is_cover tinyint(1) ; created_at datetime
+            t_plan_image           | id bigint unsigned ; plan_id bigint unsigned ; url varchar(2048) ; view varchar(30) ; is_cover tinyint(1) ; created_at datetime
             t_furnish_style        | id bigint unsigned ; space varchar(50) ; style varchar(50) ; prompt text ; cover_image varchar(500) ; status varchar(20) ; updated_at datetime
             t_quote_param          | id bigint unsigned ; param_key varchar(50) ; param_value decimal(10,4) ; remark varchar(255) ; updated_at datetime
             t_store                | id bigint unsigned ; name varchar(200) ; address varchar(500) ; phone varchar(50) ; map_url varchar(500) ; updated_at datetime
             t_dict                 | id bigint unsigned ; dict_type varchar(30) ; dict_key varchar(50) ; dict_label varchar(100) ; sort int ; status varchar(20) ; updated_at datetime
-            t_generation_task      | id bigint unsigned ; task_id varchar(64) ; user_id bigint unsigned ; plan_id bigint unsigned ; type varchar(20) ; status varchar(20) ; progress int ; payload json ; result_ref varchar(500) ; error varchar(1000) ; external_task_id varchar(128) ; created_at datetime ; updated_at datetime
+            t_generation_task      | id bigint unsigned ; task_id varchar(64) ; user_id bigint unsigned ; plan_id bigint unsigned ; type varchar(20) ; status varchar(20) ; progress int ; payload json ; result_ref varchar(2048) ; error varchar(1000) ; external_task_id varchar(128) ; created_at datetime ; updated_at datetime
             t_chat_session         | id bigint unsigned ; user_id bigint unsigned ; title varchar(200) ; created_at datetime
             t_chat_message         | id bigint unsigned ; session_id bigint unsigned ; role varchar(20) ; content text ; refs json ; created_at datetime
             t_outbox               | id bigint unsigned ; aggregate_type varchar(30) ; aggregate_id varchar(64) ; queue varchar(100) ; payload json ; status varchar(20) ; retry_count int ; next_retry_at datetime ; created_at datetime ; sent_at datetime
@@ -96,7 +96,7 @@ class SchemaMigrationTest {
      * (见 {@link #migrationsReachLatestAndAreRepeatable})。
      */
     private static final List<String> EXPECTED_MIGRATIONS =
-            List.of("1", "2", "3", "4", "5", "6", "7", "8", "9", "10", "11");
+            List.of("1", "2", "3", "4", "5", "6", "7", "8", "9", "10", "11", "12");
 
     private static Connection conn;
     private static String schema;

@@ -113,12 +113,24 @@ class ImageTransloaderTest {
     // 降级:一律不出异常、一律保留原地址
     // ------------------------------------------------------------------
 
+    /**
+     * ⚠️ **回归:声明不是图片、字节是图片 ⇒ 必须放行。**
+     *
+     * <p>判"是不是图"**只认字节**(魔数),不认 `Content-Type` —— 那只是应用自己声明的,
+     * 不是标准强制的。真实踩到(2026-10-02):**硅基流动的图床把生成结果标成
+     * `application/octet-stream`**,原先的 Content-Type 闸门让转存整个失败、
+     * 降级保留原地址,存进库的是 24 小时过期的签名地址 —— §53 想解决的问题原样复活。
+     */
     @Test
-    @DisplayName("Content-Type 不是图片 → 保留原地址")
-    void nonImageContentTypeKeepsOriginal() {
-        serveBytes("/not-image", 200, "text/html", PNG);
+    @DisplayName("回归:Content-Type 是 application/octet-stream 但字节是 PNG ⇒ 照常转存")
+    void octetStreamContentTypeIsStillTransloaded() {
+        serveBytes("/octet.png", 200, "application/octet-stream", PNG);
 
-        assertKeptOriginal("/not-image");
+        List<ImageRef> out = transloader(props()).localize(List.of(image(base + "/octet.png")), "t");
+
+        assertTrue(out.get(0).url().startsWith("http://localhost:8080/media/"),
+                "字节是 PNG 就该收下,实际=" + out.get(0).url());
+        assertEquals(1, fileCount());
     }
 
     @Test
@@ -188,7 +200,8 @@ class ImageTransloaderTest {
     @DisplayName("多张里坏一张,不影响其它张")
     void oneFailureDoesNotAffectOthers() {
         serveBytes("/good.png", 200, "image/png", PNG);
-        serveBytes("/bad.png", 200, "text/plain", PNG);
+        // "坏"要坏在**字节**上 —— Content-Type 已经不作判据了(见上一条回归)
+        serveBytes("/bad.png", 200, "image/png", "<html>不是图</html>".getBytes());
 
         List<ImageRef> out = transloader(props()).localize(
                 List.of(image(base + "/good.png"), image(base + "/bad.png")), "t");

@@ -236,19 +236,52 @@ def test_missing_style_degrades_to_empty_string() -> None:
 # 编排:照片确实是出图的输入
 # ======================================================================
 
-def test_reference_images_are_the_selected_products_photos() -> None:
-    """**T-1.11 的核心验收**:交给图像网关的参考图 = 所选 SKU 的照片 URL。"""
+def test_reference_images_are_one_per_part() -> None:
+    """**T-1.11 的核心验收**:交给图像网关的参考图 = **每个部位一张**代表图(封面优先)。
+
+    ⚠️ 曾经是"把这个产品的相册都发过去" —— 真实产品每款 5–6 张照片,
+    选**一块砖**就发 6 张,直接撑爆读超时,用户看到的是"选了砖却怎么也生成不出来"。
+    详见 `_ref_images_of` 的说明。
+    """
     _, gateway, _ = run(payload_of(angles=2))
 
     assert gateway.calls[0]["ref_images"] == [
         "https://oss.test/tiles/TL-2043-cover.jpg",
-        "https://oss.test/tiles/TL-2043-2.jpg",
         "https://oss.test/tiles/TL-3012-cover.jpg",
-    ], "封面与 images 都算参考图,按部位顺序排列"
+    ], "两个部位 ⇒ 两张代表图,按部位顺序排列"
+
+
+def test_product_with_many_photos_contributes_only_one_reference() -> None:
+    """回归:一个产品**有 6 张照片**,参考图仍然只发 1 张。
+
+    这条钉住的就是那个 bug —— 参考图张数直接决定模型耗时:
+    实测单张 28 秒,而 4 张就超过 60 秒的读超时。
+    """
+    many = {
+        "sku": "TL-MANY",
+        "coverImage": "https://oss.test/many/cover.jpg",
+        "images": [{"url": f"https://oss.test/many/{index}.jpg"} for index in range(1, 6)],
+    }
+
+    refs = ref_images_of([{"part": "floor", "sku": "TL-MANY"}], FakeSkuSource({**SKUS, "TL-MANY": many}))
+
+    assert refs == ("https://oss.test/many/cover.jpg",), "一块砖一张图,相册其余的不发"
+
+
+def test_falls_back_to_first_gallery_photo_when_no_cover() -> None:
+    """没有封面时退回相册第一张 —— 不能因为缺封面就一张都不发。"""
+    no_cover = {
+        "sku": "TL-NOCOVER",
+        "images": [{"url": "https://oss.test/nc/1.jpg"}, {"url": "https://oss.test/nc/2.jpg"}],
+    }
+
+    refs = ref_images_of([{"part": "floor", "sku": "TL-NOCOVER"}], FakeSkuSource({**SKUS, "TL-NOCOVER": no_cover}))
+
+    assert refs == ("https://oss.test/nc/1.jpg",)
 
 
 def test_reference_images_are_deduplicated() -> None:
-    """同一块砖铺两个部位 ⇒ 它的照片只出现一次。"""
+    """同一块砖铺两个部位 ⇒ 只发一张。"""
     parts = [
         {"part": "floor", "sku": "TL-2043"},
         {"part": "wall", "sku": "TL-2043"},
@@ -256,10 +289,8 @@ def test_reference_images_are_deduplicated() -> None:
 
     refs = ref_images_of(parts, FakeSkuSource())
 
-    assert refs == (
-        "https://oss.test/tiles/TL-2043-cover.jpg",
-        "https://oss.test/tiles/TL-2043-2.jpg",
-    ), "重复的参考图不会让模型更「看见」它,只是白花一次视觉 token"
+    assert refs == ("https://oss.test/tiles/TL-2043-cover.jpg",), \
+        "重复的参考图不会让模型更「看见」它,只是白花一次视觉 token"
 
 
 def test_unknown_sku_is_skipped_but_generation_continues() -> None:

@@ -62,7 +62,13 @@ public record GenerateCallbackRequest(
      */
     public record ImageRef(
             @NotBlank(message = "图片 url 不能为空")
-            @Size(max = 500, message = "图片 url 不能超过 500 字符")
+            // ⚠️ 上限与 `t_plan_image.url` 的列宽**必须同步**(V12 放宽到 2048)。
+            // 原来是 500 —— 那时够用,因为只有替身图的短地址;
+            // 接真实模型后,**厂商返回的是带签名的临时地址**(里面一长串 JWT),
+            // 500 会把成功回调整个拒掉(2026-10-02 实测:硅基流动的地址远超 500 字符,
+            // 表现为任务一直 pending、图进不了系统)。
+            // 注意:转存(§53)之后存进库的是本机短地址,这里放宽只是为了**收得下**。
+            @Size(max = 2048, message = "图片 url 不能超过 2048 字符")
             String url,
 
             @NotBlank(message = "视角不能为空")
