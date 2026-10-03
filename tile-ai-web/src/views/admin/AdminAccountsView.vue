@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { Select, Skeleton } from 'ant-design-vue'
+import { Button, Select, Skeleton } from 'ant-design-vue'
 import { computed, onMounted, ref } from 'vue'
 
 import { createAccount, deleteAccount, listAccounts, updateAccount } from '@/api/admin/accounts'
@@ -198,7 +198,7 @@ onMounted(load)
   <section>
     <header class="head">
       <h1>账号与权限</h1>
-      <button v-if="canManage" type="button" class="primary" @click="startCreate">新增账号</button>
+      <Button v-if="canManage" type="primary" @click="startCreate">新增账号</Button>
     </header>
 
     <p v-if="errorText" class="error" role="alert">{{ errorText }}</p>
@@ -233,17 +233,16 @@ onMounted(load)
           </td>
           <td>{{ timeOf(row.createdAt) }}</td>
           <td class="actions">
-            <button v-if="canManage" type="button" @click="startEdit(row)">编辑</button>
-            <button
+            <Button v-if="canManage" @click="startEdit(row)">编辑</Button>
+            <Button
               v-if="canManage"
-              type="button"
-              class="danger"
+              danger
               :disabled="row.id === myId"
               :title="row.id === myId ? '不能删除自己' : ''"
               @click="remove(row)"
             >
               删除
-            </button>
+            </Button>
           </td>
         </tr>
       </tbody>
@@ -293,10 +292,8 @@ onMounted(load)
       </label>
 
       <div class="panel-actions">
-        <button type="submit" class="primary" :disabled="saving">
-          {{ saving ? '保存中…' : '保存' }}
-        </button>
-        <button type="button" @click="cancelForm">取消</button>
+        <Button type="primary" html-type="submit" :loading="saving">保存</Button>
+        <Button @click="cancelForm">取消</Button>
       </div>
     </form>
   </section>
@@ -353,7 +350,11 @@ select:focus-visible {
 }
 
 /* ── 按钮 ───────────────────────────────────────────────────────────────── */
-button {
+/* ⚠️ **编辑 / 删除 / 新增账号 / 保存 / 取消 都已迁 antd** —— 不再给它们写样式(§70.9)。
+   下面**只剩分页按钮**是原生的(上一页 / 下一页)。
+   ⚠️ 原来是裸 `button {}` —— 那会**照样命中 antd 渲染出的 `<button class="ant-btn">`**,
+   所以**必须收窄到 `.pager`**(这正是 `tile-ai-design.md` §5.6 说的那种陷阱)。 */
+.pager button {
   height: var(--control-height);
   padding: 0 var(--space-3);
   border: 1px solid var(--color-border-strong);
@@ -368,40 +369,15 @@ button {
     background var(--dur-fast) var(--ease-standard);
 }
 
-button:hover:not(:disabled) {
+.pager button:hover:not(:disabled) {
   border-color: var(--color-primary);
   color: var(--color-primary);
 }
 
-/* 禁用的删除按钮有 title 说明原因("不能删除自己")—— 弱化但仍可见 */
-button:disabled {
+/* 禁用的按钮有 title 说明原因("不能删除自己")—— 弱化但仍可见 */
+.pager button:disabled {
   opacity: 0.45;
   cursor: default;
-}
-
-.primary {
-  border-color: var(--color-primary);
-  background: var(--color-primary);
-  color: var(--color-on-primary);
-  font-weight: 600;
-}
-
-.primary:hover:not(:disabled) {
-  background: var(--color-primary-hover);
-  border-color: var(--color-primary-hover);
-  color: var(--color-on-primary);
-}
-
-/* 删除账号是危险且不可撤销的 —— 危险色 + 明确的文字 */
-.danger {
-  border-color: var(--color-danger);
-  color: var(--color-danger);
-}
-
-.danger:hover:not(:disabled) {
-  background: var(--color-danger-soft);
-  border-color: var(--color-danger);
-  color: var(--color-danger);
 }
 
 /* ── 账号表 ─────────────────────────────────────────────────────────────── */

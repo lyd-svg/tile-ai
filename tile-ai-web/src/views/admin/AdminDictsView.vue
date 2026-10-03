@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { Skeleton } from 'ant-design-vue'
+import { Button, Skeleton } from 'ant-design-vue'
 import { computed, onMounted, reactive, ref } from 'vue'
 
 import { createDict, deleteDict, listAdminDicts, updateDict } from '@/api/admin/dicts'
@@ -215,8 +215,8 @@ onMounted(load)
             </span>
           </td>
           <td class="actions">
-            <button v-if="canWrite" type="button" @click="startEdit(row)">编辑</button>
-            <button v-if="canWrite" type="button" class="danger" @click="remove(row)">删除</button>
+            <Button v-if="canWrite" @click="startEdit(row)">编辑</Button>
+            <Button v-if="canWrite" danger @click="remove(row)">删除</Button>
           </td>
         </tr>
       </tbody>
@@ -260,10 +260,8 @@ onMounted(load)
       </label>
 
       <div class="actions">
-        <button type="submit" class="primary" :disabled="saving">
-          {{ saving ? '保存中…' : '保存' }}
-        </button>
-        <button v-if="isEditing" type="button" @click="resetForm">取消编辑</button>
+        <Button type="primary" html-type="submit" :loading="saving">保存</Button>
+        <Button v-if="isEditing" @click="resetForm">取消编辑</Button>
       </div>
     </form>
   </section>
@@ -421,34 +419,8 @@ tbody tr:hover {
   gap: var(--space-1);
 }
 
-.actions button {
-  height: var(--control-height);
-  padding: 0 var(--space-3);
-  border: 1px solid var(--color-border-strong);
-  border-radius: var(--radius-sm);
-  background: var(--color-surface);
-  color: var(--color-text);
-  font: inherit;
-  font-size: var(--text-sm);
-  cursor: pointer;
-  transition: border-color var(--dur-fast) var(--ease-standard);
-}
-
-.actions button:hover:not(:disabled) {
-  border-color: var(--color-primary);
-  color: var(--color-primary);
-}
-
-.actions button.danger {
-  border-color: var(--color-danger);
-  color: var(--color-danger);
-}
-
-.actions button.danger:hover:not(:disabled) {
-  background: var(--color-danger-soft);
-  border-color: var(--color-danger);
-  color: var(--color-danger);
-}
+/* ⚠️ **行内操作按钮与表单按钮都已迁 antd** —— 不再写样式(§70.9)。
+   这一页的**页签**(`.tabs button`,空间/风格)与**分页**仍是原生的。 */
 
 /* ── 编辑 / 新增表单 ────────────────────────────────────────────────────── */
 .panel {
@@ -504,26 +476,4 @@ select:disabled {
   cursor: not-allowed;
 }
 
-button.primary {
-  height: var(--control-height);
-  padding: 0 var(--space-4);
-  border: 1px solid var(--color-primary);
-  border-radius: var(--radius-sm);
-  background: var(--color-primary);
-  color: var(--color-on-primary);
-  font: inherit;
-  font-size: var(--text-sm);
-  font-weight: 600;
-  cursor: pointer;
-}
-
-button.primary:hover:not(:disabled) {
-  background: var(--color-primary-hover);
-  border-color: var(--color-primary-hover);
-}
-
-button.primary:disabled {
-  opacity: 0.45;
-  cursor: not-allowed;
-}
 </style>
