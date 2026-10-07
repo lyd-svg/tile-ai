@@ -7,6 +7,8 @@ import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
 import com.baomidou.mybatisplus.core.toolkit.Wrappers;
+import com.tileai.common.error.BusinessException;
+import com.tileai.common.error.ErrorCode;
 import com.tileai.plan.PlanQuoteExpiryMarker;
 import com.tileai.quote.dto.QuoteParamUpsertRequest;
 import com.tileai.quote.dto.QuoteParamView;
@@ -60,6 +62,8 @@ public class QuoteParamService {
         QuoteParamKey key = QuoteParamKey.of(request.paramKey());
         // 量纲校验(D-19 / D-15):元/㎡ 与小数两种量纲,填错不会报错只会算错
         key.validate(request.paramValue());
+        // 再收一道:损耗率必须落在后台配的允许区间里(PRD §5.5「默认 6%,范围 5%~8%」)。
+        assertLossRateWithinConfiguredRange(key, request.paramValue());
 
         QuoteParam existing = quoteParamMapper.selectOne(Wrappers.<QuoteParam>lambdaQuery()
                 .eq(QuoteParam::getParamKey, request.paramKey()));
@@ -91,5 +95,45 @@ public class QuoteParamService {
         if (key.affectsQuote() && PlanQuoteExpiryMarker.priceChanged(oldValue, request.paramValue())) {
             quoteExpiryMarker.all();
         }
+    }
+
+    /**
+     * 损耗率必须落在后台配的**允许范围**里。
+     *
+     * <p>PRD §5.5 明写「默认 6%,**范围 5%~8%**」,而 {@code loss_rate_min/max} 这两个键
+     * 存在的意义就是表达这个范围(见 {@link QuoteParamKey#LOSS_RATE} 的注释)。
+     *
+     * <p>⚠️ <b>2026-10-07 补</b>:此前这条**根本没实现** —— {@code QuoteParamKey.validate}
+     * 只管到 {@code (0, 1)},于是填 {@code 0.5}(50% 损耗)**照样能过**。
+     * 而损耗率乘在<b>每一个</b>报价金额上,全店报价会一起膨胀 50 倍,
+     * <b>而数据库、接口、页面都不会报错</b>。
+     *
+     * <p>⚠️ 区间没配就**放行**(降级不阻断,架构 §13.3)—— 量纲那条
+     * {@code (0, 1)} 已经在 {@code validate} 里挡过了,这里不重复兜底。
+     */
+    private void assertLossRateWithinConfiguredRange(QuoteParamKey key, BigDecimal value) {
+        if (key != QuoteParamKey.LOSS_RATE) {
+            return;
+        }
+        BigDecimal min = paramValueOf(QuoteParamKey.LOSS_RATE_MIN);
+        BigDecimal max = paramValueOf(QuoteParamKey.LOSS_RATE_MAX);
+        if (min == null || max == null) {
+            return;
+        }
+        if (value.compareTo(min) < 0 || value.compareTo(max) > 0) {
+            throw new BusinessException(ErrorCode.PARAM_INVALID,
+                    "损耗率必须落在允许范围 " + min.toPlainString() + "~" + max.toPlainString()
+                            + " 之间(当前 " + value.toPlainString()
+                            + ";该范围对应 " + min.movePointRight(2).stripTrailingZeros().toPlainString()
+                            + "%~" + max.movePointRight(2).stripTrailingZeros().toPlainString()
+                            + "%,可在后台调整)");
+        }
+    }
+
+    /** 读某个键当前的值;没配返回 {@code null}。 */
+    private BigDecimal paramValueOf(QuoteParamKey key) {
+        QuoteParam row = quoteParamMapper.selectOne(Wrappers.<QuoteParam>lambdaQuery()
+                .eq(QuoteParam::getParamKey, key.code()));
+        return row == null ? null : row.getParamValue();
     }
 }

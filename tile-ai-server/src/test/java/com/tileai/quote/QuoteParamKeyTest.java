@@ -33,6 +33,21 @@ class QuoteParamKeyTest {
     }
 
     @Test
+    @DisplayName("辅料单价超出上限会被拒(2026-10-07 补)")
+    void auxUnitPriceRejectsAbsurdValues() {
+        // ⚠️ 此前单价量纲在 validate 里**直接 return** —— 一个字都不校验。
+        // 填个天文数字照样存进去,而它乘在**每一个**报价金额上,
+        // 量级一大就撑爆 t_plan_quote.total_amount 的 DECIMAL(12,2)。
+        BusinessException ex = assertThrows(BusinessException.class,
+                () -> QuoteParamKey.AUX_UNIT_PRICE.validate(new BigDecimal("100000000")));
+
+        assertEquals(ErrorCode.PARAM_INVALID, ex.errorCode());
+
+        // ⚠️ **上限本身必须放行** —— 这条防的是"修过头把正常值也挡住"。
+        assertDoesNotThrow(() -> QuoteParamKey.AUX_UNIT_PRICE.validate(QuoteParamKey.MAX_UNIT_PRICE));
+    }
+
+    @Test
     @DisplayName("D-15:损耗率以小数存储 —— 0.06 表示 6%,合法")
     void lossRateAcceptsFractions() {
         assertDoesNotThrow(() -> QuoteParamKey.LOSS_RATE_MIN.validate(new BigDecimal("0.06")));

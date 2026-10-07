@@ -119,6 +119,25 @@ class AdminQuoteParamIntegrationTest {
     }
 
     @Test
+    @DisplayName("损耗率超出允许区间(min~max)被拒(2026-10-07 补)")
+    void lossRateOutsideConfiguredRangeIsRejected() throws Exception {
+        // ⚠️ 此前这条**根本没实现**:`QuoteParamKey.validate` 只管到 `(0, 1)`,
+        // 填 `0.5` —— **50% 损耗** —— 照样能过。而它乘在**每一个**报价金额上,
+        // 全店报价会一起膨胀 50 倍,**且数据库、接口、页面都不会报错**。
+        // PRD §5.5 明写「默认 6%,范围 5%~8%」,`loss_rate_min/max` 就是为它存在的。
+        assertEquals(0, codeOf(upsert("loss_rate_min", "0.05")));
+        assertEquals(0, codeOf(upsert("loss_rate_max", "0.08")));
+
+        assertEquals(10001, codeOf(upsert("loss_rate", "0.5")), "50% 损耗必须被拒");
+        assertEquals(10001, codeOf(upsert("loss_rate", "0.01")), "低于下界也要被拒");
+
+        // ⚠️ **区间内的值必须放行** —— 防"修过头"。
+        assertEquals(0, codeOf(upsert("loss_rate", "0.06")));
+        assertEquals(0, codeOf(upsert("loss_rate", "0.05")), "正好在下界上要放行");
+        assertEquals(0, codeOf(upsert("loss_rate", "0.08")), "正好在上界上要放行");
+    }
+
+    @Test
     @DisplayName("D-15 反例:损耗率填 6(百分数写法)被拒 → 10001")
     void percentStyleLossRateIsRejected() throws Exception {
         MvcResult result = asAdmin(put(BASE).contentType(MediaType.APPLICATION_JSON)

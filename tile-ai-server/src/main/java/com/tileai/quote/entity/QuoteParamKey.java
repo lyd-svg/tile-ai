@@ -36,6 +36,18 @@ public enum QuoteParamKey {
     /** 损耗率上限(**允许范围**,不参与计算)。 */
     LOSS_RATE_MAX("loss_rate_max", "损耗率上限", false);
 
+    /**
+     * 单价量纲的**上限**(元/㎡)。
+     *
+     * <p>真实辅料单价(水泥砂浆等)在 20~50 之间,1000 已是 20 倍余量 ——
+     * 它只挡"手滑多打几个零",不会误伤任何正常值。
+     *
+     * <p>⚠️ 2026-10-07 补:此前单价量纲在 {@link #validate} 里**直接 return**,
+     * 一个字都不校验;而它乘在每一个报价金额上,量级一大就撑爆
+     * {@code t_plan_quote.total_amount} 的 {@code DECIMAL(12,2)}。
+     */
+    public static final BigDecimal MAX_UNIT_PRICE = new BigDecimal("1000");
+
     private final String code;
     private final String label;
     /** 是否为单价量纲(元/㎡);否则为小数比率量纲。 */
@@ -97,6 +109,14 @@ public enum QuoteParamKey {
         }
 
         if (isUnitPrice()) {
+            // ⚠️ **上限是 2026-10-07 补的**。此前单价量纲直接 `return` ——
+            // **一个字都不校验**,填个一千万照样存进去,而它乘在**每一个**报价金额上,
+            // 大一点就会撑爆 `t_plan_quote.total_amount` 的 DECIMAL(12,2)。
+            if (value.compareTo(MAX_UNIT_PRICE) > 0) {
+                throw new BusinessException(ErrorCode.PARAM_INVALID,
+                        label() + "不能超过 " + MAX_UNIT_PRICE.toPlainString() + " 元/㎡,当前值 "
+                                + value.toPlainString() + " —— 这个量级几乎一定是填错了");
+            }
             return;
         }
 
@@ -107,5 +127,11 @@ public enum QuoteParamKey {
                     label() + "必须以小数存储(0.06 表示 6%),当前值 " + value.toPlainString()
                             + " 看起来是按百分数填的");
         }
+
+        // ⚠️ **「是否落在 5%~8% 的允许区间里」不在这里校验** ——
+        // 那要读后台配的 `loss_rate_min/max`,而本枚举**不取数**(它没有 DB 访问)。
+        // 那一条在 `QuoteParamService.upsert` 里做,与这次写入同一个事务。
+        // (此前**两级都没有**:填 0.5 —— 50% 损耗 —— 照样能过,而它乘在
+        //  每一个报价金额上,全店报价会一起膨胀 50 倍且没有任何提示。)
     }
 }

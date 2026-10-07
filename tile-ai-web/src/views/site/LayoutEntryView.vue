@@ -377,8 +377,8 @@ onMounted(async () => {
                 class="opening-type"
                 :options="[{ value: 'door', label: '门' }, { value: 'window', label: '窗' }]"
               />
-              <input v-model.number="opening.w" type="number" step="0.1" min="0" placeholder="宽(米)" />
-              <input v-model.number="opening.h" type="number" step="0.1" min="0" placeholder="高(米)" />
+              <input v-model.number="opening.w" type="number" step="0.1" min="0.01" max="30" placeholder="宽(米)" />
+              <input v-model.number="opening.h" type="number" step="0.1" min="0.01" max="10" placeholder="高(米)" />
               <Select
                 v-model:value="opening.wall"
                 class="opening-wall"
@@ -389,6 +389,7 @@ onMounted(async () => {
                 type="number"
                 step="0.1"
                 min="0"
+                max="30"
                 placeholder="距墙角(米)"
               />
               <Button @click="space.openings.splice(openingIndex, 1)">移除</Button>

@@ -222,8 +222,23 @@ components:
       required: [type, w, h]
       properties:
         type: { $ref: '#/components/schemas/OpeningType' }
-        w: { type: number, format: float, description: 宽(米), example: 0.8 }
-        h: { type: number, format: float, description: 高(米), example: 2.1 }
+        w:
+          type: number
+          format: float
+          minimum: 0.01
+          maximum: 30
+          description: |
+            宽(米)。上限 **30** 与房间尺寸同源 —— 洞再大也大不过那面墙。
+            见架构 §8.3「尺寸上限的来历」。
+          example: 0.8
+        h:
+          type: number
+          format: float
+          minimum: 0.01
+          maximum: 10
+          description: |
+            高(米)。上限 **10** 与层高同源。
+          example: 2.1
         wall:
           allOf: [{ $ref: '#/components/schemas/OpeningWall' }]
           description: |
@@ -235,16 +250,21 @@ components:
           type: number
           format: float
           minimum: 0
+          maximum: 30
           description: |
             洞的**水平中心**距该墙「0 点」的距离(米)。与 `wall` **成对出现**。
             0 点约定见 `OpeningWall`;缺 `wall` 或缺本字段 = 位置未知。
+            ⚠️ **上限 30 只是防离谱**:真正"放不放得下"取决于那面墙多长,
+            而那是 schema 表达不了的 —— 由渲染器负责(放不下就跳过并记 WARN)。
           example: 0.55
         sill:
           type: number
           format: float
           minimum: 0
+          maximum: 10
           description: |
             洞底离地高度(米)。**可省略** —— 缺省按类型取:门 `0`、窗 `0.9`。
+            上限 10 与层高同源。
           example: 0.9
 
     LayoutAreas:
@@ -310,6 +330,12 @@ components:
         spaces:
           type: array
           minItems: 1
+          # ⚠️ 上限 **必须声明** —— 后端 `LayoutModel` 一直有 `@Size(max = 50)`,
+          # 而契约只有 `minItems` ⇒ **契约比实现松,且没有任何门禁能发现**
+          # (契约↔实现比对只比字段名/类型/必填/枚举,不看 maxItems,见 §40)。
+          maxItems: 50
+          description: |
+            空间列表。**至少 1 个、最多 50 个** —— 上限与后端校验一致。
           items: { $ref: '#/components/schemas/LayoutSpace' }
 
     Sku:

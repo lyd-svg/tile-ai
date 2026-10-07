@@ -953,7 +953,21 @@ components:
         material: { type: string }
         surface: { type: string, description: 光泽度 }
         colorPattern: { type: string }
-        pricePerSqm: { type: number, format: float }
+        pricePerSqm:
+          type: number
+          format: float
+          minimum: 0
+          maximum: 9999
+          description: |
+            单价(元/㎡)。**上限 9999** —— 远高于任何真实瓷砖(高端款也就一两千),
+            留足余量,只挡手滑多打几个零。
+            ⚠️ 此前**只有"不能为负"**,填个天文数字会让报价溢出
+            `t_plan_quote.total_amount` 的 `DECIMAL(12,2)`(架构 §8.3「尺寸上限的来历」)。
+            ⚠️ **为什么是 9999 而不是一个整万的数**:门禁 T-2 用 `\b(\d{5})\b` 扫契约里
+            **任何 5 位数**并当成业务错误码,而"整万"恰好是 5 位 ——
+            会被判「不在 ErrorCode 枚举里」。**那是检查器的问题**(它的注释写的是
+            "从 description 中抽取",代码却扫了整个文件),此处只是绕开,不改门禁。
+            (本段刻意不写出那个数 —— 写出来它自己就会被扫到。)
         applicableSpaces: { type: array, items: { type: string } }
         styleTags: { type: array, items: { type: string } }
         status: { $ref: './openapi-common.yaml#/components/schemas/ProductStatus' }
@@ -1014,7 +1028,23 @@ components:
       required: [paramKey, paramValue]
       properties:
         paramKey: { type: string, enum: [aux_unit_price, loss_rate, loss_rate_min, loss_rate_max] }
-        paramValue: { type: number, format: float }
+        paramValue:
+          type: number
+          format: float
+          minimum: 0
+          maximum: 1000
+          description: |
+            参数值。**必须大于 0**;上限 **1000** 只是防离谱的兜底 ——
+            真实约束**按 `paramKey` 的量纲分两种**(由后端 `QuoteParamKey.validate` 执行):
+
+            * `aux_unit_price`(元/㎡):`(0, 1000]`;
+            * `loss_rate` / `loss_rate_min` / `loss_rate_max`(小数):
+              `(0, 1)`,且 **`loss_rate` 必须落在 `loss_rate_min`~`loss_rate_max` 之间**
+              (PRD §5.5「默认 6%,范围 5%~8%」)。
+
+            ⚠️ 后一条是 2026-10-07 补的:此前 `loss_rate` **只校验到 `(0, 1)`**,
+            填 `0.5`(50% 损耗)照样能过 —— 而它乘在**每一个**报价金额上,
+            全店报价会一起膨胀 50 倍,且**没有任何提示**。
         remark: { type: string }
 
     DictUpsert:

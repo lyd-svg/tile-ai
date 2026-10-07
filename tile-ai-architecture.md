@@ -655,7 +655,7 @@ Qdrant 是**派生索引**:权威数据在 MySQL,变更后经 `queue.index.sync`
 
 | 集合 | 用途 | 向量维度 | Payload(过滤字段) |
 | --- | --- | --- | --- |
-| `product_index` | 产品语义检索/推荐(路径 C、检索工具①) | 由 Embedding 网关决定(如 1024) | sku_code, name, material, surface, style_tags, spaces, price, status |
+| `product_index` | 产品语义检索/推荐(路径 C、检索工具①) | 由 Embedding 网关决定(如 1024) | sku_code, name, material, surface, **spec**, **color_pattern**, style_tags, spaces, price, status |
 | `combo_index` | 搭配方案检索 | 同上 | combo_id, name, space, style, status |
 | `kb_index` | 瓷砖知识库/FAQ(对话兜底与知识问答) | 同上 | doc_id, category, title, source |
 
@@ -665,6 +665,22 @@ Qdrant 是**派生索引**:权威数据在 MySQL,变更后经 `queue.index.sync`
 - **搭配**:嵌入文本 = `搭配名 + 空间 + 风格 + 所含产品摘要`。
 - **知识库**:按语义段落切片(建议 300–500 字,带重叠),嵌入后入库。
 - **一致性**:SKU 上下架/改价时,payload 的 `status`/`price` 同步更新;下架产品在检索过滤中排除。
+
+> **补漏(2026-10-07):`spec` 与 `color_pattern` 进 payload**
+>
+> §9.3 的产品嵌入公式里**本来就有「规格 + 花色纹理」**,而 §9.2 的 Payload 列
+> **从来没给过这两个字段** —— 于是实现拿不到,只能把这两项从公式里省掉
+> (`embedding.py` 里还留着一句"payload 里没有 spec / color_pattern ——
+> §9.2 的 Payload 列未包含它们。这是契约给定的字段集,不要擅自扩字段")。
+>
+> **后果是实打实的**:用户描述一块砖时最常说的恰恰是**花色**("浅灰**大理石纹**""木纹")
+> 和**规格**("750×1500 的"),而这两类词**一个都没进向量** ——
+> 用户最难表达清楚的东西,恰好没被索引。
+>
+> ⇒ 本次把两个字段补进 §9.2 的 Payload 列,**让实现回到 §9.3 原本的要求**。
+> 这是**补漏,不是扩字段**。契约(AsyncAPI 的 `IndexSyncItem.payload`)同步。
+>
+> ⚠️ 补完之后**必须跑一次全量重建** —— 旧向量的文本里没有这两项,不重建就新旧不一致。
 
 ### 9.4 检索流程(路径 C)
 

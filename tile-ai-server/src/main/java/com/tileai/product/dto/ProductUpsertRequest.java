@@ -4,6 +4,7 @@ import java.math.BigDecimal;
 import java.util.List;
 
 import jakarta.validation.Valid;
+import jakarta.validation.constraints.DecimalMax;
 import jakarta.validation.constraints.DecimalMin;
 import jakarta.validation.constraints.NotBlank;
 import jakarta.validation.constraints.NotNull;
@@ -48,7 +49,10 @@ public record ProductUpsertRequest(
         String colorPattern,
 
         @NotNull(message = "单价不能为空")
+        // ⚠️ 上限必须有(2026-10-07):此前**只有"不能为负"**,填个天文数字会让
+        // 报价溢出 `t_plan_quote.total_amount` 的 DECIMAL(12,2)。见架构 §8.3。
         @DecimalMin(value = "0.00", message = "单价不能为负")
+        @DecimalMax(value = "9999", message = "单价不能超过 9999 元/㎡")
         BigDecimal pricePerSqm,
 
         @Size(max = 50, message = "适用空间过多")

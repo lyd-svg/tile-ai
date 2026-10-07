@@ -101,14 +101,45 @@ async function load() {
   }
 }
 
-/** 本地校验。返回错误文案,通过则返回空串。 */
+/** 辅料单价上限(元/㎡)。与后端 `QuoteParamKey.MAX_UNIT_PRICE` 是同一个数。 */
+const MAX_AUX_UNIT_PRICE = 1000
+
+/**
+ * 本地校验。返回错误文案,通过则返回空串。
+ *
+ * ⚠️ **上限是 2026-10-07 补的** —— 此前单价只挡"不能为负"、
+ * 损耗率只挡"(0, 1)",填个一千万或 `0.5`(**50% 损耗**)都能提交。
+ * 而这两个值乘在**每一个**报价金额上,一改就是全店报价一起失真,
+ * **且数据库、接口、页面都不会报错**。
+ *
+ * 后端 `QuoteParamKey.validate` 与 `QuoteParamService` 也同步收紧了;
+ * 这里加一道只是让用户**当场**看见,不用等服务端往返。
+ */
 function validate(row: RowState): string {
   const text = row.input.trim()
   if (text === '') return '请填写数值(未配置不会自动按 0 处理)'
   const value = Number(text)
   if (!Number.isFinite(value)) return '不是有效数字'
-  if (row.key === 'aux_unit_price') return value < 0 ? '不能为负' : ''
-  return value <= 0 || value >= 1 ? '损耗率是小数,应落在 0 与 1 之间(0.06 表示 6%)' : ''
+
+  if (row.key === 'aux_unit_price') {
+    if (value < 0) return '不能为负'
+    if (value > MAX_AUX_UNIT_PRICE) {
+      return `不能超过 ${MAX_AUX_UNIT_PRICE} 元/㎡ —— 这个量级几乎一定是填错了`
+    }
+    return ''
+  }
+
+  if (value <= 0 || value >= 1) return '损耗率是小数,应落在 0 与 1 之间(0.06 表示 6%)'
+
+  // 损耗率还要落在「允许范围」里 —— 那个范围就是另外两个键配的值(PRD §5.5)。
+  if (row.key === 'loss_rate') {
+    const min = rows.value.find((item) => item.key === 'loss_rate_min')?.value
+    const max = rows.value.find((item) => item.key === 'loss_rate_max')?.value
+    if (min != null && max != null && (value < min || value > max)) {
+      return `必须落在 ${min}~${max} 之间(对应的百分数为 ${percentHint(min)}~${percentHint(max)})`
+    }
+  }
+  return ''
 }
 
 async function save(row: RowState) {

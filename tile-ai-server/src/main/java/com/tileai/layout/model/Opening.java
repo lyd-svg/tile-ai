@@ -4,6 +4,7 @@ import java.math.BigDecimal;
 
 import com.fasterxml.jackson.annotation.JsonInclude;
 
+import jakarta.validation.constraints.DecimalMax;
 import jakarta.validation.constraints.DecimalMin;
 import jakarta.validation.constraints.NotNull;
 import jakarta.validation.constraints.Pattern;
@@ -53,10 +54,12 @@ public record Opening(
 
         @NotNull(message = "开口宽不能为空")
         @DecimalMin(value = "0.01", message = "开口宽必须大于 0")
+        @DecimalMax(value = "30", message = "开口宽不能超过 30 米")
         BigDecimal w,
 
         @NotNull(message = "开口高不能为空")
         @DecimalMin(value = "0.01", message = "开口高必须大于 0")
+        @DecimalMax(value = "10", message = "开口高不能超过 10 米")
         BigDecimal h,
 
         /**
@@ -70,9 +73,11 @@ public record Opening(
 
         /** 洞的水平中心距该墙「0 点」的距离(米)。与 {@code wall} 成对出现。 */
         @DecimalMin(value = "0.00", message = "位置偏移不能为负")
+        @DecimalMax(value = "30", message = "位置偏移不能超过 30 米")
         BigDecimal offset,
 
         /** 洞底离地高度(米)。{@code DecimalMin} 同样对 {@code null} 放行。 */
         @DecimalMin(value = "0.00", message = "离地高度不能为负")
+        @DecimalMax(value = "10", message = "离地高度不能超过 10 米")
         BigDecimal sill) {
 }

@@ -392,11 +392,11 @@ onMounted(async () => {
               </label>
               <label>
                 宽(米)
-                <input v-model="opening.w" type="number" step="0.01" />
+                <input v-model="opening.w" type="number" step="0.01" min="0.01" max="30" />
               </label>
               <label>
                 高(米)
-                <input v-model="opening.h" type="number" step="0.01" />
+                <input v-model="opening.h" type="number" step="0.01" min="0.01" max="10" />
               </label>
               <label>
                 哪面墙(可选)
@@ -408,11 +408,11 @@ onMounted(async () => {
               </label>
               <label>
                 距墙角(米)
-                <input v-model="opening.offset" type="number" step="0.01" />
+                <input v-model="opening.offset" type="number" step="0.01" min="0" max="30" />
               </label>
               <label>
                 离地高(米)
-                <input v-model="opening.sill" type="number" step="0.01" placeholder="门 0 / 窗 0.9" />
+                <input v-model="opening.sill" type="number" step="0.01" min="0" max="10" placeholder="门 0 / 窗 0.9" />
               </label>
               <Button @click="removeOpening(spaceIndex, openingIndex)">移除</Button>
             </li>

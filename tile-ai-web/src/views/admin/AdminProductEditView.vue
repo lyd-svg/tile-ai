@@ -193,11 +193,12 @@ onMounted(async () => {
           <InputNumber
             :value="form.pricePerSqm"
             :min="0"
+            :max="9999"
             :step="0.01"
             class="num-input"
             @update:value="(v) => (form.pricePerSqm = Number(v ?? 0))"
           />
-          <small>元/㎡ —— 报价引擎按此乘面积与损耗率</small>
+          <small>元/㎡ —— 报价引擎按此乘面积与损耗率;上限 9999(防手滑多打几个零)</small>
         </label>
 
         <label class="field">
