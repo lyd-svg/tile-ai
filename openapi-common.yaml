@@ -428,7 +428,11 @@ components:
             第 1 张为 `default`;第 k 张(`k ≥ 2`)为 `angle{k-1}`。
             故 N 张的视角为 `default` + `angle1`…`angle{N-1}`(N=1 时仅 `default`)。
             命名式以 `angle{N-1}` 收尾而非 `angleN`,是因为**张数必须等于角度数**。
-            §10.6①、§8.4;裁决与追溯见 `openapi-verification.md` §32
+            ⚠️ **2026-10-07 收窄**:`GenerateRequest.angles` 上限已锁为 1,
+            **新方案一律只有 `default`**;但**本节命名规则不变** ——
+            存量方案仍会出现 `angle1`…`angle3`,读取方须照常处理。
+            见 `openapi-verification.md` §74。
+            §10.6①、§8.4;命名裁决的追溯见 §32
           example: default
         isCover: { type: boolean }
 

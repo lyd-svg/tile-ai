@@ -157,7 +157,7 @@ operations:
     summary: 消费生成任务
     description: |
       Python 消费并**手动 ACK**。处理流程:材质映射 → 陈设提示词组装 →
-      内容安全审核 → 调用图像网关(默认 1 张;`angles > 1` 为多角度)。
+      内容安全审核 → 调用图像网关(**只出一张**;`angles` 已锁为 1,见 §74)。
       完成后经 `POST /internal/generate/callback` 回传,不在此队列回投。
       **必须以 `taskId` 去重**(架构 §6.4)。
     channel:
@@ -300,12 +300,13 @@ components:
         angles:
           type: integer
           minimum: 1
-          maximum: 4
+          maximum: 1
           default: 1
           description: |
-            **生成张数**。默认 1(单张);>1 为多角度,每个角度 1 张 ——
-            **张数 = angles**。视角命名见 `common.PlanImage.view`。
-            上限 **4**,与已定义机位数一致(架构 §7.3)。PRD §5.4。
+            **生成张数**。取值**恒为 1** —— 每个空间只出一张效果图。
+            2026-10-07 收窄:原上限 4(多角度、每角度一张)已取消,
+            字段保留仅为将来恢复留回头路。视角命名见 `common.PlanImage.view`;
+            理由与追溯见 `openapi-verification.md` §74。PRD §5.4。
         parts:
           type: array
           minItems: 1

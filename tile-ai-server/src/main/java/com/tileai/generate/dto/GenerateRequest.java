@@ -31,13 +31,19 @@ public record GenerateRequest(
         String style,
 
         /**
-         * 生成张数。默认 1;>1 为多角度,每个角度 1 张 —— <b>张数 = angles</b>。
+         * 生成张数。契约 {@code GenerateRequest.angles}。
          *
-         * <p>上限 4 与已定义机位数一致(契约 {@code maximum: 4};架构 §7.3)。
-         * 每个角度是一次真实出图(单张 ≤60s 且计费),超出机位数只会拿到重复机位。
+         * <p><b>2026-10-07 收窄:上限由 4 锁为 1,取值恒为 1</b> ——
+         * 每个空间只出一张效果图,视角固定 {@code default}。
+         * 原"多角度"是四次独立出图、彼此没有任何一致性保证,既慢又贵还把问题放大;
+         * 当时卡住的是单张画质。裁决与追溯见 {@code openapi-verification.md} §74。
+         *
+         * <p><b>字段保留而不删</b>,是为"将来用多机位底图恢复多角度"留回头路 ——
+         * 恢复时把这里的 {@code @Max} 与契约的 {@code maximum} 一起改回去即可。
+         * 传 2 及以上会被校验拦下,统一返 {@code 10001}。
          */
         @Min(value = 1, message = "角度数至少为 1")
-        @Max(value = 4, message = "角度数最多为 4")
+        @Max(value = 1, message = "角度数最多为 1:每个空间只出一张效果图")
         Integer angles,
 
         /** 重新编辑时携带:非空表示覆盖原方案(架构 §11.4);为空则新建。 */

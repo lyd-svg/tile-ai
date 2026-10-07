@@ -58,9 +58,6 @@ function labelOf(map: Record<string, string>, key: string): string {
 
 const space = ref('')
 const style = ref('')
-const angles = ref(1)
-/** 张数 = 角度数(不是 +1)—— 文案要说清,免得用户以为多送一张 */
-const ANGLE_CHOICES = [1, 2, 3, 4]
 
 const ready = computed(() => draft.layout !== null && draft.hasParts)
 const selectedParts = computed<PartSelection[]>(() => draft.toPartSelections())
@@ -177,7 +174,10 @@ async function submit() {
       space: space.value,
       // 风格可留空 —— 空串不要当值发出去
       style: style.value || undefined,
-      angles: angles.value,
+      // 每个空间固定出一张(2026-10-07 产品决定,契约上限已锁为 1)。
+      // 这里**显式发送**而不是省掉:契约里这个字段是必填语义的"张数",
+      // 显式写 1 比依赖服务端默认值更不容易在将来被改错。
+      angles: 1,
       layout: draft.layout!,
       parts: selectedParts.value,
     })
@@ -346,15 +346,6 @@ onBeforeUnmount(cancelPolling)
           />
         </label>
 
-        <label>
-          出图张数
-          <Select
-            v-model:value="angles"
-            class="angle-select"
-            :options="ANGLE_CHOICES.map((count) => ({ value: count, label: `${count} 张` }))"
-          />
-          <small>每张一个视角(正面 + 各角度),不是在此之上再加一张。</small>
-        </label>
       </div>
 
       <!-- ---------------------------- 部位 ---------------------------- -->

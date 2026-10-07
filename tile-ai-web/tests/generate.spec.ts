@@ -15,9 +15,8 @@ import { flushPromises, mount } from '@vue/test-utils'
 import { createPinia, setActivePinia } from 'pinia'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
-import { normalize, openSelect, pickSelectOption, selectedText } from './helpers/antd'
+import { normalize, selectedText } from './helpers/antd'
 import { createMemoryHistory, createRouter } from 'vue-router'
-import { nextTick } from 'vue'
 
 import { BusinessError, ErrorCode } from '../src/api/errors'
 import GenerateView from '../src/views/site/GenerateView.vue'
@@ -112,7 +111,8 @@ describe('前置检查', () => {
 
     // ⚠️ antd `Select` **不是 `<select>`**(§72.6)—— 数出来的是 `.ant-select`,
     //    选中项要读文案而不是 `element.value`。
-    expect(wrapper.findAll('.ant-select').length).toBe(3)
+    // **2 个**:空间 + 风格。「出图张数」已于 2026-10-07 移除(一次只出一张,§74)。
+    expect(wrapper.findAll('.ant-select').length).toBe(2)
     expect(selectedText(wrapper.find('.space-select'))).toBe('卫生间')
   })
 })
@@ -271,8 +271,11 @@ describe('轮询', () => {
   })
 })
 
-describe('多角度图片', () => {
-  it('angles=2 出两张图,按 view 标注(不是靠下标猜)', async () => {
+// ⚠️ **2026-10-07**:生成侧已锁为一次一张(§74),页面上**不再有「出图张数」选择器**。
+// 但**存量方案里仍有 `angle1…angle3`** —— 展示逻辑必须照常接得住,
+// 所以本组用例**保留**,改为直接喂一份"带两张图"的进度响应(等价于打开一份旧方案)。
+describe('存量多角度方案的展示', () => {
+  it('两张图按 view 标注并渲染,点缩略图能切换(不靠数组下标猜)', async () => {
     submitGenerate.mockResolvedValue({ taskId: 'g_1', status: 'pending' })
     getGenerateProgress.mockResolvedValue({
       taskId: 'g_1',
@@ -284,18 +287,12 @@ describe('多角度图片', () => {
     })
     const { wrapper } = await mountView()
 
-    // 张数改成 2 —— 张数 = 角度数,不是 +1
-    // ⚠️ **必须在 `vi.useFakeTimers()` 之前**改:antd 的 `Select` 下拉要靠真实的
-    //    定时 / 动画帧才渲染得出来,假定时器下**点不开**(§72.6)。
-    await openSelect(wrapper.find('.angle-select'))
-    pickSelectOption('2 张')
-    await nextTick()
-
     vi.useFakeTimers()
     await startGeneration(wrapper)
 
+    // 新提交的一律是 1 张 —— 选择器没了,页面固定发 1
     expect(submitGenerate).toHaveBeenCalledWith(
-      expect.objectContaining({ angles: 2 }),
+      expect.objectContaining({ angles: 1 }),
     )
 
     await tick()

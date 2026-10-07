@@ -14,8 +14,11 @@ export interface GenerateRequest {
   /** 装修风格。**可留空** */
   style?: string
   /**
-   * **生成张数**。1–4,默认 1。
-   * **张数 = angles,不是 angles+1** —— 见 `PlanImage.view`。
+   * **生成张数**。取值**恒为 1** —— 每个空间只出一张效果图。
+   *
+   * 2026-10-07 收窄:原 1–4(多角度)已取消,上限锁为 1;传 >1 服务端返 `10001`。
+   * 字段保留是为将来恢复留回头路,不代表可以传更大的值。
+   * 页面上已不再暴露选择器,固定发 1。§74。
    */
   angles?: number
   /** 重新编辑时携带;不带则新建方案,新 id 经 `TaskProgress.planId` 回传 */
@@ -46,7 +49,7 @@ export interface TaskProgress {
   progress?: number
   /** 成功后方案 id */
   planId?: number | null
-  /** 成功后可用。张数 = 提交时的 angles */
+  /** 成功后可用。**当前恒定 1 张**(`angles` 已锁为 1,§74);按 `view` 读取,不要靠下标 */
   images?: PlanImage[]
   /** 含 AI 补齐后的完整部位(source=ai 标注) */
   parts?: PartSelection[]

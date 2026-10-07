@@ -253,9 +253,10 @@ class GenerateIntegrationTest {
     }
 
     @Test
-    @DisplayName("受理:angles 超过 4 被拒(与已定义机位数一致)")
+    @DisplayName("受理:angles 超过 1 被拒(2026-10-07 上限锁为 1)")
     void tooManyAnglesIsParamInvalid() throws Exception {
-        assertEquals(10001, codeOf(mvc.perform(postGenerate(generateBody(null, 5))).andReturn()));
+        assertEquals(10001, codeOf(mvc.perform(postGenerate(generateBody(null, 2))).andReturn()),
+                "每个空间只出一张;>1 已不再是合法取值(openapi-verification.md §74)");
     }
 
     @Test
@@ -279,7 +280,7 @@ class GenerateIntegrationTest {
     @Test
     @DisplayName("投递:消息真的进了 queue.generate,必填字段齐备(§asyncapi)")
     void acceptedMessageReachesQueue() throws Exception {
-        String taskId = taskIdOf(postGenerate(generateBody(null, 2)));
+        String taskId = taskIdOf(postGenerate(generateBody(null, 1)));
 
         JsonNode message = awaitMessage(taskId);
 
@@ -289,7 +290,8 @@ class GenerateIntegrationTest {
             assertTrue(message.hasNonNull(field), "消息体缺必填字段 " + field + ": " + message);
         }
         assertEquals("image", message.get("type").asText());
-        assertEquals(2, message.get("angles").asInt());
+        assertEquals(1, message.get("angles").asInt(),
+                "angles 已锁为 1(§74)—— 字段仍在消息体里,Python 侧读的就是它");
         assertEquals(GenerateTaskPayload.INITIAL_ATTEMPT, message.get("attempt").asInt(),
                 "首次投递 attempt 必须是 1(contract minimum: 1)");
         assertEquals(USER, message.get("userId").asLong());
@@ -363,7 +365,10 @@ class GenerateIntegrationTest {
     @Test
     @DisplayName("状态机:success 回调落方案 —— 户型加密、部位带毛面积、图按视角顺序、封面唯一")
     void successCallbackSavesPlan() throws Exception {
-        String taskId = taskIdOf(postGenerate(generateBody(null, 2)));
+        // 受理时 angles 只能是 1(§74),但**回调的 imageUrls 仍可携带多张** ——
+        // 契约没有"图数必须等于 angles"这条约束,而存量方案里就躺着 angle1…angle3。
+        // 所以这里刻意用一次两图回调,把"按 view 排列 + 封面唯一"这条落库规则钉住。
+        String taskId = taskIdOf(postGenerate(generateBody(null, 1)));
 
         MvcResult accepted = callback(successBody(taskId, "default", "angle1"));
         assertEquals(0, codeOf(accepted));
@@ -400,7 +405,7 @@ class GenerateIntegrationTest {
 
         List<PlanImage> images = planImageMapper.selectList(Wrappers.<PlanImage>lambdaQuery()
                 .eq(PlanImage::getPlanId, task.getPlanId()).orderByAsc(PlanImage::getId));
-        assertEquals(2, images.size(), "angles=2 ⇒ 恰好 2 张");
+        assertEquals(2, images.size(), "回调给了 2 张 ⇒ 恰好落 2 行");
         assertEquals("default", images.get(0).getView());
         assertEquals("angle1", images.get(1).getView());
         assertTrue(images.get(0).getIsCover(), "封面是 default 那张(D-5 定它为基准机位)");
@@ -410,15 +415,15 @@ class GenerateIntegrationTest {
     @Test
     @DisplayName("状态机:success 后轮询能拿到 planId 与图,前端据此跳转方案详情")
     void progressReturnsImagesAfterSuccess() throws Exception {
-        String taskId = taskIdOf(postGenerate(generateBody(null, 2)));
-        callback(successBody(taskId, "default", "angle1"));
+        String taskId = taskIdOf(postGenerate(generateBody(null, 1)));
+        callback(successBody(taskId, "default"));
 
         JsonNode data = dataOf(progressOf(taskId));
 
         assertEquals(GenerationTask.STATUS_SUCCESS, data.get("status").asText());
         assertEquals(100, data.get("progress").asInt());
         assertTrue(data.get("planId").asLong() > 0);
-        assertEquals(2, data.get("images").size());
+        assertEquals(1, data.get("images").size(), "现在每次只出一张(§74)");
         assertEquals("default", data.get("images").get(0).get("view").asText());
         assertTrue(data.get("images").get(0).get("isCover").asBoolean());
     }
@@ -426,7 +431,9 @@ class GenerateIntegrationTest {
     @Test
     @DisplayName("方案:带 planId 重新生成 = 覆盖同一个方案,行数不翻倍(先删后插)")
     void regenerateOverwritesSamePlan() throws Exception {
-        long planId = planIdOf(taskIdAfterSuccess(null, 2));
+        // 第一版刻意落 **2 张图**(回调允许带多张,存量方案里就有 angle1…angle3),
+        // 这样才能验到"覆盖时上一版的多张被清干净",而不是只清掉一张。
+        long planId = planIdOf(taskIdAfterSuccess(null, 1, "default", "angle1"));
 
         // 第二次:带 planId 覆盖,且这次只出 1 张
         String secondTaskId = taskIdOf(postGenerate(generateBody(planId, 1)));
@@ -448,8 +455,8 @@ class GenerateIntegrationTest {
     @Test
     @DisplayName("幂等:同一条 success 回调发两次,第二次返回成功但一行都不改")
     void duplicateSuccessCallbackChangesNothing() throws Exception {
-        String taskId = taskIdOf(postGenerate(generateBody(null, 2)));
-        String body = successBody(taskId, "default", "angle1");
+        String taskId = taskIdOf(postGenerate(generateBody(null, 1)));
+        String body = successBody(taskId, "default");
 
         assertEquals(0, codeOf(callback(body)));
         long planId = taskOf(taskId).getPlanId();
@@ -470,9 +477,9 @@ class GenerateIntegrationTest {
     @Test
     @DisplayName("幂等(并发):两个线程同时发同一条 success,只产生一份方案")
     void concurrentSuccessCallbacksProduceExactlyOnePlan() throws Exception {
-        String taskId = taskIdOf(postGenerate(generateBody(null, 2)));
+        String taskId = taskIdOf(postGenerate(generateBody(null, 1)));
         GenerateCallbackRequest request = objectMapper.readValue(
-                successBody(taskId, "default", "angle1"), GenerateCallbackRequest.class);
+                successBody(taskId, "default"), GenerateCallbackRequest.class);
 
         // 直接打服务层,不经 MockMvc:这里要验的是"条件更新能不能在真并发下串行化",
         // 而 MockMvc 的线程安全性不是本用例的靶子。
@@ -499,8 +506,8 @@ class GenerateIntegrationTest {
         assertEquals(1, planMapper.selectCount(Wrappers.<Plan>lambdaQuery()
                 .eq(Plan::getUserId, USER)), "两个并发回调各存一份方案 = 幂等被绕过了");
         Long planId = taskOf(taskId).getPlanId();
-        assertEquals(2, planImageMapper.selectCount(Wrappers.<PlanImage>lambdaQuery()
-                .eq(PlanImage::getPlanId, planId)), "图也该只有一份");
+        assertEquals(1, planImageMapper.selectCount(Wrappers.<PlanImage>lambdaQuery()
+                .eq(PlanImage::getPlanId, planId)), "图也不该被并发回调插成两份");
     }
 
     // ===============================================================
@@ -615,13 +622,17 @@ class GenerateIntegrationTest {
     // 工具
     // ===============================================================
 
-    /** 受理一次生成,返回 taskId。 */
-    private String taskIdAfterSuccess(Long planId, Integer angles) throws Exception {
+    /**
+     * 受理一次生成,返回 taskId。
+     *
+     * <p>{@code views} 是回调要带的视角名,**缺省只有 {@code default}**。
+     * 需要"上一次落多张图"的场景(如覆盖重生成)显式传 {@code "default", "angle1"} ——
+     * 受理侧的 {@code angles} 已锁为 1(§74),但**回调的 imageUrls 仍可以是多张**。
+     */
+    private String taskIdAfterSuccess(Long planId, Integer angles, String... views) throws Exception {
         String taskId = taskIdOf(postGenerate(generateBody(planId, angles)));
-        String body = angles != null && angles > 1
-                ? successBody(taskId, "default", "angle1")
-                : successBody(taskId, "default");
-        assertEquals(0, codeOf(callback(body)));
+        String[] actual = views.length > 0 ? views : new String[]{"default"};
+        assertEquals(0, codeOf(callback(successBody(taskId, actual))));
         return taskId;
     }
 

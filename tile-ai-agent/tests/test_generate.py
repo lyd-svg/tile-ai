@@ -198,7 +198,12 @@ def test_single_angle_reports_running_then_success() -> None:
 
 
 def test_multi_angle_calls_gateway_once_per_view_and_reports_progress() -> None:
-    """3 个角度 → 网关被调 3 次(不是一次 n=3),进度 33 / 66,最后一次直接 success。"""
+    """3 个角度 → 网关被调 3 次(不是一次 n=3),进度 33 / 66,最后一次直接 success。
+
+    ⚠️ **2026-10-07**:契约已把 `angles` 上限锁为 1(§74),所以这条
+    **验的是编排层的模块能力,不是可达路径**。保留这些用例是有意的 ——
+    编排层仍按 N 张正确工作,将来用多机位底图恢复多角度时不用改这里。
+    """
     outcome, gateway, callback = run(payload_of(angles=3))
 
     assert [call["n"] for call in gateway.calls] == [1, 1, 1], \

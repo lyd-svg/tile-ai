@@ -245,6 +245,10 @@ export type TaskStatus = 'pending' | 'running' | 'success' | 'failed'
  *
  * **张数 = `angles`**(不是 angles+1)。第 1 张 `view = default` 且 `isCover = true`;
  * 第 k 张(`k ≥ 2`)为 `angle{k-1}`。展示时**按 `view` 区分,不要靠数组下标猜**。
+ *
+ * ⚠️ **2026-10-07**:`angles` 上限已锁为 1,新方案**恒定 1 张**;
+ * 但**存量方案里仍有 `angle1…angle3`** —— 展示逻辑(缩略图、切换视角)
+ * **照旧保留**,不要按"最多只剩一张"去简化。
  */
 export interface PlanImage {
   url: string

@@ -112,6 +112,11 @@ DEFAULT_VIEW = "default"
 #: 上游只定了**命名**(契约 `PlanImage.view`,D-5),语义由本处决定
 #: (2026-09-30,见 `openapi-verification.md` §33)。要加/改机位就改这一个表 —
 #: 名字里的序号与 `views_for_angles` 生成的视角名一一对应。
+#:
+#: ⚠️ **2026-10-07:契约把 `angles` 上限锁为 1,当前只有 `DEFAULT_VIEW` 会被用到。**
+#: 其余三个机位**保留、不删** —— 它们是"同一间房的不同机位"的现成资产,
+#: 将来用**多机位底图**恢复多角度时可直接启用(恢复时要把 `MAX_ANGLES` 与
+#: 契约的 `maximum` 一起改回去)。见 `openapi-verification.md` §74。
 VIEW_PHRASES: Mapping[str, str] = {
     DEFAULT_VIEW: "正面平视全景，镜头与视线同高",
     "angle1": "从房间一角斜向俯视，同时看到地面与两面墙",
@@ -122,15 +127,21 @@ VIEW_PHRASES: Mapping[str, str] = {
 #: 要的视角超出上表时的兜底。不重复已有表述 —— 重复的机位只会得到一张
 #: 近乎一样的图,那是在浪费一次生成(单图 ≤60s 且要计费)。
 #:
-#: ⚠️ 契约已封 `angles` 上限(`GenerateRequest.maximum: 4`,架构 §7.3),
+#: ⚠️ 契约已封 `angles` 上限(`GenerateRequest.maximum: 1`,§74),
 #: 所以**正常路径走不到这里**。留着它是纵深防御:本模块也会被内部调用方直接使用,
 #: 不该因为对方没做校验就崩或默默越界。
 ANGLE_FALLBACK_PHRASE = "换一个拍摄角度"
 
-#: 契约允许的最大角度数(`GenerateRequest.angles.maximum`)。
-#: **它必须等于 `VIEW_PHRASES` 的条目数** —— 上限就是"有多少个已定义机位"。
-#: 加机位就要同步改契约的 `maximum`(测试里有一条盯住这个等式)。
-MAX_ANGLES = 4
+#: **契约允许的最大张数**(`GenerateRequest.angles.maximum`)。
+#:
+#: ⚠️ **2026-10-07 由 4 收窄为 1** —— 每个空间只出一张效果图。
+#: 理由与追溯见 `openapi-verification.md` §74。
+#:
+#: ⚠️ **它不再等于 `VIEW_PHRASES` 的条目数**(那是 4)。这是**有意的**:
+#: 机位表是"能力",上限是"当前产品决定"。改这个值时必须同步改三处契约
+#: (`openapi-c.yaml`、`asyncapi-internal.yaml` 的 `maximum`,以及 Java 的 `@Max`),
+#: 测试里有一条盯住 Python 侧与契约的一致性。
+MAX_ANGLES = 1
 
 #: 多角度时附加的不变量:多张图必须像"同一张照片的不同角度"。
 #:

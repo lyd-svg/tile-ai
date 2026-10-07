@@ -459,6 +459,12 @@ def test_missing_furnish_source_degrades_too():
 
 # ----------------------------------------------------------------------
 # 视角(D-5)
+#
+# ⚠️ **2026-10-07**:契约已把 `angles` 上限锁为 1(§74),所以下面以
+# `angles=2/3` 直接调 `build_prompts` / `views_for_angles` 的用例,
+# **验的是模块能力,不是可达路径** —— 契约层面进不来了。
+# 这些能力**刻意保留**(多机位底图恢复多角度时要用),故用例一并保留。
+# "上限确实是 1"这件事由上面那两条用例钉住。
 # ----------------------------------------------------------------------
 
 def test_single_angle_yields_exactly_one_default_view():
@@ -501,28 +507,33 @@ def test_angle_views_get_a_distinct_hint_but_share_the_scene():
 # ----------------------------------------------------------------------
 
 def test_every_named_view_has_its_own_camera_position():
-    """四个机位各不相同 —— 重复的机位只会得到一张近乎一样的图,白花一次生成。"""
-    assert views_for_angles(MAX_ANGLES) == ("default", "angle1", "angle2", "angle3")
-    phrases = [view_phrase(name) for name in views_for_angles(MAX_ANGLES)]
-    assert len(set(phrases)) == MAX_ANGLES
+    """机位表里每个机位各不相同 —— 重复的机位只会得到一张近乎一样的图,白花一次生成。
+
+    ⚠️ 遍历的是**机位表本身**,不是 `views_for_angles(MAX_ANGLES)` ——
+    上限 2026-10-07 已锁为 1(§74),拿它当表长会只看到 `default` 一项。
+    """
+    names = tuple(VIEW_PHRASES)
+    assert len(names) == 4, "四个机位是保留资产,见下一条用例"
+    phrases = [view_phrase(name) for name in names]
+    assert len(set(phrases)) == len(names)
     assert all(phrases)
 
 
-def test_max_angles_equals_the_number_of_defined_camera_positions():
-    """`angles` 的上限就是"有多少个已定义机位"。
+def test_angles_ceiling_is_locked_to_one_and_the_camera_table_is_kept():
+    """**上限锁为 1,但机位表保留。** 两者不再相等,这是有意的。
 
-    契约里的 `GenerateRequest.angles.maximum: 4`(架构 §7.3)与这张机位表
-    必须同步 —— 加机位时忘了改契约,用户就会被挡在"已经支持"的角度之外;
-    改了契约忘了加机位,多出来的那张图只能是重复的机位。
-    这条断言把两者钉在一起。
+    2026-10-07 用户拍板:每个空间只出一张效果图(理由见 `openapi-verification.md` §74)。
+    机位表不删 —— 它是"同一间房的不同机位"的现成资产,将来用**多机位底图**
+    恢复多角度时可直接启用。
+
+    这条断言同时钉住两件事:
+    ① 上限确实是 1(与契约三处 `maximum` 一致);
+    ② 机位表**没有被顺手删掉** —— 删了就是把回头路堵死,而且看不出代价。
     """
-    assert MAX_ANGLES == len(VIEW_PHRASES)
-
-
-def test_the_api_ceiling_is_actually_reachable():
-    """上限处仍必须给出四个**互不相同**的真实机位,不能是靠兜底凑数。"""
-    names = views_for_angles(MAX_ANGLES)
-    assert all(name in VIEW_PHRASES for name in names)
+    assert MAX_ANGLES == 1
+    assert views_for_angles(MAX_ANGLES) == (DEFAULT_VIEW,)
+    assert DEFAULT_VIEW in VIEW_PHRASES
+    assert len(VIEW_PHRASES) > MAX_ANGLES, "机位表刻意比上限长:它是能力,上限是产品决定"
 
 
 def test_camera_positions_are_ordered_from_overview_to_detail():
