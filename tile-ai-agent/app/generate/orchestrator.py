@@ -42,6 +42,7 @@ import math
 from dataclasses import dataclass
 from typing import Any, Mapping, Protocol, Sequence
 
+from app.agent.basemodel import basemodel_data_uri
 from app.agent.prompt import (
     DEFAULT_VIEW,
     FurnishSource,
@@ -58,6 +59,16 @@ from app.gateway.errors import (
 from app.gateway.ports import ImageGenGateway
 
 logger = logging.getLogger(__name__)
+
+#: 白模启用时,瓷砖参考图最多带几张。
+#:
+#: ⚠️ **这条不是为了省流量,是为了防"悄悄丢砖"。** 适配器的参考图上限是 4 张,
+#: 而**超出时是截断 + 记 WARN,不报错**(见 `siliconflow_image.py`)。白模要占掉第 1 张,
+#: 所以瓷砖必须在这里先截到 3 张 —— 否则"地面 2 块 + 墙面 2 块"这种组合会丢掉一张,
+#: 用户看到的是"我明明选了那块砖,它却没铺上",而日志里只有一条 WARN。
+#:
+#: 换模型时这条要重核(架构 §15.1:参考图上限反向约束产品能力)。
+MAX_TILE_REFS_WITH_BASEMODEL = 3
 
 #: 契约 `common.ErrorCode` 的 40001 —— 生成失败。
 #: Java 侧**原样记录**这个码,不翻译(§10.4 约定 1 管的是 Java *返回* 的码)。
@@ -119,6 +130,7 @@ def run_generate_task(
     callback: CallbackPort,
     furnish_source: FurnishSource | None = None,
     anchor_first_view: bool = True,
+    whitemodel_enabled: bool = True,
 ) -> GenerateOutcome:
     """跑完一条生成任务。
 
@@ -127,6 +139,11 @@ def run_generate_task(
     `anchor_first_view`(2026-10-03,§64):多角度时**把第一张的产出图当作后面几张的
     参考图**。默认开(与 `settings.image_anchor_first_view` 一致),关掉即回退到
     "每次都发瓷砖切片、各画各的"。
+
+    `whitemodel_enabled`(2026-10-07,§77):把**按户型尺寸画的白模**当作第一张参考图,
+    把房间的几何锁住 —— 不给它的话,"房间长什么样"全靠模型编,同一户型点两次
+    会得到两间不同的房。画不出来(没房间数据 / 非矩形 / 缺位置)就**自动降级**回
+    纯瓷砖参考图,不阻断(见 `app/agent/basemodel.py`)。
 
     :raises TaskGoneError: Java 已无此任务(40003),不该重试
     :raises Exception: 其余失败,**已先回调 failed 再抛出**
@@ -147,7 +164,41 @@ def run_generate_task(
     try:
         # ⚠️ 参考图必须先算:提示词里要写明"第几张参考图对应哪个部位",
         # 而那个编号就是**这些图在请求里的顺序**(2026-10-03,见 §61)。
-        ref_images = _ref_images_of(parts, sku_source)
+        room = _room_of(payload, space)
+        tile_refs = _ref_images_of(parts, sku_source)
+
+        # ---------------------------------------------------------------
+        # 白模(2026-10-07,§77):把**按户型尺寸画出来的房间**当第一张参考图。
+        #
+        # 没有它的时候,"房间长什么样"全靠模型编 —— 同一个户型点两次得到两间
+        # 不同的房。实测:给了白模之后连跑 4 次,房间形状与门窗位置全部一致。
+        #
+        # ⚠️ 只能在这里合并,**不能去改 `_ref_images_of`** —— 那个函数被公开别名
+        # `ref_images_of` 与 `GenerateOutcome.ref_images` 暴露,且测试直接断言
+        # 它返回的**就是瓷砖照片**。在调用点合并,那两条语义都不受影响。
+        # ---------------------------------------------------------------
+        white = basemodel_data_uri(room) if whitemodel_enabled else None
+        if whitemodel_enabled and white is None:
+            logger.warning(
+                "本次没画白模(taskId=%s):退回纯瓷砖参考图 —— 房间几何将不受约束。"
+                "常见原因:户型里没有本次那个空间、非矩形房间(wallCount≠4)、尺寸不全",
+                task_id,
+            )
+
+        if white is not None and len(tile_refs) > MAX_TILE_REFS_WITH_BASEMODEL:
+            logger.warning(
+                "白模占掉一张参考图,瓷砖只能带 %d 张,本次收到 %d 张 —— 保留前 %d 张,"
+                "其余丢弃(taskId=%s)。用户会看到'选了那些砖却没铺上'",
+                MAX_TILE_REFS_WITH_BASEMODEL, len(tile_refs),
+                MAX_TILE_REFS_WITH_BASEMODEL, task_id,
+            )
+            tile_refs = tile_refs[:MAX_TILE_REFS_WITH_BASEMODEL]
+
+        # 发给模型的完整参考图列表:**白模排第 1 位**。
+        # `_ref_index_of` 拿的就是这份列表,所以部位编号会自动变成 2/3/4 ——
+        # 提示词里「铺贴参考图 N」随之对齐,不需要改提示词模块的编号逻辑。
+        refs_for_model = ((white,) + tile_refs) if white else tile_refs
+
         prepared = prepare_prompts(
             space=space,
             style=style,
@@ -155,15 +206,18 @@ def run_generate_task(
             sku_source=sku_source,
             furnish_source=furnish_source,
             angles=angles,
-            ref_index=_ref_index_of(parts, sku_source, ref_images),
-            room=_room_of(payload, space),
+            ref_index=_ref_index_of(parts, sku_source, refs_for_model),
+            room=room,
             anchor_first_view=anchor_first_view,
+            whitemodel=white is not None,
         )
-        if not ref_images:
+        if not tile_refs:
             # 不是错误:没有参考图也能出图(退化成文生图),只是"贴近所选产品"
-            # 这条约束失去了依据。§15.3 的底图本期还没有承载表(§35.7),
-            # 所以"一张参考图都没有"在生产上是个**要能被看见**的信号。
-            logger.warning("本次生成没有任何参考图(taskId=%s):出图将只依据文字提示词", task_id)
+            # 这条约束失去了依据。所以"一张**瓷砖**参考图都没有"在生产上是个
+            # **要能被看见**的信号。
+            # ⚠️ 判定看的是**瓷砖**,不是合并后的列表 —— 白模只要有房间数据就会有,
+            # 拿它来判会让这条告警**永远不响**,把这个信号弄丢。
+            logger.warning("本次生成没有任何瓷砖参考图(taskId=%s):出图将只依据文字提示词", task_id)
 
         _notify(callback, task_id, trace_id, _running(0))
 
@@ -171,17 +225,19 @@ def run_generate_task(
         total = len(prepared.views)
         #: 基准图 —— 第 1 张画出来之后才有值,第 2 个视角起改用它当参考图(§64)。
         #: 单张(angles=1)时全程为空,行为与改动前完全一致。
+        #: ⚠️ 它一旦生效,`refs` 就只剩首张产出图 —— **白模在这一支里不会带上**
+        #: (多角度目前锁为 1,生产路径走不到;将来恢复多角度时要注意这一点)。
         anchor_images: list[str] = []
         if anchor_first_view and total > 1:
             logger.info(
                 "多角度出图启用基准图:第 2 张起以首张产出图为参考图"
-                "(taskId=%s, views=%d, 瓷砖切片=%d 张)",
-                task_id, total, len(ref_images),
+                "(taskId=%s, views=%d, 瓷砖切片=%d 张, 白模=%s)",
+                task_id, total, len(tile_refs), "有" if white else "无",
             )
         for index, view in enumerate(prepared.views):
             # 有基准图就只发基准图 —— 它已自带砖的位置,再塞切片既没用又会顶满 4 张配额。
             # 没有(第 1 张 / 关掉开关)就照旧发瓷砖切片。
-            refs = list(anchor_images) if anchor_images else list(ref_images)
+            refs = list(anchor_images) if anchor_images else list(refs_for_model)
             generated = image_gateway.generate(
                 prompt=view.prompt, ref_images=refs, n=1
             )
@@ -224,13 +280,15 @@ def run_generate_task(
 
     logger.info(
         "生成任务完成 taskId=%s images=%d refImages=%d missingSkus=%d furnishConfigured=%s",
-        task_id, len(images), len(ref_images), len(prepared.missing_skus),
+        task_id, len(images), len(tile_refs), len(prepared.missing_skus),
         prepared.furnish_configured,
     )
     return GenerateOutcome(
         task_id=task_id,
         images=tuple(images),
-        ref_images=ref_images,
+        # ⚠️ 这里**只装瓷砖照片**,不装白模 —— 这个字段的语义是"所选瓷砖的照片",
+        # 有测试直接断言它。白模是内部的几何约束,不是"用户选的东西"。
+        ref_images=tile_refs,
         missing_skus=prepared.missing_skus,
         furnish_configured=prepared.furnish_configured,
     )

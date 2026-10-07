@@ -6,6 +6,7 @@ import java.util.List;
 import com.fasterxml.jackson.annotation.JsonInclude;
 
 import jakarta.validation.Valid;
+import jakarta.validation.constraints.DecimalMax;
 import jakarta.validation.constraints.DecimalMin;
 import jakarta.validation.constraints.Max;
 import jakarta.validation.constraints.Min;
@@ -35,16 +36,28 @@ public record LayoutSpace(
         @Size(max = 50, message = "空间名称不能超过 50 字符")
         String name,
 
+        /**
+         * 长(米)。**上限 30** —— 住宅空间的物理极限(最大开间十几米),留足余量。
+         *
+         * <p>⚠️ 上限必须有:面积按 {@code 长 × 宽} 派生,填个一万米就是天文数字,
+         * 大到超过 {@code t_plan_part.gross_area} 的列宽时会**直接落库报错**。
+         * 见架构 §8.3「尺寸上限的来历」。
+         */
         @NotNull(message = "长不能为空")
         @DecimalMin(value = "0.01", message = "长必须大于 0")
+        @DecimalMax(value = "30", message = "长不能超过 30 米")
         BigDecimal length,
 
+        /** 宽(米)。上限同 {@code length}。 */
         @NotNull(message = "宽不能为空")
         @DecimalMin(value = "0.01", message = "宽必须大于 0")
+        @DecimalMax(value = "30", message = "宽不能超过 30 米")
         BigDecimal width,
 
+        /** 层高(米)。上限 **10** —— 挑高客厅到 6 米,10 米是极限。 */
         @NotNull(message = "层高不能为空")
         @DecimalMin(value = "0.01", message = "层高必须大于 0")
+        @DecimalMax(value = "10", message = "层高不能超过 10 米")
         BigDecimal height,
 
         /** 墙面数;§8.3 字段表标注默认 4,可省略。不参与面积公式。 */

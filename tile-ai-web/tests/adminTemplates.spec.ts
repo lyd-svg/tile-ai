@@ -140,7 +140,7 @@ const TEMPLATE_WITH_AREAS = {
         height: 2.7,
         wallCount: 4,
         areas: { floor: 3.6, wall: 18.24, local: 0 },
-        openings: [{ type: 'door' as const, w: 0.8, h: 2.1 }],
+        openings: [{ type: 'door' as const, w: 0.8, h: 2.1, wall: 'back' as const, offset: 0.55 }],
       },
     ],
   },
@@ -254,8 +254,38 @@ describe('编辑', () => {
     await flushPromises()
 
     const body = updateTemplate.mock.calls[0]![1] as {
-      layout: { spaces: { openings?: { type: string; w: number; h: number }[] }[] }
+      layout: { spaces: { openings?: Record<string, unknown>[] }[] }
     }
+    // 门窗的**位置**要原样带出去(2026-10-07,§77):出图时按它画房间底图。
+    // ⚠️ 没给 `sill` 就不该凭空补一个 —— 后端按类型取默认(门 0 / 窗 0.9)。
+    expect(body.layout.spaces[0]!.openings).toEqual([
+      { type: 'door', w: 0.8, h: 2.1, wall: 'back', offset: 0.55 },
+    ])
+  })
+
+  it('门窗没有位置时不带那三个字段 —— 位置是可选的', async () => {
+    getTemplate.mockResolvedValue({
+      ...TEMPLATE_WITH_AREAS,
+      layout: {
+        spaces: [
+          {
+            ...TEMPLATE_WITH_AREAS.layout.spaces[0]!,
+            openings: [{ type: 'door' as const, w: 0.8, h: 2.1 }],
+          },
+        ],
+      },
+    })
+
+    const wrapper = await mountEdit()
+    await flushPromises()
+
+    await wrapper.find('form').trigger('submit')
+    await flushPromises()
+
+    const body = updateTemplate.mock.calls[0]![1] as {
+      layout: { spaces: { openings?: Record<string, unknown>[] }[] }
+    }
+    // **不填就不带键** —— 带上 `wall: null` / `offset: undefined` 会过不了契约的 schema 校验
     expect(body.layout.spaces[0]!.openings).toEqual([{ type: 'door', w: 0.8, h: 2.1 }])
   })
 

@@ -167,6 +167,14 @@ export type PartSource = 'user' | 'ai'
 /** 门窗开口类型(用于面积扣减)。§8.8 */
 export type OpeningType = 'door' | 'window'
 
+/**
+ * 门窗所在的那面墙。§8.3
+ *
+ * ⚠️ **没有 `front`** —— 出图时的相机在房间外,前墙在镜头背后,一点透视里
+ * 永远看不到。给了这个选项只会制造"我填了门,图上却没有"的投诉。
+ */
+export type OpeningWall = 'back' | 'left' | 'right'
+
 /** 门窗开口。§8.3 */
 export interface Opening {
   type: OpeningType
@@ -174,6 +182,20 @@ export interface Opening {
   w: number
   /** 高(米) */
   h: number
+  /**
+   * 在哪面墙。**可选** —— 2026-10-07 加(§77)。
+   *
+   * 出效果图时,系统要按户型尺寸画一张"白模"当参考图,把房间形状锁住;
+   * **画白模必须有门窗位置**,而此前只有宽高。
+   *
+   * ⚠️ **不填也能出图** —— 只是白模上不画这个洞。三字段全部可选是刻意的:
+   * 必填会逼着"文字描述"那条路编造位置。理由见架构 §8.3。
+   */
+  wall?: OpeningWall
+  /** 洞的**水平中心**距该墙「0 点」的距离(米)。0 点约定见契约 `OpeningWall` */
+  offset?: number
+  /** 洞底离地高度(米)。缺省按类型取:门 `0`、窗 `0.9` */
+  sill?: number
 }
 
 /**

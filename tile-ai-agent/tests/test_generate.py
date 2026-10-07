@@ -139,7 +139,8 @@ class _Result:
 
 
 def payload_of(*, task_id: str = "g_test1", angles: int = 1, style: str = "modern",
-               parts: list[dict] | None = None, trace_id: str = "t-1") -> dict:
+               parts: list[dict] | None = None, trace_id: str = "t-1",
+               layout: dict | None = None) -> dict:
     return {
         "taskId": task_id,
         "type": "image",
@@ -152,14 +153,17 @@ def payload_of(*, task_id: str = "g_test1", angles: int = 1, style: str = "moder
             {"part": "floor", "sku": "TL-2043", "area": 3.6, "source": "user"},
             {"part": "wall", "sku": "TL-3012", "area": 18.24, "source": "user"},
         ],
-        "layout": {"spaces": []},
+        # ⚠️ 默认**没有空间** —— 于是不会画白模(§77),既有用例收到的参考图
+        #    与加白模之前**逐字节相同**。这正是本次改动没有大面积打红测试的原因。
+        #    要测白模相关的行为,显式传 `layout=...`。
+        "layout": layout if layout is not None else {"spaces": []},
         "attempt": 1,
         "enqueuedAt": "2026-09-30T10:00:00",
     }
 
 
 def run(payload: dict, *, gateway=None, callback=None, sku_source=None,
-        anchor_first_view: bool = True):
+        anchor_first_view: bool = True, whitemodel_enabled: bool = True):
     gateway = gateway if gateway is not None else FakeImageGateway()
     callback = callback if callback is not None else FakeCallback()
     sku_source = sku_source if sku_source is not None else FakeSkuSource()
@@ -170,6 +174,7 @@ def run(payload: dict, *, gateway=None, callback=None, sku_source=None,
         image_gateway=gateway,
         callback=callback,
         anchor_first_view=anchor_first_view,
+        whitemodel_enabled=whitemodel_enabled,
     )
     return outcome, gateway, callback
 
@@ -425,7 +430,11 @@ def test_unknown_sku_is_skipped_but_generation_continues() -> None:
 
 
 def test_no_reference_images_still_generates(caplog) -> None:
-    """一张参考图都没有时**仍然出图**(退化成文生图),但要留下告警。"""
+    """一张**瓷砖**参考图都没有时**仍然出图**(退化成文生图),但要留下告警。
+
+    ⚠️ 判据是"没有**瓷砖**参考图",不是"没有参考图" —— 白模(§77)一旦有房间数据
+    就总会存在,拿合并后的列表来判会让这条告警**永远不响**,把这个信号弄丢。
+    """
     with caplog.at_level(logging.WARNING):
         outcome, gateway, callback = run(
             payload_of(parts=[{"part": "floor", "sku": "TL-GONE"}]),
@@ -434,7 +443,94 @@ def test_no_reference_images_still_generates(caplog) -> None:
     assert outcome.ref_images == ()
     assert gateway.calls
     assert callback.statuses[-1] == "success"
-    assert any("没有任何参考图" in record.message for record in caplog.records)
+    assert any("没有任何瓷砖参考图" in record.message for record in caplog.records)
+
+
+def test_missing_tile_warning_still_fires_even_with_a_room(caplog) -> None:
+    """**有房间**(因而会画白模)时,这条告警**照样要响**。
+
+    这是上一条的加强版:白模常驻之后,如果判据写错(拿合并后的列表判),
+    下面这次生成就会"有参考图",告警消失 —— 而用户真正丢掉的信息是
+    "你要的那块砖没找到"。
+    """
+    room = {"spaces": [{"type": "bathroom", "length": 2.0, "width": 1.8, "height": 2.4,
+                        "wallCount": 4, "openings": []}]}
+    with caplog.at_level(logging.WARNING):
+        outcome, gateway, _ = run(
+            payload_of(parts=[{"part": "floor", "sku": "TL-GONE"}], layout=room),
+        )
+
+    assert outcome.ref_images == (), "outcome 只装瓷砖照片,不装白模"
+    # 模型实际收到的是「白模」一张 —— 证明白模确实进了请求,而告警仍然如实报了"没有瓷砖"
+    assert len(gateway.calls[0]["ref_images"]) == 1
+    assert str(gateway.calls[0]["ref_images"][0]).startswith("data:image/png;base64,")
+    assert any("没有任何瓷砖参考图" in record.message for record in caplog.records)
+
+
+# ----------------------------------------------------------------------
+# 白模(§77):进请求的顺序,以及它把瓷砖编号顶到哪去了
+# ----------------------------------------------------------------------
+
+A_ROOM = {"spaces": [{"type": "bathroom", "name": "卫生间", "length": 2.0, "width": 1.8,
+                      "height": 2.4, "wallCount": 4,
+                      "openings": [{"type": "door", "w": 0.8, "h": 2.1,
+                                    "wall": "back", "offset": 0.55}]}]}
+
+
+def test_whitemodel_is_sent_first_and_shifts_tile_numbering() -> None:
+    """**白模排第 1 位,瓷砖的「参考图 N」编号随之 +1。**
+
+    这是整条接线的关键约定:编号不是另外算的,它就是**图在请求里的位置**
+    (`ref_index_of` 里 `list(refs).index(url) + 1`)。所以把白模插到最前面,
+    提示词里的编号**自动对齐** —— 提示词模块一行都不用改。
+    """
+    _, gateway, _ = run(payload_of(layout=A_ROOM))
+
+    refs = gateway.calls[0]["ref_images"]
+    assert str(refs[0]).startswith("data:image/png;base64,"), "白模必须排第 1 位"
+    assert len(refs) == 3, "白模 1 张 + 两个部位的瓷砖各 1 张"
+
+    prompt = gateway.calls[0]["prompt"]
+    assert "铺贴参考图 2 的瓷砖" in prompt, prompt
+    assert "铺贴参考图 3 的瓷砖" in prompt, prompt
+    assert "铺贴参考图 1 的瓷砖" not in prompt, "参考图 1 是白模,不能再被当成某部位的砖"
+
+
+def test_whitemodel_can_be_turned_off() -> None:
+    """关掉开关 = 退回改动前的行为(便于灰度与对照)。"""
+    _, gateway, _ = run(payload_of(layout=A_ROOM), whitemodel_enabled=False)
+
+    refs = gateway.calls[0]["ref_images"]
+    assert len(refs) == 2, "只有两个部位的瓷砖,没有白模"
+    assert all(not str(u).startswith("data:") for u in refs)
+    assert "铺贴参考图 1 的瓷砖" in gateway.calls[0]["prompt"]
+
+
+def _four_tiles() -> FakeSkuSource:
+    """四块不同的砖 —— 一个部位可以选多块(PRD §5.2.4),所以参考图会超过 3 张。"""
+    return FakeSkuSource({
+        f"T{i}": {"sku": f"T{i}", "name": f"砖{i}", "coverImage": f"https://x/{i}.jpg"}
+        for i in range(1, 5)
+    })
+
+
+def test_tiles_are_truncated_to_three_when_whitemodel_takes_a_slot(caplog) -> None:
+    """**白模占掉一张,瓷砖必须在编排层先截到 3 张。**
+
+    ⚠️ 这条防的是"悄悄丢砖":适配器的参考图上限是 4 张,超出时**截断 + WARN、不报错**。
+    如果不在这里先截,4 块砖 + 白模 = 5 张 —— 适配器会把第 5 张默默丢掉,
+    用户看到的是"我明明选了那块砖,它却没铺上",而日志里只有一条 WARN。
+    """
+    parts = [{"part": "floor", "sku": "T1"}, {"part": "floor", "sku": "T2"},
+             {"part": "wall", "sku": "T3"}, {"part": "wall", "sku": "T4"}]
+
+    with caplog.at_level(logging.WARNING):
+        _, gateway, _ = run(payload_of(layout=A_ROOM, parts=parts),
+                            sku_source=_four_tiles())
+
+    refs = gateway.calls[0]["ref_images"]
+    assert len(refs) == 4, "上限就是 4:白模 1 + 瓷砖 3"
+    assert any("瓷砖只能带" in record.message for record in caplog.records)
 
 
 # ======================================================================

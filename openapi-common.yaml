@@ -198,6 +198,24 @@ components:
 
     # ---- 领域数据结构 ----
 
+    OpeningWall:
+      type: string
+      description: 门窗所在的那面墙(供白模渲染定位)。以相机在房间前门外、朝后墙看为基准
+      enum: [back, left, right]
+      x-note: |
+        **为什么没有 `front`**:相机在房间外,前墙在镜头背后,一点透视里**永远看不到**。
+        给了这个选项只会制造"我填了门,图上却没有"的投诉。
+
+        **`offset` 的「0 点」约定**(相机在房间前门外朝后墙看):
+
+        | wall | `offset` 从哪算起 | 往哪个方向 |
+        | --- | --- | --- |
+        | `back` | `x = 负半宽`(画面左下角) | 沿 `+x` |
+        | `left` | `z = 0`(离镜头最近的前角) | 沿 `+z` |
+        | `right` | `z = 0`(离镜头最近的前角) | 沿 `+z` |
+
+        与架构 §8.3「门窗位置」表一致 —— 两处**必须同时改**。
+
     Opening:
       type: object
       description: 门窗开口。§8.3
@@ -206,6 +224,28 @@ components:
         type: { $ref: '#/components/schemas/OpeningType' }
         w: { type: number, format: float, description: 宽(米), example: 0.8 }
         h: { type: number, format: float, description: 高(米), example: 2.1 }
+        wall:
+          allOf: [{ $ref: '#/components/schemas/OpeningWall' }]
+          description: |
+            在哪面墙。**可选** —— 不填即"位置未知",白模上不画这个洞。
+            ⚠️ 三字段全部可选是**刻意**的(不是遗漏):必填会逼着文字解析那条路
+            **编造位置**,与"确定性"的初衷背道而驰;且 `Opening` 被报价接口复用,
+            必填会连带收紧报价请求。理由见架构 §8.3。
+        offset:
+          type: number
+          format: float
+          minimum: 0
+          description: |
+            洞的**水平中心**距该墙「0 点」的距离(米)。与 `wall` **成对出现**。
+            0 点约定见 `OpeningWall`;缺 `wall` 或缺本字段 = 位置未知。
+          example: 0.55
+        sill:
+          type: number
+          format: float
+          minimum: 0
+          description: |
+            洞底离地高度(米)。**可省略** —— 缺省按类型取:门 `0`、窗 `0.9`。
+          example: 0.9
 
     LayoutAreas:
       type: object
@@ -222,9 +262,31 @@ components:
       properties:
         type: { $ref: '#/components/schemas/SpaceType' }
         name: { type: string, description: 中文名(展示用), example: 卫生间 }
-        length: { type: number, format: float, description: 长(米), example: 2.0 }
-        width: { type: number, format: float, description: 宽(米), example: 1.8 }
-        height: { type: number, format: float, description: 层高(米), example: 2.7 }
+        length:
+          type: number
+          format: float
+          minimum: 0.01
+          maximum: 30
+          description: |
+            长(米)。上限 **30** —— 取住宅空间的物理极限(最大开间十几米),
+            留足余量,只挡手滑多打两个零。见架构 §8.3「尺寸上限的来历」。
+          example: 2.0
+        width:
+          type: number
+          format: float
+          minimum: 0.01
+          maximum: 30
+          description: |
+            宽(米)。上限同 `length`(架构 §8.3)。
+          example: 1.8
+        height:
+          type: number
+          format: float
+          minimum: 0.01
+          maximum: 10
+          description: |
+            层高(米)。上限 **10** —— 挑高客厅到 6 米,10 米是极限(架构 §8.3)。
+          example: 2.7
         wallCount: { type: integer, description: 墙面数, example: 4 }
         openings:
           type: array

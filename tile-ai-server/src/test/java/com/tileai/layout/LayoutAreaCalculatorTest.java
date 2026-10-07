@@ -86,8 +86,10 @@ class LayoutAreaCalculatorTest {
     void openingsDoNotReduceGrossArea() {
         LayoutSpace withOpenings = new LayoutSpace("bathroom", "卫生间",
                 new BigDecimal("2.0"), new BigDecimal("1.8"), new BigDecimal("2.7"), 4,
-                List.of(new Opening("door", new BigDecimal("0.8"), new BigDecimal("2.1")),
-                        new Opening("window", new BigDecimal("1.0"), new BigDecimal("1.2"))),
+                List.of(new Opening("door", new BigDecimal("0.8"), new BigDecimal("2.1"),
+                                "back", new BigDecimal("0.55"), null),
+                        new Opening("window", new BigDecimal("1.0"), new BigDecimal("1.2"),
+                                "right", new BigDecimal("0.90"), new BigDecimal("0.9"))),
                 null);
 
         assertDecimal("20.5200", LayoutAreaCalculator.compute(withOpenings).wall(),

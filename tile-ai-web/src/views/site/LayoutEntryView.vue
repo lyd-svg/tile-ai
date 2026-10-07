@@ -8,7 +8,7 @@ import { listDictsOfType } from '@/api/dicts'
 import { validationErrorsOf } from '@/api/errors'
 import type { Dict } from '@/api/dicts'
 import { useSelectionDraftStore } from '@/stores/selectionDraft'
-import type { LayoutModel, UnitTemplate } from '@/api/types'
+import type { LayoutModel, OpeningType, OpeningWall, UnitTemplate } from '@/api/types'
 
 /**
  * 户型录入(F-1.5,PRD §5.3)。
@@ -76,6 +76,27 @@ function useTemplate(template: UnitTemplate) {
 
 // ---------------------------------------------------------------- 手动录入
 
+/**
+ * 表单里的一行门窗(2026-10-07,§77)。
+ *
+ * **位置三件套可以留空** —— 留空即"不知道位置",出图时房间底图上不画这个洞,
+ * 但**不影响出图、也不影响报价**。
+ */
+interface ManualOpening {
+  type: OpeningType
+  w: number | null
+  h: number | null
+  wall: OpeningWall | ''
+  offset: number | null
+}
+
+/** 门窗在哪面墙。文案用"对面墙"而不是 back —— 填表的人站在门口看,这个说法他对得上。 */
+const WALL_OPTIONS: { value: OpeningWall; label: string }[] = [
+  { value: 'back', label: '对面墙' },
+  { value: 'left', label: '左墙' },
+  { value: 'right', label: '右墙' },
+]
+
 interface ManualSpace {
   type: string
   name: string
@@ -83,10 +104,19 @@ interface ManualSpace {
   width: number | null
   height: number | null
   wallCount: number | null
+  openings: ManualOpening[]
 }
 
 function emptySpace(): ManualSpace {
-  return { type: '', name: '', length: null, width: null, height: null, wallCount: null }
+  return {
+    type: '', name: '', length: null, width: null, height: null, wallCount: null,
+    openings: [],
+  }
+}
+
+/** 新增一行门窗时的默认值 —— 常见户型的门就在对面墙,用户可以改也可以留空。 */
+function newOpening(): ManualOpening {
+  return { type: 'door', w: 0.8, h: 2.1, wall: 'back', offset: null }
 }
 
 const text = ref('')
@@ -113,14 +143,30 @@ function removeSpace(index: number) {
 function buildParams(): LayoutModel | null {
   if (spaces.value.length === 0) return null
   const model: LayoutModel = {
-    spaces: spaces.value.map((item) => ({
-      type: item.type || 'other',
-      name: item.name || undefined,
-      length: Number(item.length),
-      width: Number(item.width),
-      height: Number(item.height),
-      wallCount: item.wallCount == null ? undefined : Number(item.wallCount),
-    })),
+    spaces: spaces.value.map((item) => {
+      const wallCount = item.wallCount == null ? undefined : Number(item.wallCount)
+      // 门窗:宽高必填;位置**可留空** —— 不填就不带那几个键(后端当"位置未知")。
+      // `wall` 与 `offset` 必须成对,缺一即视为没填。
+      const openings = item.openings
+        .filter((opening) => opening.w != null && opening.h != null)
+        .map((opening) => ({
+          type: opening.type,
+          w: Number(opening.w),
+          h: Number(opening.h),
+          ...(opening.wall !== '' && opening.offset != null
+            ? { wall: opening.wall, offset: Number(opening.offset) }
+            : {}),
+        }))
+      return {
+        type: item.type || 'other',
+        name: item.name || undefined,
+        length: Number(item.length),
+        width: Number(item.width),
+        height: Number(item.height),
+        ...(wallCount === undefined ? {} : { wallCount }),
+        ...(openings.length ? { openings } : {}),
+      }
+    }),
   }
   return model
 }
@@ -303,20 +349,58 @@ onMounted(async () => {
           </label>
           <label>
             长(米)
-            <input v-model.number="space.length" type="number" step="0.1" min="0" />
+            <input v-model.number="space.length" type="number" step="0.1" min="0.01" max="30" />
           </label>
           <label>
             宽(米)
-            <input v-model.number="space.width" type="number" step="0.1" min="0" />
+            <input v-model.number="space.width" type="number" step="0.1" min="0.01" max="30" />
           </label>
           <label>
             层高(米)
-            <input v-model.number="space.height" type="number" step="0.1" min="0" />
+            <input v-model.number="space.height" type="number" step="0.1" min="0.01" max="10" />
           </label>
           <label>
             墙面数(可选)
             <input v-model.number="space.wallCount" type="number" min="1" />
           </label>
+
+          <!--
+            门窗(可选)。**位置是给"出图时画房间底图"用的** ——
+            不填也能出图,只是底图上不画这个洞。
+            ⚠️ 这一块必须排在"长/宽/层高"**之后** —— 有测试按位置取前几个数字输入框。
+          -->
+          <div class="openings">
+            <p class="openings-title">门窗(可选)</p>
+            <div v-for="(opening, openingIndex) in space.openings" :key="openingIndex" class="opening-row">
+              <Select
+                v-model:value="opening.type"
+                class="opening-type"
+                :options="[{ value: 'door', label: '门' }, { value: 'window', label: '窗' }]"
+              />
+              <input v-model.number="opening.w" type="number" step="0.1" min="0" placeholder="宽(米)" />
+              <input v-model.number="opening.h" type="number" step="0.1" min="0" placeholder="高(米)" />
+              <Select
+                v-model:value="opening.wall"
+                class="opening-wall"
+                :options="[{ value: '', label: '位置不填' }, ...WALL_OPTIONS]"
+              />
+              <input
+                v-model.number="opening.offset"
+                type="number"
+                step="0.1"
+                min="0"
+                placeholder="距墙角(米)"
+              />
+              <Button @click="space.openings.splice(openingIndex, 1)">移除</Button>
+            </div>
+            <Button @click="space.openings.push(newOpening())">+ 加一扇门窗</Button>
+            <p class="hint">
+              位置按<b>站在房间门口往里看</b>算:「对面墙 / 左墙 / 右墙」是所见的那三面;
+              「距墙角」= 洞口中心离该墙**起点角**的距离(对面墙从<b>左下角</b>量,
+              左右墙从<b>靠门口那端</b>量)。填了它,出的效果图里房间形状才对得上你的户型。
+            </p>
+          </div>
+
           <Button v-if="spaces.length > 1" danger class="remove" @click="removeSpace(index)">
             删除这个空间
           </Button>

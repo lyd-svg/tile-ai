@@ -118,7 +118,11 @@ DEFAULT_VIEW = "default"
 #: 将来用**多机位底图**恢复多角度时可直接启用(恢复时要把 `MAX_ANGLES` 与
 #: 契约的 `maximum` 一起改回去)。见 `openapi-verification.md` §74。
 VIEW_PHRASES: Mapping[str, str] = {
-    DEFAULT_VIEW: "正面平视全景，镜头与视线同高",
+    # ⚠️ 措辞必须与**白模的机位**对得上(2026-10-07,§77):白模是"相机在视线高度、
+    # 略微低头 10°"画的 —— 低头是为了让**地面**在画面里占得够多(而地面正是贴地砖
+    # 要看的那个面)。原先写"平视",与图**互相打架**,模型多半信文字,
+    # 于是白模最有价值的那点可见度被抵消掉。
+    DEFAULT_VIEW: "正面全景，镜头在视线高度、略微向下俯视",
     "angle1": "从房间一角斜向俯视，同时看到地面与两面墙",
     "angle2": "高位俯瞰，重点呈现地面铺贴",
     "angle3": "贴近墙面拍摄，重点呈现墙面瓷砖的纹理与光泽",
@@ -174,6 +178,21 @@ REF_BINDING_CLAUSE = (
 BASE_IMAGE_CLAUSE = (
     "以参考图 1 为该空间的基准图 —— 房间形状与尺寸、陈设摆设、每块砖所处的部位与外观,"
     "都必须与它完全一致,本次只改变拍摄角度"
+)
+
+#: **白模说明**(2026-10-07,§77)。参考图 1 是按本房间尺寸画的三维白模。
+#:
+#: ⚠️ **这句必须写,而且实测证明不写会出错**:白模是一张没有材质的灰白结构图,
+#: 不告诉模型它是什么,模型会把它当成"一张拍得很素的照片" ——
+#: 实测**后墙上的那扇门被画成了一面镜子**(§77.2)。
+#:
+#: ⚠️ 它与 `REF_BINDING_CLAUSE` 是**配套**的:后者说"按『部位 → 参考图 N』铺贴",
+#: 而白模占了第 1 位 —— 必须同时讲清"参考图 1 不是砖",否则模型可能把它当成
+#: 「局部」部位的那块砖去贴。
+WHITEMODEL_CLAUSE = (
+    "参考图 1 是本房间的**三维白模**(没有材质的房间结构图),它只表达房间的形状 —— "
+    "请严格保持它的墙 / 地面 / 天花位置与透视、门窗的数量与位置,"
+    "只把表面的材质替换成真实瓷砖;不要把白模本身画成瓷砖、陈设或装饰"
 )
 
 
@@ -452,6 +471,7 @@ def assemble_prompt(
     ref_index: Mapping[str, int] | None = None,
     room: Mapping[str, Any] | None = None,
     base_image: bool = False,
+    whitemodel: bool = False,
 ) -> str:
     """按 §7.3 的公式组装一条提示词:
 
@@ -505,6 +525,10 @@ def assemble_prompt(
         lines.append(f"{BASE_IMAGE_CLAUSE}。")
     elif ref_index:
         lines.append(f"{REF_BINDING_CLAUSE}。")
+    # 白模说明**紧跟绑定句** —— 两句说的是同一件事(哪张图是什么),拆远了容易只读一半。
+    # ⚠️ 只在 `base_image` 形态之外写:那个形态下参考图 1 是上一张产出图,不是白模。
+    if whitemodel and not base_image:
+        lines.append(f"{WHITEMODEL_CLAUSE}。")
     lines.append(f"{'；'.join(CONSTRAINTS)}。")
     return "\n".join(lines)
 
@@ -520,6 +544,7 @@ def build_prompts(
     ref_index: Mapping[str, int] | None = None,
     room: Mapping[str, Any] | None = None,
     anchor_first_view: bool = False,
+    whitemodel: bool = False,
 ) -> AssembledPrompts:
     """`assemble_prompt` 的多视角版本 —— 一个视角一条,其余成分完全相同。
 
@@ -550,6 +575,7 @@ def build_prompts(
             multi_angle=multi_angle, ref_index=ref_index, room=room,
             # 第 1 张是基准图的**来源**,故仍按切片形态出图;第 2 张起才有基准图可依。
             base_image=anchor_first_view and index > 0,
+            whitemodel=whitemodel,
         ))
         for index, view in enumerate(view_names)
     )
@@ -572,6 +598,7 @@ def prepare_prompts(
     ref_index: Mapping[str, int] | None = None,
     room: Mapping[str, Any] | None = None,
     anchor_first_view: bool = False,
+    whitemodel: bool = False,
 ) -> AssembledPrompts:
     """取数 + 映射 + 组装一条龙 —— T-1.11 消费端的入口。
 
@@ -594,6 +621,7 @@ def prepare_prompts(
         missing_skus=missing,
         ref_index=ref_index,
         room=room,
+        whitemodel=whitemodel,
         anchor_first_view=anchor_first_view,
     )
 

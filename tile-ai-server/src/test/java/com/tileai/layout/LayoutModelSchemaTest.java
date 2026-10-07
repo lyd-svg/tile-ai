@@ -52,8 +52,12 @@ class LayoutModelSchemaTest {
         LayoutModel model = LayoutAreaCalculator.withDerivedAreas(new LayoutModel(List.of(
                 new LayoutSpace("bathroom", "卫生间",
                         new BigDecimal("2.0"), new BigDecimal("1.8"), new BigDecimal("2.7"), 4,
-                        List.of(new Opening("door", new BigDecimal("0.8"), new BigDecimal("2.1")),
-                                new Opening("window", new BigDecimal("1.0"), new BigDecimal("1.2"))),
+                        // 两个开口刻意一个**带位置**、一个**不带** —— 位置字段是可选的,
+                        // 两种形状都必须能过契约 schema(2026-10-07 加)。
+                        List.of(new Opening("door", new BigDecimal("0.8"), new BigDecimal("2.1"),
+                                        "back", new BigDecimal("0.55"), null),
+                                new Opening("window", new BigDecimal("1.0"), new BigDecimal("1.2"),
+                                        null, null, null)),
                         null),
                 new LayoutSpace("kitchen", "厨房",
                         new BigDecimal("3.5"), new BigDecimal("2.4"), new BigDecimal("2.8"), 4,

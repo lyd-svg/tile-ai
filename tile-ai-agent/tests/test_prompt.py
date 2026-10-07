@@ -28,6 +28,7 @@ from app.agent.prompt import (
     SPACE_LABELS,
     STYLE_LABELS,
     VIEW_PHRASES,
+    WHITEMODEL_CLAUSE,
     AssembledPrompts,
     FurnishConfig,
     MaterialPhrase,
@@ -455,6 +456,28 @@ def test_missing_furnish_source_degrades_too():
         furnish_source=None,
     )
     assert result.furnish_configured is False
+
+
+# ----------------------------------------------------------------------
+# 白模说明(§77)
+# ----------------------------------------------------------------------
+
+def test_whitemodel_clause_is_written_only_when_a_basemodel_is_sent():
+    """**白模进了请求,提示词里就必须说明「参考图 1 是白模」。**
+
+    这不是措辞偏好,是**功能必需**:实测不写这一句时,模型会把白模当成
+    "一张拍得很素的照片",按自己的理解填内容 —— **后墙上的那扇门被画成了一面镜子**
+    (§77.2)。白模只表达形状,不说明白它是什么,模型就会把它当素材用。
+    """
+    parts = map_parts([a_selection("floor", "TL-2043")], FakeSkuSource())
+
+    with_model = build_prompts(space="kitchen", style="modern", parts=parts,
+                               ref_index={"floor": 2}, whitemodel=True)
+    without = build_prompts(space="kitchen", style="modern", parts=parts,
+                            ref_index={"floor": 1}, whitemodel=False)
+
+    assert WHITEMODEL_CLAUSE in with_model.views[0].prompt
+    assert WHITEMODEL_CLAUSE not in without.views[0].prompt
 
 
 # ----------------------------------------------------------------------

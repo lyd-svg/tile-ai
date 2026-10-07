@@ -176,6 +176,71 @@ describe('手动录入', () => {
     expect(parseLayout).not.toHaveBeenCalled()
     expect(wrapper.find('[role="alert"]').text()).toContain('大于 0')
   })
+
+  it('填参数:门窗与它的位置会原样提交', async () => {
+    parseLayout.mockResolvedValue(LAYOUT)
+    const { wrapper } = await mountView()
+    await switchMode(wrapper, '手动录入')
+    await switchMode(wrapper, '填参数')
+
+    const numbers = wrapper.findAll('input[type="number"]')
+    await numbers[0].setValue('2') // 长
+    await numbers[1].setValue('1.8') // 宽
+    await numbers[2].setValue('2.4') // 层高
+
+    const addOpening = wrapper
+      .findAll('button')
+      .find((button) => button.text().includes('加一扇门窗'))!
+    await addOpening.trigger('click')
+    await flushPromises()
+
+    // 门窗行里的三个数字框依次是:宽 / 高 / 距墙角。前两个有默认值,只补位置。
+    const openingNumbers = wrapper.findAll('.opening-row input[type="number"]')
+    await openingNumbers[2].setValue('0.55')
+
+    await clickParse(wrapper)
+    await flushPromises()
+
+    expect(parseLayout).toHaveBeenCalledWith({
+      params: expect.objectContaining({
+        spaces: [
+          expect.objectContaining({
+            openings: [{ type: 'door', w: 0.8, h: 2.1, wall: 'back', offset: 0.55 }],
+          }),
+        ],
+      }),
+    })
+  })
+
+  it('填参数:门窗位置留空时不带那三个键(位置是可选的)', async () => {
+    parseLayout.mockResolvedValue(LAYOUT)
+    const { wrapper } = await mountView()
+    await switchMode(wrapper, '手动录入')
+    await switchMode(wrapper, '填参数')
+
+    const numbers = wrapper.findAll('input[type="number"]')
+    await numbers[0].setValue('2')
+    await numbers[1].setValue('1.8')
+    await numbers[2].setValue('2.4')
+
+    const addOpening = wrapper
+      .findAll('button')
+      .find((button) => button.text().includes('加一扇门窗'))!
+    await addOpening.trigger('click')
+    await flushPromises()
+
+    // ⚠️ 新加的门窗默认**只填了宽高、没填位置**(`offset` 是空的)——
+    // 这正好就是"位置留空"那种情况,不用再去动那个下拉。
+
+    await clickParse(wrapper)
+    await flushPromises()
+
+    const body = parseLayout.mock.calls[0]![0] as {
+      params: { spaces: { openings?: Record<string, unknown>[] }[] }
+    }
+    // **不带位置键** —— 带上 `wall: ''` / `offset: null` 会被契约的枚举校验拒收
+    expect(body.params.spaces[0]!.openings).toEqual([{ type: 'door', w: 0.8, h: 2.1 }])
+  })
 })
 
 describe('解析失败', () => {

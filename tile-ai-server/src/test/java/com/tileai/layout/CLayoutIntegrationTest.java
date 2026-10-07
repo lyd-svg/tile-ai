@@ -196,6 +196,45 @@ class CLayoutIntegrationTest {
     }
 
     @Test
+    @DisplayName("尺寸超出上限 → 10001(长/宽 ≤ 30 米、层高 ≤ 10 米)")
+    void paramsPathRejectsOutOfRangeSize() throws Exception {
+        // ⚠️ 这条钉的是一个**真会出事**的缺口(2026-10-07):此前三层都只挡了下限,
+        // 填个"长 = 一万米"能一路存进去 —— 而面积按 `长 × 宽` 派生,
+        // 大到超过 `t_plan_part.gross_area` 的 DECIMAL(10,4) 时会**落库直接报错**。
+        for (String spaces : new String[]{
+                """
+                [{"type":"bathroom","length":10000,"width":1.8,"height":2.4}]
+                """,
+                """
+                [{"type":"bathroom","length":2.0,"width":1.8,"height":100}]
+                """,
+        }) {
+            MvcResult result = mvc.perform(post(PARSE).contentType(MediaType.APPLICATION_JSON)
+                    .content("{\"params\":{\"spaces\":" + spaces + "}}")).andReturn();
+            JsonNode response = objectMapper.readTree(result.getResponse().getContentAsString());
+
+            assertEquals(200, result.getResponse().getStatus(), "业务失败仍是 HTTP 200(T-13)");
+            assertEquals(10001, response.path("code").asInt(), response.toString());
+            verify(agentClient, never()).post(anyString(), any());
+        }
+    }
+
+    @Test
+    @DisplayName("尺寸**在上限之内**仍然放行(别把正常户型误伤)")
+    void paramsPathAcceptsSizeAtTheCeiling() throws Exception {
+        // 30 米长、10 米层高正好在上限上 —— 必须过。
+        String body = """
+                {"params":{"spaces":[{"type":"other","length":30,"width":30,"height":10}]}}
+                """;
+
+        MvcResult result = mvc.perform(post(PARSE).contentType(MediaType.APPLICATION_JSON)
+                .content(body)).andReturn();
+        JsonNode response = objectMapper.readTree(result.getResponse().getContentAsString());
+
+        assertEquals(0, response.path("code").asInt(), response.toString());
+    }
+
+    @Test
     @DisplayName("params 与 text 都给时 **params 优先**")
     void paramsWinsOverText() throws Exception {
         String body = """

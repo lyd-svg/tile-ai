@@ -15,7 +15,7 @@ import json
 import httpx
 import pytest
 
-from app.agent.prompt import FurnishConfig
+from app.agent.prompt import DEFAULT_VIEW, VIEW_PHRASES, FurnishConfig
 from app.agent.prompt_sources import HttpFurnishSource, HttpSkuSource
 from app.clients.java_api import CODE_TASK_NOT_FOUND, JavaApiClient
 from app.core.config import settings
@@ -267,10 +267,16 @@ def test_placeholder_returns_exactly_n_images() -> None:
 
 
 def test_placeholder_urls_point_at_java() -> None:
-    """图必须由 **Java** 提供 —— 前端只连 Java(不变量 3)。"""
+    """图必须由 **Java** 提供 —— 前端只连 Java(不变量 3)。
+
+    ⚠️ 提示词用 ``VIEW_PHRASES`` **拼出来**,不写死字面量 ——
+    2026-10-07 就因为这里写死了旧措辞("正面平视全景…"),而 `VIEW_PHRASES` 的
+    措辞随白模机位改成了"略微向下俯视"(§77),两条用例当场红。
+    引用常量之后,改措辞不会再漂。
+    """
     gateway = PlaceholderImageGen(base_url="http://java.test/")
 
-    url = gateway.generate("视角：正面平视全景，镜头与视线同高。").images[0].url
+    url = gateway.generate(f"视角：{VIEW_PHRASES[DEFAULT_VIEW]}。").images[0].url
 
     assert url == f"http://java.test{PLACEHOLDER_PATH}?v=default"
 
@@ -285,9 +291,10 @@ def test_placeholder_defaults_to_java_base_url() -> None:
 def test_placeholder_carries_the_view_in_the_url() -> None:
     """`?v=` 就是视角名,与 Java 的封面规则(`view == default`)对得上,肉眼也能核。"""
     gateway = PlaceholderImageGen(base_url="http://java.test")
+    # 同样引用常量,不写死 —— 见上一条用例的说明。
     prompts = {
-        "default": "正面平视全景，镜头与视线同高",
-        "angle1": "从房间一角斜向俯视，同时看到地面与两面墙",
+        "default": VIEW_PHRASES[DEFAULT_VIEW],
+        "angle1": VIEW_PHRASES["angle1"],
     }
 
     urls = [gateway.generate(phrase).images[0].url for phrase in prompts.values()]

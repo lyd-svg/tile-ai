@@ -138,6 +138,7 @@ class GenerateConsumer:
             image_gateway=self._image_gateway,
             callback=self._api,
             anchor_first_view=settings.image_anchor_first_view,
+            whitemodel_enabled=settings.image_whitemodel_enabled,
         )
 
     def _retry_or_dead_letter(self, channel: Any, method: Any, properties: Any,
