@@ -1,0 +1,17 @@
+{
+  "hooks": {
+    "PreToolUse": [
+      {
+        "matcher": "Bash|PowerShell",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "node \"D:/瓷砖智能体项目/.claude/hooks/db-guard.js\"",
+            "timeout": 10,
+            "statusMessage": "检查是否在动用户数据库 tile_ai…"
+          }
+        ]
+      }
+    ]
+  }
+}

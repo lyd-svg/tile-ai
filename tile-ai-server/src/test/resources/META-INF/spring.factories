@@ -1,0 +1,18 @@
+# ============================================================================
+# 测试期的数据库隔离护栏(2026-10-07)
+#
+# 把 DbIsolationGuardInitializer 接到**每一个** Spring 测试上下文上:
+# 不是测试库就直接中止,而不是悄悄连上用户库。
+#
+# ⚠️ **本文件只在测试 classpath 上**(src/test/resources),**不进产物** ——
+#    所以对 `spring-boot:run` 与生产零影响。
+#
+# ⚠️ **它与 `META-INF/spring/org.springframework.boot.autoconfigure.AutoConfiguration.imports`
+#    不是一回事**:Spring Boot 3 起**自动配置**改用了 `.imports`,但
+#    `ApplicationContextInitializer` 这类仍从 `spring.factories` 读。
+#
+# ⚠️ **这个文件"装上却没生效"的唯一证据是实测**:光看它存在不算数。
+#    验证方法见 CLAUDE.md —— 故意把 DB_URL 指向非 _test 库,测试必须当场红。
+# ============================================================================
+org.springframework.context.ApplicationContextInitializer=\
+com.tileai.testinfra.DbIsolationGuardInitializer

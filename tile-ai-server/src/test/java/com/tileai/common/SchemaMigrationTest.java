@@ -115,6 +115,14 @@ class SchemaMigrationTest {
         assertTrue(schema.matches("[A-Za-z0-9_]+"),
                 "从 DB_URL 解析出的库名不是合法标识符 —— 解析结果: '" + schema + "'");
 
+        // 护栏(2026-10-07):本类是**唯一绕过 Spring** 直连库的测试,而它会跑 V1–V12
+        // (其中 V9 含 DROP TABLE)。库名必须在这里就挡住 —— 位置在 CREATE DATABASE **之前**。
+        // 挡的是"把用户库当测试库"这类事故:2026-10-07 真发生了一次,用户的真实数据被删。
+        // Spring 侧另有一道同名护栏,见 com.tileai.testinfra.DbIsolationGuardInitializer。
+        assertTrue(schema.endsWith("_test"),
+                "拒绝在非测试库上跑迁移:从 DB_URL 解析出的库名是 '" + schema + "',不以 _test 结尾。"
+                        + "测试库固定为 tile_ai_test —— 请检查 DB_URL / SPRING_DATASOURCE_URL 是否被指到了用户库。");
+
         try (Connection server = DriverManager.getConnection(serverUrl(url), user, pass);
              Statement st = server.createStatement()) {
             st.executeUpdate("CREATE DATABASE IF NOT EXISTS `" + schema

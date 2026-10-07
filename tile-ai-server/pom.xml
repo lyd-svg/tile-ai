@@ -129,6 +129,57 @@
         <groupId>org.springframework.boot</groupId>
         <artifactId>spring-boot-maven-plugin</artifactId>
       </plugin>
+
+      <!--
+        ====================================================================
+        测试数据库隔离(2026-10-07)
+
+        背景:集成测试原先连的是**用户正在用的演示库 tile_ai**,而其中若干
+        测试做无条件全表删除(删 t_store / t_quote_param 的关键行)。
+        2026-10-07 跑了一次全量测试,把用户的真实数据删掉了。
+
+        本配置把**测试子进程**钉到独立的测试库 tile_ai_test,并改用
+        **只有 tile_ai_test 权限**的受限账号 —— 三重保险:
+          ① 数据库授权:tile_test 连 tile_ai 就是 ERROR 1142,代码写错也删不动;
+          ② 本配置:进程根本看不到用户库的地址;
+          ③ 测试内护栏:万一前两层都失效,测试会在连库前当场失败。
+
+        ⚠️ **为什么要钉 6 个变量**:Spring 的属性优先级里 **OS 环境变量高于
+        application.yml 的占位符** —— 只钉 DB_URL 的话,开发者 shell 里若存在
+        SPRING_DATASOURCE_URL,它会直接压过去,隔离**静默失效**。
+
+        ⚠️ 这里的口令是本机测试专用账号,权限**仅限 tile_ai_test**,泄了也
+        动不了业务数据 —— 这是它和"生产口令不落代码"(架构 §12.3)不冲突的原因。
+
+        ⚠️ forkCount 必须 >= 1:forkCount=0 时 environmentVariables 不生效。
+        测试内的护栏(见 DbIsolationGuardInitializer)是这条的兜底。
+        ====================================================================
+      -->
+      <plugin>
+        <groupId>org.apache.maven.plugins</groupId>
+        <artifactId>maven-surefire-plugin</artifactId>
+        <configuration>
+          <forkCount>1</forkCount>
+          <reuseForks>true</reuseForks>
+          <environmentVariables>
+            <DB_URL>jdbc:mysql://localhost:3306/tile_ai_test?useUnicode=true&amp;characterEncoding=utf8&amp;serverTimezone=Asia/Shanghai&amp;allowPublicKeyRetrieval=true&amp;useSSL=false</DB_URL>
+            <DB_USERNAME>tile_test</DB_USERNAME>
+            <DB_PASSWORD>tile_test_pw</DB_PASSWORD>
+            <SPRING_DATASOURCE_URL>jdbc:mysql://localhost:3306/tile_ai_test?useUnicode=true&amp;characterEncoding=utf8&amp;serverTimezone=Asia/Shanghai&amp;allowPublicKeyRetrieval=true&amp;useSSL=false</SPRING_DATASOURCE_URL>
+            <SPRING_DATASOURCE_USERNAME>tile_test</SPRING_DATASOURCE_USERNAME>
+            <SPRING_DATASOURCE_PASSWORD>tile_test_pw</SPRING_DATASOURCE_PASSWORD>
+            <!-- Redis 同样在共享:RedisTokenStoreTest 会 delete("auth:*"),
+                 而 auth: 是线上会话/刷新令牌黑名单的前缀 —— 跑一次就把用户
+                 正在用的登录态抹掉。第 15 库专供测试。 -->
+            <SPRING_DATA_REDIS_DATABASE>15</SPRING_DATA_REDIS_DATABASE>
+            <!-- RabbitMQ 同理:测试与运行中的应用共用 broker 时,两边会互相
+                 抢消息 —— 2026-10-07 实测:queue.index.sync 里积压 51 条旧消息
+                 后,IndexSyncIntegrationTest 会偶发空指针(单独跑 6/6 通过)。
+                 测试专用 vhost,拓扑由应用启动时自行声明。 -->
+            <SPRING_RABBITMQ_VIRTUAL_HOST>tileai_test</SPRING_RABBITMQ_VIRTUAL_HOST>
+          </environmentVariables>
+        </configuration>
+      </plugin>
     </plugins>
   </build>
 </project>
