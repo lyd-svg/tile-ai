@@ -88,7 +88,8 @@ def fetch_products(connection: pymysql.connections.Connection) -> list[dict]:
     """
     with connection.cursor() as cursor:
         cursor.execute(
-            "SELECT sku_code, name, material, surface, applicable_spaces, style_tags,"
+            "SELECT sku_code, name, material, surface, spec, color_pattern,"
+            "       applicable_spaces, style_tags,"
             "       price_per_sqm, status, updated_at"
             "  FROM t_product"
         )
@@ -104,17 +105,26 @@ def fetch_combos(connection: pymysql.connections.Connection) -> list[dict]:
 
 
 def product_payload(row: dict) -> dict:
-    """DB 行 → 契约 §9.2 的 payload(字段名 snake_case,与增量事件一致)。"""
+    """DB 行 → 契约 §9.2 的 payload(字段名 snake_case,**与增量事件逐字段一致**)。
+
+    ⚠️ **必须与 `IndexSyncService.publishProductUpsert` 保持同一份字段集** ——
+    它俩分别写"全量重建"与"增量同步"两条路,字段一旦分叉,
+    同一个 SKU 经过两条路会得到**两份不一样的文档**,而且不会报错。
+    (这也是本文件头那段"复用智能体侧的集合定义与嵌入实现"的同一个理由。)
+    """
     return {
         "sku_code": row["sku_code"],
         "name": row["name"],
         "material": row["material"],
         "surface": row["surface"],
+        # 2026-10-07 补:架构 §9.3 的嵌入公式要求「规格 + 花色纹理」(见架构 §9.2「补漏」)
+        "spec": row["spec"],
+        "color_pattern": row["color_pattern"],
         "style_tags": _loads(row["style_tags"]),
         "spaces": _loads(row["applicable_spaces"]),
         "price": float(row["price_per_sqm"]) if row["price_per_sqm"] is not None else None,
         "status": row["status"],
-        "updated_at": str(row["updated_at"]),
+        "updated_at": _contract_datetime(row["updated_at"]),
     }
 
 
@@ -125,8 +135,38 @@ def combo_payload(row: dict) -> dict:
         "space": row["space"],
         "style": row["style"],
         "status": row["status"],
-        "updated_at": str(row["updated_at"]),
+        "updated_at": _contract_datetime(row["updated_at"]),
     }
+
+
+def _contract_datetime(value: object) -> str:
+    """时间 → **`T` 分隔的 ISO-8601**,与 Java 侧写进 payload 的口径对齐。
+
+    ⚠️ **2026-10-07 修(§80)**:此前这里直接 `str(row["updated_at"])`,
+    Python 的 `str(datetime)` 是**空格分隔**(`2026-10-02 19:23:31`),
+    而 Java 的 `LocalDateTime.toString()` 是 **`T` 分隔**
+    (`2026-10-07T19:24:19.3404312`)—— 于是**同一个字段有两条路的两种格式**:
+    走重建工具写进去的砖是空格,走增量同步的砖是 `T`。
+    契约(§9.2 / asyncapi 的 `updated_at`)写的是 `format: date-time`,
+    而 `date-time` 就是 `T` 分隔的那种 ⇒ **原先重建工具这条是错的。**
+
+    实测证据:`75-150FVA10787M` 在后台改价后由消费端写入,payload 里是
+    `2026-10-07T19:24:19.3404312`;而同集合里其余 24 条(重建工具写的)
+    全是 `2026-10-02 19:23:31` 这种空格格式。
+
+    ⚠️ **仍然没对齐的部分(留作已知缺口,不在这里擅自定)**:小数位数
+    (Python 给 6 位 / Java 给 3 或 7 位)与**时区偏移**(两边都没带)。
+    严格按 RFC 3339,`date-time` 要求带 `Z` 或 `±hh:mm` ——
+    **两条路都没带**,那是另一个需要拍板的问题(存储用的是无时区的 DATETIME,
+    要带偏移就得先定"以哪个时区为准")。本次只把**肉眼可见的那处分叉**消掉。
+    """
+    if isinstance(value, str):
+        return value
+    isoformat = getattr(value, "isoformat", None)
+    if isoformat is None:
+        return str(value)
+    # 无时区的 datetime:显式指定 `T`;带时区的交给 isoformat 自己出偏移
+    return isoformat(sep="T") if value.tzinfo is None else isoformat()
 
 
 def _loads(value: object) -> list[str] | None:

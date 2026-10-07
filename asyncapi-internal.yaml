@@ -393,8 +393,8 @@ components:
           type: object
           description: |
             该集合的检索字段(架构 §9.2)。按 `collection` 取用不同子集:
-            · product:`sku_code` `name` `material` `surface` `style_tags`
-              `spaces` `price` `status`
+            · product:`sku_code` `name` `material` `surface` `spec`
+              `color_pattern` `style_tags` `spaces` `price` `status`
             · combo:`combo_id` `name` `space` `style` `status`
             · kb:`doc_id` `category` `title` `source`
             `updated_at` 为**所有集合共有**,§15.2 明确要求保留,用于漂移排查。
@@ -403,6 +403,17 @@ components:
             name: { type: string }
             material: { type: string }
             surface: { type: string }
+            spec:
+              type: string
+              description: |
+                规格,如 `750×1500mm`。**2026-10-07 补** —— 架构 §9.3 的产品嵌入公式
+                里本来就有「规格」,而本 schema 一直没给,实现只能省掉(见架构 §9.2「补漏」)。
+            color_pattern:
+              type: string
+              description: |
+                花色纹理,如 `浅灰细石纹`。**2026-10-07 补** —— 同上。
+                ⚠️ 它是用户描述瓷砖时**最常用的词**("大理石纹""木纹"),进不了向量
+                就等于搜不到。
             style_tags: { type: array, items: { type: string } }
             spaces: { type: array, items: { type: string } }
             price: { type: number, format: float, description: "单价,元/㎡" }

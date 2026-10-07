@@ -16,7 +16,7 @@ from qdrant_client.http import models as qmodels
 
 from app.index import collections
 from app.index.apply import apply_event, point_id_for
-from app.index.embedding import DeterministicPlaceholderEmbedding
+from app.index.embedding import DeterministicPlaceholderEmbedding, product_embedding_text
 from app.index.retrieval import ON_SALE, SearchFilter, build_filter, search
 
 QDRANT_URL = "http://127.0.0.1:6333"
@@ -230,6 +230,39 @@ def test_embedding_dimension_and_normalization(embedding):
 
     norm = sum(value * value for value in vector) ** 0.5
     assert abs(norm - 1.0) < 1e-6, "向量应已归一化 —— 否则长文本会天然占优"
+
+
+def test_product_embedding_text_follows_the_architecture_formula():
+    """**产品的嵌入文本必须照架构 §9.3 的公式拼。**
+
+    `名称 + 材质 + 规格 + 花色纹理 + 光泽 + 适用空间 + 风格标签`
+
+    ⚠️ **2026-10-07 之前,「规格」与「花色纹理」根本没进去** ——
+    因为 §9.2 的 Payload 列没给这两个字段,实现拿不到,只能把它们从公式里省掉。
+    而这两样恰恰是**用户描述瓷砖时最常用的词**("大理石纹""木纹""750×1500")——
+    **公式要求的东西搜不到,检索质量自然上不去。**
+    """
+    text = product_embedding_text({
+        "name": "菲特米黄",
+        "material": "瓷质抛釉砖",
+        "spec": "750×1500mm",
+        "color_pattern": "米黄大理石纹",
+        "surface": "高透亮面",
+        "spaces": ["living_room"],
+        "style_tags": ["cream"],
+    })
+
+    for piece in ("菲特米黄", "瓷质抛釉砖", "750×1500mm", "米黄大理石纹", "高透亮面",
+                  "living_room", "cream"):
+        assert piece in text, f"{piece} 必须进嵌入文本"
+
+    # 顺序**照公式** —— 换顺序会让新旧向量落在不同的位置,同样要全量重建才能对齐
+    assert text == "菲特米黄 瓷质抛釉砖 750×1500mm 米黄大理石纹 高透亮面 living_room cream"
+
+
+def test_product_embedding_text_skips_missing_fields():
+    """字段缺失**跳过而不是填占位** —— 宁可少一句,不臆造。"""
+    assert product_embedding_text({"name": "丝缎"}) == "丝缎"
 
 
 def test_unknown_collection_is_rejected(qdrant, embedding):

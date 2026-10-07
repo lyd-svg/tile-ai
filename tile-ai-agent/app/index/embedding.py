@@ -75,12 +75,21 @@ def product_embedding_text(payload: dict) -> str:
     """产品的嵌入文本(架构 §9.3):
     `名称 + 材质 + 规格 + 花色纹理 + 光泽 + 适用空间 + 风格标签`。
 
-    注意 payload 里**没有 spec / color_pattern** —— §9.2 的 Payload 列未包含它们。
-    这是契约给定的字段集,不要擅自扩字段:扩展要先回改 §9.2。
+    ⚠️ **2026-10-07 修正**:此前 `spec` / `color_pattern` **不在 payload 里**
+    (§9.2 的 Payload 列未包含它们),于是这两项**被从公式里省掉了** ——
+    而它们恰恰是**用户描述瓷砖时最常用的词**("大理石纹""木纹""750×1500")。
+    公式要求的东西搜不到,检索质量自然上不去。
+    现已把两个字段补进 §9.2 的 Payload 列,这里跟着把公式**还原成完整的样子**。
+
+    ⚠️ 顺序**照 §9.3 的公式写**(名称 → 材质 → 规格 → 花色 → 光泽 → 空间 → 风格),
+    不要因为"读起来顺"就改 —— 公式是权威,且换顺序会让新旧向量对不上
+    (改顺序同样要全量重建)。
     """
     parts = [
         payload.get("name"),
         payload.get("material"),
+        payload.get("spec"),
+        payload.get("color_pattern"),
         payload.get("surface"),
         *_as_list(payload.get("spaces")),
         *_as_list(payload.get("style_tags")),

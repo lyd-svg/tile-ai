@@ -156,6 +156,15 @@ class IndexSyncIntegrationTest {
         assertEquals("off_sale", payload.get("status").asText());
         assertTrue(payload.hasNonNull("updated_at"),
                 "§15.2 要求 payload 保留 updated_at 用于排查漂移");
+
+        // ⚠️ **2026-10-07 补**:架构 §9.3 的产品嵌入公式里本来就有「规格 + 花色纹理」,
+        // 而 §9.2 的 Payload 列一直没给这两个字段 ⇒ 实现拿不到、只能把它们从公式里省掉。
+        // 后果是**用户最常说的那两类词进不了向量**("大理石纹""750×1500")。
+        // 断言用 `has` 而不是 `hasNonNull`:**键在不在**才代表"接线接上了",
+        // 而某个 SKU 本来就可以没填规格(那时值为 null,拼装时会被跳过)。
+        assertTrue(payload.has("spec"), "架构 §9.2「补漏」:spec 必须出现在 payload 里");
+        assertTrue(payload.has("color_pattern"),
+                "架构 §9.2「补漏」:color_pattern 必须出现在 payload 里");
     }
 
     @Test

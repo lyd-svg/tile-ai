@@ -41,7 +41,11 @@ class CollectionSpec:
 
 PRODUCT: Final[CollectionSpec] = CollectionSpec(
     name="product_index",
-    payload_fields=("sku_code", "name", "material", "surface",
+    # ⚠️ `spec` / `color_pattern` 是 **2026-10-07 补的** —— 架构 §9.3 的产品嵌入公式
+    # 里本来就有「规格 + 花色纹理」,而 §9.2 的 Payload 列一直没给,实现只能省掉。
+    # 后果:用户最常说的两类词(**花色**"大理石纹"、**规格**"750×1500")进不了向量。
+    # 见架构 §9.2「补漏」。
+    payload_fields=("sku_code", "name", "material", "surface", "spec", "color_pattern",
                     "style_tags", "spaces", "price", "status", "updated_at"),
     # 检索时按空间/风格/价格/在售过滤 —— §9.4 的"可选 payload 过滤"
     indexed_fields=("sku_code", "status", "material", "style_tags", "spaces", "price"),

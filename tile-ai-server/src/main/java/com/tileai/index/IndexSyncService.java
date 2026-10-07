@@ -63,6 +63,12 @@ public class IndexSyncService {
         payload.put("name", product.getName());
         payload.put("material", product.getMaterial());
         payload.put("surface", product.getSurface());
+        // ⚠️ **2026-10-07 补**:架构 §9.3 的产品嵌入公式里本来就有「规格 + 花色纹理」,
+        // 而 §9.2 的 Payload 列一直没给这两个字段 ⇒ 实现就拿不到、只能省掉。
+        // 后果是**用户最常说的那两类词进不了向量**:花色("大理石纹""木纹")与规格("750×1500")。
+        // 见架构 §9.2「补漏」。
+        payload.put("spec", product.getSpec());
+        payload.put("color_pattern", product.getColorPattern());
         payload.put("style_tags", product.getStyleTags());
         payload.put("spaces", product.getApplicableSpaces());
         payload.put("price", product.getPricePerSqm());
