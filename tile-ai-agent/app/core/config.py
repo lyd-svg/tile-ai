@@ -153,6 +153,18 @@ class Settings(BaseSettings):
     # 抢消息导致断言不确定。
     generate_consumer_in_process: bool = True
 
+    #: 索引同步消费端(`queue.index.sync`)是否随本进程启动(2026-10-07,§79)。
+    #:
+    #: **为什么现在开了**:契约 `asyncapi-internal.yaml` 的 `consumeIndexSync`
+    #: 早就写着 `x-consumer: Python 智能体服务`,而实现一直没启动它 ——
+    #: 于是"改一块砖"这件事只会往队列里堆消息,**搜索库不会跟着变**,
+    #: 得有人手工跑 `tools/rebuild_index.py` 全量重建。
+    #: 交付出去的形态不能要求对方手工重建,故默认**打开**。
+    #:
+    #: ⚠️ 与生成消费端同因:**测试里关掉**,免得后台线程抢消息让断言不确定。
+    #: 置 `false` 即可回退到"只堆消息、靠手工重建"的旧行为。
+    index_sync_consumer_in_process: bool = True
+
     #: 多角度出图时,**把第一张的结果当作后面几张的参考图**(基准图)。
     #:
     #: 为什么需要:多角度是**四次独立调用**,模型之间互相看不见 —— 四张图
