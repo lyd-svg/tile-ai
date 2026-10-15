@@ -121,3 +121,9 @@ outputs/reports/
 
 # ---------- Claude Code 本地设置 ----------
 .claude/settings.local.json
+
+# ---------- 个人资料（不属于项目交付物，不入版本库）----------
+# 面试向架构知识库 / 企业级演进构想稿：前者是个人学习资料，
+# 后者是纯构想稿（已在文件开头自我声明不属契约链、不产生决策）。
+architecture-patterns.md
+tile-ai-architecture-evolution.md
